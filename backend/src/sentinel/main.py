@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from sentinel.api.v1.databases import router as databases_router
+from sentinel.config.secrets import init_resolver
 from sentinel.config.settings import Settings, get_settings
 from sentinel.persistence.models import Base
 from sentinel.persistence.session import init_db
@@ -25,7 +26,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan events."""
     settings: Settings = app.state.settings
     logger.info("Starting Oracle Sentinel AI %s", settings.app_version)
-    
+
+    # Initialize secret resolver for decrypting .env passwords
+    init_resolver(settings.secret_key)
+    logger.info("Secret resolver initialized")
+
     # Initialize database
     try:
         init_db(settings)
@@ -35,9 +40,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error("Failed to initialize database: %s", e)
-    
+
     yield
-    
+
     logger.info("Shutting down Oracle Sentinel AI")
 
 

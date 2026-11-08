@@ -9,6 +9,34 @@ GSYSTEM is a local Oracle monitoring user with minimal read-only privileges. It 
 - `CREATE SESSION` — to connect
 - `SELECT` on specific `V$` and `DBA_` views for monitoring
 
+## Critical: ORA-02030 Gotcha
+
+Oracle `v$` views (e.g., `v$instance`, `v$database`) are **PUBLIC synonyms** that point to the actual fixed tables `SYS.V_$INSTANCE`, `SYS.V_$DATABASE`, etc. Similarly, `DBA_*` views are PUBLIC synonyms for `SYS.DBA_*` views owned by SYS.
+
+When granting privileges, you **cannot** use the synonym name:
+
+```sql
+-- ❌ FAILS with ORA-02030: can only select from fixed tables/views
+GRANT SELECT ON v$instance TO GSYSTEM;
+
+-- ✅ CORRECT — grant on the actual underlying object
+GRANT SELECT ON SYS.V_$INSTANCE TO GSYSTEM;
+```
+
+The same rule applies to `DBA_*` views:
+
+```sql
+-- ❌ May fail with ORA-02030
+GRANT SELECT ON dba_tablespaces TO GSYSTEM;
+
+-- ✅ CORRECT
+GRANT SELECT ON SYS.DBA_TABLESPACES TO GSYSTEM;
+```
+
+**At query time**, GSYSTEM can still use `v$instance` and `dba_tablespaces` in SQL — the synonyms resolve correctly. The `SYS.V_$` prefix is only required in `GRANT`/`REVOKE` statements.
+
+All provisioning scripts in `scripts/oracle/` use the correct `SYS.V_$` and `SYS.DBA_*` syntax.
+
 ## Provisioning
 
 Run `scripts/oracle/01_create_gsystem.sql` as SYSDBA on each target database.

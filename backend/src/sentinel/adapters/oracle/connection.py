@@ -7,6 +7,7 @@ from typing import Any
 import oracledb
 
 from sentinel.config.settings import Settings
+from sentinel.config.secrets import get_resolver
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,21 @@ class OracleConnectionManager:
         user = username or self.settings.oracle_username
         return f"{user}/{tns_alias}"
 
+    def _resolve_password(self, password: str | None) -> str:
+        """Resolve a password, decrypting if it's Fernet-encrypted.
+
+        If no password is provided, falls back to the encrypted value from
+        settings (ORACLE_PASSWORD in .env).  The secret resolver handles both
+        encrypted (gAAAAA...) and plain-text values transparently.
+        """
+        if password is not None:
+            return password
+        resolver = get_resolver()
+        resolved = resolver.resolve(self.settings.oracle_password)
+        if resolved:
+            return resolved
+        return ""
+
     async def connect(
         self,
         tns_alias: str,
@@ -36,26 +52,31 @@ class OracleConnectionManager:
         password: str | None = None,
     ) -> oracledb.Connection:
         """Create a new Oracle connection with timeout settings.
-        
+
+        The password parameter is optional.  If not provided, the manager
+        automatically resolves the encrypted ORACLE_PASSWORD from .env using
+        the secret resolver.
+
         Args:
             tns_alias: TNS alias from tnsnames.ora
             username: Override default username
-            password: Password for authentication
-            
+            password: Password for authentication (optional — resolved from .env if omitted)
+
         Returns:
             Oracle connection object
-            
+
         Raises:
             oracledb.Error: If connection fails
         """
         user = username or self.settings.oracle_username
+        resolved_password = self._resolve_password(password)
         try:
             # Set thin mode for portability
             oracledb.init_oracle_client(config_dir=self.settings.tns_admin) if self.settings.tns_admin else None
-            
+
             connection = oracledb.connect(
                 user=user,
-                password=password or "",
+                password=resolved_password,
                 dsn=tns_alias,
                 config_dir=self.settings.tns_admin,
             )
