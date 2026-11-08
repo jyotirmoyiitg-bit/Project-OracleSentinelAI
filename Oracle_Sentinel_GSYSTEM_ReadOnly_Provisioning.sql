@@ -16,10 +16,14 @@ GRANT CREATE SESSION TO GSYSTEM;
 
 -- Monitoring only. Explicit object SELECTs; NO SELECT ANY DICTIONARY,
 -- SELECT ANY TABLE, DBA, SYSDBA, CREATE TABLE, ALTER SYSTEM or DDL permissions.
+<<<<<<< HEAD
 -- IMPORTANT: Oracle v$ views are PUBLIC synonyms for SYS.V_$ fixed tables.
 -- Direct GRANT on v$ fails with ORA-02030: can only select from fixed tables/views.
 -- Always grant on SYS.V_$ (the actual object), not v$ (the synonym).
 -- The same applies to DBA_* views: grant on SYS.DBA_* not DBA_*.
+=======
+-- Oracle exposes dynamic performance views through underlying SYS.V_$ objects.
+>>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
 GRANT SELECT ON SYS.V_$DATABASE             TO GSYSTEM;
 GRANT SELECT ON SYS.V_$INSTANCE             TO GSYSTEM;
 GRANT SELECT ON SYS.V_$PARAMETER            TO GSYSTEM;

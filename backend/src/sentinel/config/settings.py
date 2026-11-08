@@ -30,10 +30,16 @@ class Settings(BaseSettings):
         description="Path to directory containing tnsnames.ora",
     )
     oracle_username: str = Field(default="GSYSTEM", description="Default Oracle monitoring username")
+<<<<<<< HEAD
     oracle_password: Optional[str] = Field(
         default=None,
         description="Oracle GSYSTEM password. Can be plain-text or Fernet-encrypted (starts with gAAAAA). "
                      "Use `python scripts/encrypt-secret.py` to encrypt. The app decrypts it at startup.",
+=======
+    oracle_password_secret_ref: Optional[str] = Field(
+        default=None,
+        description="Secret reference for Oracle password (never the actual password)",
+>>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
     )
     oracle_connection_timeout: int = Field(default=30, description="Oracle connection timeout in seconds")
     oracle_statement_timeout: int = Field(default=60, description="Oracle statement deadline in seconds")

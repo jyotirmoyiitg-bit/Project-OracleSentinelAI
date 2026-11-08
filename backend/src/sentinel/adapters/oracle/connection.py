@@ -7,7 +7,10 @@ from typing import Any
 import oracledb
 
 from sentinel.config.settings import Settings
+<<<<<<< HEAD
 from sentinel.config.secrets import get_resolver
+=======
+>>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,7 @@ class OracleConnectionManager:
         user = username or self.settings.oracle_username
         return f"{user}/{tns_alias}"
 
+<<<<<<< HEAD
     def _resolve_password(self, password: str | None) -> str:
         """Resolve a password, decrypting if it's Fernet-encrypted.
 
@@ -45,6 +49,8 @@ class OracleConnectionManager:
             return resolved
         return ""
 
+=======
+>>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
     async def connect(
         self,
         tns_alias: str,
@@ -52,6 +58,7 @@ class OracleConnectionManager:
         password: str | None = None,
     ) -> oracledb.Connection:
         """Create a new Oracle connection with timeout settings.
+<<<<<<< HEAD
 
         The password parameter is optional.  If not provided, the manager
         automatically resolves the encrypted ORACLE_PASSWORD from .env using
@@ -65,10 +72,22 @@ class OracleConnectionManager:
         Returns:
             Oracle connection object
 
+=======
+        
+        Args:
+            tns_alias: TNS alias from tnsnames.ora
+            username: Override default username
+            password: Password for authentication
+            
+        Returns:
+            Oracle connection object
+            
+>>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
         Raises:
             oracledb.Error: If connection fails
         """
         user = username or self.settings.oracle_username
+<<<<<<< HEAD
         resolved_password = self._resolve_password(password)
         try:
             # Set thin mode for portability
@@ -77,6 +96,15 @@ class OracleConnectionManager:
             connection = oracledb.connect(
                 user=user,
                 password=resolved_password,
+=======
+        try:
+            # Set thin mode for portability
+            oracledb.init_oracle_client(config_dir=self.settings.tns_admin) if self.settings.tns_admin else None
+            
+            connection = oracledb.connect(
+                user=user,
+                password=password or "",
+>>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
                 dsn=tns_alias,
                 config_dir=self.settings.tns_admin,
             )
