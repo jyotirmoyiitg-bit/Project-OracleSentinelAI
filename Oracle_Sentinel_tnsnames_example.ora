@@ -1,0 +1,14 @@
+# Oracle Sentinel AI -- Illustrative database alias registry.
+# Store in a centrally secured TNS_ADMIN folder on the application host.
+# No passwords appear in this file. Replace fictional hostnames, services and ports.
+PROD_FINANCE =
+  (DESCRIPTION=
+    (ADDRESS=(PROTOCOL=TCP)(HOST=prod-finance-db.internal.example)(PORT=1521))
+    (CONNECT_DATA=(SERVICE_NAME=FINPDB.internal.example))
+  )
+
+TEST_HR =
+  (DESCRIPTION=
+    (ADDRESS=(PROTOCOL=TCP)(HOST=test-hr-db.internal.example)(PORT=1521))
+    (CONNECT_DATA=(SERVICE_NAME=HRPDB.internal.example))
+  )

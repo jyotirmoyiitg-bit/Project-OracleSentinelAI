@@ -1,0 +1,16 @@
+-- OPTIONAL DESIGN TEMPLATE: NOT PART OF READ-ONLY MONITORING INSTALLATION.
+-- This is an illustration of a narrow DBA-approved operation, NOT a script to
+-- run against production without peer review, testing and change-control approval.
+-- The monitoring user GSYSTEM is never granted ALTER TABLESPACE or ALTER DATABASE.
+-- A dedicated schema / service should own narrowly scoped procedures; protect the
+-- service behind RBAC, explicit human approval, target allowlist, maintenance window,
+-- preflight free disk/FRA checks, idempotency, change ticket and audit event.
+-- NOTE: ALTER TABLESPACE is a powerful system privilege. Granting it to an operations
+-- owner is still broad; isolate this owner, credentials, network and capabilities.
+-- Example for DBA to adapt, after verifying OMF, tablespace SMALLFILE, and headroom:
+-- ALTER TABLESPACE USERS ADD DATAFILE SIZE 10G;
+-- For a BIGFILE tablespace use a separately designed resize workflow instead.
+-- OMF naming requires appropriate DB_CREATE_FILE_DEST or ASM OMF configuration.
+-- Do NOT accept arbitrary SQL text or arbitrary tablespace names from an LLM.
+-- Production implementation: approved typed operation `add_users_datafile_10gb`
+-- backed by a dedicated executor and signed approval, not a chatbot SQL terminal.
