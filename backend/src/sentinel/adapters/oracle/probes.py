@@ -48,20 +48,25 @@ class OracleProbes:
             ts.status AS ts_status,
             ts.contents AS ts_contents,
             ts.logging AS ts_logging,
-            ts.extent_management
+            ts.extent_management,
+            df.autoextend
         FROM (
             SELECT
-                tablespace_name,
-                SUM(bytes) AS bytes_total,
-                SUM(bytes) - NVL(SUM(fs.bytes), 0) AS bytes_used,
-                NVL(SUM(fs.bytes), 0) AS bytes_free
-            FROM dba_data_files df
+                files.tablespace_name,
+                files.bytes_total,
+                files.bytes_total - NVL(fs.bytes_free, 0) AS bytes_used,
+                NVL(fs.bytes_free, 0) AS bytes_free,
+                files.autoextend
+            FROM (
+                SELECT tablespace_name, SUM(bytes) AS bytes_total,
+                       MAX(CASE WHEN autoextensible = 'YES' THEN 1 ELSE 0 END) AS autoextend
+                FROM dba_data_files GROUP BY tablespace_name
+            ) files
             LEFT JOIN (
-                SELECT tablespace_name, SUM(bytes) AS bytes
+                SELECT tablespace_name, SUM(bytes) AS bytes_free
                 FROM dba_free_space
                 GROUP BY tablespace_name
-            ) fs ON df.tablespace_name = fs.tablespace_name
-            GROUP BY tablespace_name
+            ) fs ON files.tablespace_name = fs.tablespace_name
         ) df
         JOIN dba_tablespaces ts ON df.tablespace_name = ts.tablespace_name
         ORDER BY df.tablespace_name
@@ -96,15 +101,9 @@ class OracleProbes:
         SELECT
             destination,
             status,
-            target,
-            archiver,
-            register,
-            alternate,
-            reuse_setting,
-            registration_timestamp,
-            sequence# AS sequence_num
+            error
         FROM v$archive_dest_status
-        WHERE status IS NOT NULL
+        WHERE destination IS NOT NULL
         ORDER BY destination
     """
 
@@ -241,6 +240,7 @@ class OracleProbes:
                 ])
         except oracledb.Error as e:
             logger.error("Instance status probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations
@@ -262,6 +262,11 @@ class OracleProbes:
                 used_pct = data.get("USED_PCT", 0) or 0
 
                 observations.extend([
+                    Observation(
+                        database_id=database_id, metric="storage.tablespace.autoextend",
+                        value=bool(data.get("AUTOEXTEND", 0)), collected_at=now,
+                        labels={"tablespace": ts_name, "source": "dba_data_files"},
+                    ),
                     Observation(
                         database_id=database_id,
                         metric="storage.tablespace.used_pct",
@@ -311,6 +316,7 @@ class OracleProbes:
                 ])
         except oracledb.Error as e:
             logger.error("Tablespace usage probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations
@@ -372,6 +378,7 @@ class OracleProbes:
                 ])
         except oracledb.Error as e:
             logger.error("FRA usage probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations
@@ -397,6 +404,7 @@ class OracleProbes:
                 ))
         except oracledb.Error as e:
             logger.error("FRA detail probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations
@@ -419,8 +427,13 @@ class OracleProbes:
                     collected_at=now,
                     labels={"destination": str(dest), "source": "v$archive_dest_status"},
                 ))
+                observations.append(Observation(
+                    database_id=database_id, metric="storage.archive.error", value=data.get("ERROR") or "",
+                    collected_at=now, labels={"destination": str(dest), "source": "v$archive_dest_status"},
+                ))
         except oracledb.Error as e:
             logger.error("Archive dest probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations
@@ -438,7 +451,8 @@ class OracleProbes:
                 resource = data.get("RESOURCE_NAME", "unknown")
                 current = data.get("CURRENT_UTILIZATION", 0) or 0
                 maximum = data.get("MAX_UTILIZATION", 0) or 0
-                limit_val = data.get("LIMIT_VALUE", 0) or 0
+                raw_limit = str(data.get("LIMIT_VALUE") or "UNLIMITED").strip()
+                limit_val = int(raw_limit) if raw_limit.isdigit() else None
 
                 observations.extend([
                     Observation(
@@ -458,13 +472,20 @@ class OracleProbes:
                     Observation(
                         database_id=database_id,
                         metric="resources.limit.value",
-                        value=int(limit_val),
+                        value=limit_val,
                         collected_at=now,
                         labels={"resource": resource, "source": "v$resource_limit"},
                     ),
                 ])
+                if limit_val:
+                    observations.append(Observation(
+                        database_id=database_id, metric="resources.used_pct",
+                        value=current * 100.0 / limit_val, unit="percent", collected_at=now,
+                        labels={"resource": resource, "source": "v$resource_limit"},
+                    ))
         except oracledb.Error as e:
             logger.error("Resource limit probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations
@@ -490,6 +511,7 @@ class OracleProbes:
                 ))
         except oracledb.Error as e:
             logger.error("Configuration probe failed for %s: %s", database_id, e)
+            raise
         finally:
             cursor.close()
         return observations

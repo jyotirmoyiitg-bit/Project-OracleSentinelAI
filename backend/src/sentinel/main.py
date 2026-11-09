@@ -1,122 +1,83 @@
-"""FastAPI application entry point for Oracle Sentinel AI."""
+"""FastAPI lifecycle for APIs and the independent central collector."""
 
+import asyncio
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 
-from sentinel.api.v1.databases import router as databases_router
-<<<<<<< HEAD
+from sentinel.api.v1.databases import router
+from sentinel.collectors.adapters import adapter_for
+from sentinel.collectors.jobs import CollectionRunner
+from sentinel.collectors.scheduler import CollectorScheduler
 from sentinel.config.secrets import init_resolver
-=======
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
 from sentinel.config.settings import Settings, get_settings
-from sentinel.persistence.models import Base
-from sentinel.persistence.session import init_db
+from sentinel.persistence import session as persistence
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifespan events."""
-    settings: Settings = app.state.settings
-    logger.info("Starting Oracle Sentinel AI %s", settings.app_version)
-<<<<<<< HEAD
-
-    # Initialize secret resolver for decrypting .env passwords
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = app.state.settings
     init_resolver(settings.secret_key)
-    logger.info("Secret resolver initialized")
-
-=======
-    
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
-    # Initialize database
+    persistence.init_db(settings)
+    engine, sessions = persistence.engine, persistence.SessionLocal
+    if engine is None or sessions is None:
+        raise RuntimeError("Database initialization failed")
     try:
-        init_db(settings)
-        # Create tables if they don't exist
-        from sentinel.persistence.session import engine
-        Base.metadata.create_all(bind=engine)
-        logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error("Failed to initialize database: %s", e)
-<<<<<<< HEAD
-
-    yield
-
-=======
-    
-    yield
-    
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
-    logger.info("Shutting down Oracle Sentinel AI")
-
-
-def create_app() -> FastAPI:
-    """Create and configure the FastAPI application."""
-    settings = get_settings()
-    
-    app = FastAPI(
-        title=settings.app_name,
-        version=settings.app_version,
-        description="Oracle Sentinel AI - Central Oracle Database Monitoring Platform",
-        lifespan=lifespan,
-    )
-    
-    # Store settings in app state
-    app.state.settings = settings
-    
-    # CORS middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=settings.cors_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    
-    # Register routers
-    app.include_router(databases_router)
-    
-    # Health endpoints
-    @app.get("/health/live")
-    async def health_live():
-        """Application liveness check."""
-        return {"status": "alive"}
-    
-    @app.get("/health/ready")
-    async def health_ready():
-        """Application readiness check — verifies PostgreSQL connection."""
-        from sentinel.persistence.session import get_session, close_session
-        
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+            if not inspect(conn).has_table("poll_runs"):
+                raise RuntimeError("Phase 2 schema missing; run alembic upgrade head before starting")
+        scheduler = None
+        if settings.scheduler_enabled:
+            runner = CollectionRunner(
+                sessions, settings, lambda target: adapter_for(target, settings),
+            )
+            scheduler = CollectorScheduler(runner)
+            scheduler.start()
+        app.state.collector_scheduler = scheduler
         try:
-            session = get_session()
-            session.execute("SELECT 1")
-            close_session(session)
-            return {"status": "ready", "database": "connected"}
-        except Exception as e:
-            logger.error("Readiness check failed: %s", e)
-            return {"status": "not_ready", "database": str(e)}
-    
+            yield
+        finally:
+            if scheduler:
+                await asyncio.to_thread(scheduler.stop)
+    finally:
+        engine.dispose()
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or get_settings()
+    app = FastAPI(title=settings.app_name, version=settings.app_version, lifespan=lifespan)
+    app.state.settings = settings
+    app.add_middleware(
+        CORSMiddleware, allow_origins=settings.cors_origins,
+        allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
+    )
+    app.include_router(router)
+
+    @app.get("/health/live")
+    def health_live() -> dict[str, str]:
+        return {"status": "alive"}
+
+    @app.get("/health/ready")
+    def health_ready() -> dict[str, str]:
+        try:
+            if persistence.engine is None:
+                raise RuntimeError("Database is not initialized")
+            with persistence.engine.connect() as connection:
+                connection.execute(text("SELECT 1"))
+        except (SQLAlchemyError, RuntimeError) as exc:
+            logger.error("Readiness failed: %s", type(exc).__name__)
+            raise HTTPException(503, "Database not ready") from exc
+        return {"status": "ready", "database": "connected"}
+
     return app
 
 
-# Create app instance for uvicorn
 app = create_app()
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "sentinel.main:app",
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-    )

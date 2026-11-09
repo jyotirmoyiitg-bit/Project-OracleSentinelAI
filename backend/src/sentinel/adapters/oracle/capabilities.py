@@ -1,7 +1,7 @@
 """Oracle capability detection — checks available views and privileges."""
 
 import logging
-from datetime import datetime
+from typing import ClassVar
 
 import oracledb
 
@@ -14,18 +14,18 @@ class OracleCapabilityDetector:
     """Detects available views and privileges after connecting to Oracle."""
 
     # Views to check for SELECT privilege
-    VIEWS_TO_CHECK = {
-        "v$instance": "has_select_v$instance",
-        "v$database": "has_select_v$database",
+    VIEWS_TO_CHECK: ClassVar[dict[str, str]] = {
+        "v$instance": "has_select_v_instance",
+        "v$database": "has_select_v_database",
         "dba_tablespaces": "has_select_dba_tablespaces",
         "dba_data_files": "has_select_dba_data_files",
         "dba_free_space": "has_select_dba_free_space",
-        "v$recovery_file_dest": "has_select_v$recovery_file_dest",
-        "v$archive_dest_status": "has_select_v$archive_dest_status",
-        "v$parameter": "has_select_v$parameter",
-        "v$resource_limit": "has_select_v$resource_limit",
-        "v$flash_recovery_area_usage": "has_select_v$flash_recovery_area_usage",
-        "v$diag_alert_ext": "has_select_v$diag_alert_ext",
+        "v$recovery_file_dest": "has_select_v_recovery_file_dest",
+        "v$archive_dest_status": "has_select_v_archive_dest_status",
+        "v$parameter": "has_select_v_parameter",
+        "v$resource_limit": "has_select_v_resource_limit",
+        "v$flash_recovery_area_usage": "has_select_v_flash_recovery_area_usage",
+        "v$diag_alert_ext": "has_select_v_diag_alert_ext",
     }
 
     async def detect(self, connection: oracledb.Connection) -> CapabilityMatrix:
@@ -51,9 +51,9 @@ class OracleCapabilityDetector:
             await self._check_view_access(cursor, caps)
             
             # Infer higher-level capabilities
-            caps.supports_fra = caps.has_select_v$recovery_file_dest
-            caps.supports_flashback = caps.has_select_v$database
-            caps.supports_vdiag_alert_ext = caps.has_select_v$diag_alert_ext
+            caps.supports_fra = caps.has_select_v_recovery_file_dest
+            caps.supports_flashback = caps.has_select_v_database
+            caps.supports_vdiag_alert_ext = caps.has_select_v_diag_alert_ext
             caps.supports_tablespace_usage_metrics = (
                 caps.has_select_dba_tablespaces and caps.has_select_dba_data_files
             )

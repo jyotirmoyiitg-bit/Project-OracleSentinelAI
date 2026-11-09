@@ -45,17 +45,17 @@ class CapabilityMatrix:
     supports_vdiag_alert_ext: bool = False
     supports_tablespace_usage_metrics: bool = False
     supports_fra: bool = False
-    has_select_v$instance: bool = False
-    has_select_v$database: bool = False
+    has_select_v_instance: bool = False
+    has_select_v_database: bool = False
     has_select_dba_tablespaces: bool = False
     has_select_dba_data_files: bool = False
     has_select_dba_free_space: bool = False
-    has_select_v$recovery_file_dest: bool = False
-    has_select_v$archive_dest_status: bool = False
-    has_select_v$parameter: bool = False
-    has_select_v$resource_limit: bool = False
-    has_select_v$flash_recovery_area_usage: bool = False
-    has_select_v$diag_alert_ext: bool = False
+    has_select_v_recovery_file_dest: bool = False
+    has_select_v_archive_dest_status: bool = False
+    has_select_v_parameter: bool = False
+    has_select_v_resource_limit: bool = False
+    has_select_v_flash_recovery_area_usage: bool = False
+    has_select_v_diag_alert_ext: bool = False
     detected_at: datetime = field(default_factory=datetime.utcnow)
 
     def to_dict(self) -> dict[str, Any]:
@@ -70,17 +70,17 @@ class CapabilityMatrix:
             "supports_vdiag_alert_ext": self.supports_vdiag_alert_ext,
             "supports_tablespace_usage_metrics": self.supports_tablespace_usage_metrics,
             "supports_fra": self.supports_fra,
-            "has_select_v$instance": self.has_select_v$instance,
-            "has_select_v$database": self.has_select_v$database,
+            "has_select_v$instance": self.has_select_v_instance,
+            "has_select_v$database": self.has_select_v_database,
             "has_select_dba_tablespaces": self.has_select_dba_tablespaces,
             "has_select_dba_data_files": self.has_select_dba_data_files,
             "has_select_dba_free_space": self.has_select_dba_free_space,
-            "has_select_v$recovery_file_dest": self.has_select_v$recovery_file_dest,
-            "has_select_v$archive_dest_status": self.has_select_v$archive_dest_status,
-            "has_select_v$parameter": self.has_select_v$parameter,
-            "has_select_v$resource_limit": self.has_select_v$resource_limit,
-            "has_select_v$flash_recovery_area_usage": self.has_select_v$flash_recovery_area_usage,
-            "has_select_v$diag_alert_ext": self.has_select_v$diag_alert_ext,
+            "has_select_v$recovery_file_dest": self.has_select_v_recovery_file_dest,
+            "has_select_v$archive_dest_status": self.has_select_v_archive_dest_status,
+            "has_select_v$parameter": self.has_select_v_parameter,
+            "has_select_v$resource_limit": self.has_select_v_resource_limit,
+            "has_select_v$flash_recovery_area_usage": self.has_select_v_flash_recovery_area_usage,
+            "has_select_v$diag_alert_ext": self.has_select_v_diag_alert_ext,
             "detected_at": self.detected_at.isoformat(),
         }
 
@@ -89,10 +89,21 @@ class CapabilityMatrix:
         """Create from dictionary."""
         if not data:
             return cls()
+        serialized_names = {
+            "has_select_v_instance": "has_select_v$instance",
+            "has_select_v_database": "has_select_v$database",
+            "has_select_v_recovery_file_dest": "has_select_v$recovery_file_dest",
+            "has_select_v_archive_dest_status": "has_select_v$archive_dest_status",
+            "has_select_v_parameter": "has_select_v$parameter",
+            "has_select_v_resource_limit": "has_select_v$resource_limit",
+            "has_select_v_flash_recovery_area_usage": "has_select_v$flash_recovery_area_usage",
+            "has_select_v_diag_alert_ext": "has_select_v$diag_alert_ext",
+        }
         kwargs = {}
         for key in cls.__dataclass_fields__:
-            if key in data:
-                val = data[key]
+            serialized_key = serialized_names.get(key, key)
+            if key in data or serialized_key in data:
+                val = data.get(key, data.get(serialized_key))
                 if key == "detected_at" and isinstance(val, str):
                     val = datetime.fromisoformat(val)
                 kwargs[key] = val

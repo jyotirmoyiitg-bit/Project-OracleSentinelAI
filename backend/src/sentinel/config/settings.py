@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -30,16 +30,14 @@ class Settings(BaseSettings):
         description="Path to directory containing tnsnames.ora",
     )
     oracle_username: str = Field(default="GSYSTEM", description="Default Oracle monitoring username")
-<<<<<<< HEAD
     oracle_password: Optional[str] = Field(
         default=None,
         description="Oracle GSYSTEM password. Can be plain-text or Fernet-encrypted (starts with gAAAAA). "
-                     "Use `python scripts/encrypt-secret.py` to encrypt. The app decrypts it at startup.",
-=======
+        "Use `python scripts/encrypt-secret.py` to encrypt. The app decrypts it at startup.",
+    )
     oracle_password_secret_ref: Optional[str] = Field(
         default=None,
         description="Secret reference for Oracle password (never the actual password)",
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
     )
     oracle_connection_timeout: int = Field(default=30, description="Oracle connection timeout in seconds")
     oracle_statement_timeout: int = Field(default=60, description="Oracle statement deadline in seconds")
@@ -69,6 +67,28 @@ class Settings(BaseSettings):
     # Scheduler
     scheduler_enabled: bool = Field(default=False, description="Enable APScheduler collection jobs")
     scheduler_default_interval_seconds: int = Field(default=300, description="Default polling interval in seconds")
+    scheduler_workers: int = Field(default=4, ge=1, le=32)
+    scheduler_reconcile_seconds: int = Field(default=30, ge=1)
+    collector_lease_seconds: int = Field(default=1800, ge=60)
+    observation_retention_days: int = Field(default=30, ge=1)
+    poll_intervals: dict[str, int] = Field(default_factory=lambda: {
+        "connectivity": 60, "instance": 300, "storage": 300,
+        "fra_archive": 180, "resources": 180, "configuration": 1800,
+    })
+    stale_after_seconds: dict[str, int] = Field(default_factory=lambda: {
+        "connectivity": 180, "instance": 900, "storage": 900,
+        "fra_archive": 540, "resources": 540, "configuration": 5400,
+    })
+    synthetic_mode: bool = Field(default=False, description="Use synthetic adapters; never connect to Oracle")
+
+    @model_validator(mode="after")
+    def validate_collection_intervals(self) -> Settings:
+        probes = {"connectivity", "instance", "storage", "fra_archive", "resources", "configuration"}
+        for name, values in (("poll_intervals", self.poll_intervals),
+                             ("stale_after_seconds", self.stale_after_seconds)):
+            if set(values) != probes or any(isinstance(v, bool) or v < 1 for v in values.values()):
+                raise ValueError(f"{name} must contain a positive interval for each of {sorted(probes)}")
+        return self
 
     # Knowledge
     knowledge_intake_path: str = Field(
@@ -86,7 +106,10 @@ class Settings(BaseSettings):
         description="Allowed CORS origins",
     )
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
+    model_config = {
+        "env_file": str(Path(__file__).resolve().parents[4] / ".env"),
+        "env_file_encoding": "utf-8", "extra": "ignore",
+    }
 
 
 def get_settings() -> Settings:

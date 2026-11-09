@@ -6,11 +6,8 @@ from typing import Any
 
 import oracledb
 
-from sentinel.config.settings import Settings
-<<<<<<< HEAD
 from sentinel.config.secrets import get_resolver
-=======
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
+from sentinel.config.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -20,20 +17,12 @@ class OracleConnectionManager:
 
     def __init__(self, settings: Settings):
         self.settings = settings
-        self._initialize_tns_admin()
-
-    def _initialize_tns_admin(self) -> None:
-        """Set TNS_ADMIN environment variable if configured."""
-        if self.settings.tns_admin:
-            oracledb.config_oracle_client(lib_dir=None)
-            logger.info("TNS_ADMIN set to: %s", self.settings.tns_admin)
 
     def get_connection_string(self, tns_alias: str, username: str | None = None) -> str:
         """Build connection string from TNS alias."""
         user = username or self.settings.oracle_username
         return f"{user}/{tns_alias}"
 
-<<<<<<< HEAD
     def _resolve_password(self, password: str | None) -> str:
         """Resolve a password, decrypting if it's Fernet-encrypted.
 
@@ -45,12 +34,12 @@ class OracleConnectionManager:
             return password
         resolver = get_resolver()
         resolved = resolver.resolve(self.settings.oracle_password)
+        if self.settings.oracle_password and (resolved is None or resolved.startswith(resolver.FERNET_PREFIX)):
+            raise ValueError("Oracle password could not be decrypted")
         if resolved:
             return resolved
         return ""
 
-=======
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
     async def connect(
         self,
         tns_alias: str,
@@ -58,7 +47,6 @@ class OracleConnectionManager:
         password: str | None = None,
     ) -> oracledb.Connection:
         """Create a new Oracle connection with timeout settings.
-<<<<<<< HEAD
 
         The password parameter is optional.  If not provided, the manager
         automatically resolves the encrypted ORACLE_PASSWORD from .env using
@@ -72,43 +60,20 @@ class OracleConnectionManager:
         Returns:
             Oracle connection object
 
-=======
-        
-        Args:
-            tns_alias: TNS alias from tnsnames.ora
-            username: Override default username
-            password: Password for authentication
-            
-        Returns:
-            Oracle connection object
-            
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
         Raises:
             oracledb.Error: If connection fails
         """
         user = username or self.settings.oracle_username
-<<<<<<< HEAD
         resolved_password = self._resolve_password(password)
         try:
-            # Set thin mode for portability
-            oracledb.init_oracle_client(config_dir=self.settings.tns_admin) if self.settings.tns_admin else None
-
             connection = oracledb.connect(
                 user=user,
                 password=resolved_password,
-=======
-        try:
-            # Set thin mode for portability
-            oracledb.init_oracle_client(config_dir=self.settings.tns_admin) if self.settings.tns_admin else None
-            
-            connection = oracledb.connect(
-                user=user,
-                password=password or "",
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
                 dsn=tns_alias,
                 config_dir=self.settings.tns_admin,
+                tcp_connect_timeout=self.settings.oracle_connection_timeout,
             )
-            # Set statement deadline
+            connection.call_timeout = self.settings.oracle_statement_timeout * 1000
             connection.stmtcachesize = 0  # Disable statement cache for read-only
             logger.info("Connected to Oracle via TNS alias: %s", tns_alias)
             return connection
@@ -119,7 +84,7 @@ class OracleConnectionManager:
     async def close_connection(self, connection: oracledb.Connection) -> None:
         """Close an Oracle connection safely."""
         try:
-            if connection and not connection.closed:
+            if connection:
                 connection.close()
                 logger.debug("Oracle connection closed")
         except oracledb.Error as e:

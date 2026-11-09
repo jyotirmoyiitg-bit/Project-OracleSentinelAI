@@ -30,6 +30,7 @@ class SyntheticOracleAdapter:
         container_name: str = "",
         simulate_error: bool = False,
         simulate_permission_denied: bool = False,
+        used_pct: float = 65.5,
     ):
         self.version = version
         self.edition = edition
@@ -37,6 +38,44 @@ class SyntheticOracleAdapter:
         self.container_name = container_name
         self.simulate_error = simulate_error
         self.simulate_permission_denied = simulate_permission_denied
+        self.used_pct = used_pct
+
+    async def collect_probe(self, probe: str, alias: str) -> list[Observation]:
+        if self.simulate_error:
+            raise ConnectionError("Synthetic target is offline")
+        if self.simulate_permission_denied and probe != "connectivity":
+            raise PermissionError("Synthetic monitoring grants are missing")
+        if probe == "connectivity":
+            return [Observation(alias, "connectivity.available", True, source="synthetic.connect")]
+        if probe == "instance":
+            return await self.collect_health(alias) + [
+                Observation(alias, "database.role", "PRIMARY", source="v$database"),
+            ]
+        if probe == "storage":
+            return [
+                Observation(alias, "storage.tablespace.used_pct", self.used_pct, unit="percent",
+                            labels={"tablespace": "USERS", "source": "dba_tablespaces"}),
+                Observation(alias, "storage.tablespace.bytes_total", 10737418240, unit="bytes",
+                            labels={"tablespace": "USERS", "source": "dba_data_files"}),
+                Observation(alias, "storage.tablespace.autoextend", True,
+                            labels={"tablespace": "USERS", "source": "dba_data_files"}),
+            ]
+        if probe == "fra_archive":
+            return [
+                Observation(alias, "storage.fra.used_pct", 28.7, unit="percent", source="v$recovery_file_dest"),
+                Observation(alias, "storage.fra.space_limit", 10737418240, unit="bytes", source="v$recovery_file_dest"),
+                Observation(alias, "storage.fra.space_used", 3081634119, unit="bytes", source="v$recovery_file_dest"),
+                Observation(alias, "storage.fra.usage_by_type", 28.7, unit="percent",
+                            labels={"file_type": "ARCHIVED LOG"}, source="v$flash_recovery_area_usage"),
+                Observation(alias, "storage.archive.dest_status", "VALID",
+                            labels={"destination": "USE_DB_RECOVERY_FILE_DEST"}, source="v$archive_dest_status"),
+            ]
+        if probe == "resources":
+            return [Observation(alias, "resources.used_pct", 40, unit="percent",
+                                labels={"resource": "sessions"}, source="v$resource_limit")]
+        if probe == "configuration":
+            return await self.collect_configuration(alias)
+        raise ValueError(f"Unknown probe: {probe}")
 
     async def test_connection(self, database_id: str) -> dict[str, Any]:
         """Simulate a connection test."""
@@ -245,15 +284,15 @@ class SyntheticOracleAdapter:
         caps.supports_flashback = True
         caps.supports_vdiag_alert_ext = True
         caps.supports_tablespace_usage_metrics = True
-        caps.has_select_v$instance = True
-        caps.has_select_v$database = True
+        caps.has_select_v_instance = True
+        caps.has_select_v_database = True
         caps.has_select_dba_tablespaces = True
         caps.has_select_dba_data_files = True
         caps.has_select_dba_free_space = True
-        caps.has_select_v$recovery_file_dest = True
-        caps.has_select_v$archive_dest_status = True
-        caps.has_select_v$parameter = True
-        caps.has_select_v$resource_limit = True
-        caps.has_select_v$flash_recovery_area_usage = True
-        caps.has_select_v$diag_alert_ext = True
+        caps.has_select_v_recovery_file_dest = True
+        caps.has_select_v_archive_dest_status = True
+        caps.has_select_v_parameter = True
+        caps.has_select_v_resource_limit = True
+        caps.has_select_v_flash_recovery_area_usage = True
+        caps.has_select_v_diag_alert_ext = True
         return caps

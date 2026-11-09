@@ -4,10 +4,24 @@ Central, browser-based platform for monitoring registered Oracle databases on Wi
 
 ## Quick Start
 
-1. Copy `.env.example` to `.env` and configure your settings
-2. Start infrastructure: `docker compose up -d`
-3. Install dependencies: `cd backend && pip install -e ".[dev]"`
-4. Run the app: `uvicorn sentinel.main:app --reload`
+From the repository root in PowerShell:
+
+1. Copy `.env.example` to `.env` if you do not already have one. Configure PostgreSQL,
+   `TNS_ADMIN` (prefer an absolute path), and the read-only Oracle monitoring credential.
+2. Start infrastructure: `docker compose up -d postgres redis`
+3. Install backend: `.\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"`
+4. Apply migrations: `.\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head`
+5. Set `SCHEDULER_ENABLED=true` in your local configuration to enable collection.
+6. Run backend: `.\.venv\Scripts\python.exe -m uvicorn sentinel.main:app --host 127.0.0.1 --port 8000`
+7. In another terminal: `cd frontend; npm ci; npm run dev`
+8. Open `http://localhost:5173`. Register targets through `http://localhost:8000/docs`.
+
+For an existing Phase 1 database, read the migration instructions before upgrading.
+See [the operations runbook](docs/operations-runbook.md) for credential-free synthetic
+validation, polling profiles, and recovery checks. Collection does not require an LLM.
+
+Authentication/entitlements are a later phase; keep this development deployment on
+localhost or a trusted isolated network.
 
 ## Architecture
 

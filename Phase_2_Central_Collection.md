@@ -1,7 +1,7 @@
 # Phase 2 — Central Collection, Storage, and Dashboard
 
 **Phase:** 2  
-**Status:** Pending  
+**Status:** Implemented; synthetic validation completed, live PostgreSQL/Oracle acceptance required
 **Prerequisites:** Phase 1 (Oracle Connection)  
 **Master Plan:** [Oracle_Sentinel_AI_Implementation_Plan.md](Oracle_Sentinel_AI_Implementation_Plan.md)
 
@@ -160,6 +160,12 @@ flowchart TB
 ---
 
 ## 4. Acceptance Criteria
+
+The implementation is covered by backend tests and frontend tests/build, with a
+credential-free synthetic fleet available for UI validation. Check the boxes below
+for your deployment after following [the operations runbook](docs/operations-runbook.md).
+Incident counts remain unavailable until Phase 3; collected compliance configuration
+is intentionally shown as unevaluated/unknown until Phase 4.
 
 - [ ] At least two registered targets with distinct health states appear correctly on the dashboard
 - [ ] Stale telemetry shows `unknown` status (not `healthy`)

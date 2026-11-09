@@ -1,23 +1,36 @@
 """Pydantic schemas for database registry API."""
 
-from datetime import datetime
-from typing import Any
+from datetime import UTC, datetime
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PlainSerializer, field_validator
+
+from sentinel.collectors.profiles import validate_profile
+
+UTCDateTime = Annotated[datetime, PlainSerializer(
+    lambda value: value.replace(tzinfo=UTC).isoformat() if value.tzinfo is None else value.astimezone(UTC).isoformat(),
+    return_type=str, when_used="json",
+)]
+HealthStatus = Literal["healthy", "warning", "critical", "unknown", "offline"]
 
 
 class DatabaseTargetCreate(BaseModel):
     """Schema for creating a new database target."""
 
-    engine: str = Field(default="oracle", description="Database engine type")
-    display_name: str = Field(..., description="Human-readable name")
+    engine: Literal["oracle"] = "oracle"
+    display_name: str = Field(..., min_length=1, max_length=255, description="Human-readable name")
     tns_alias: str | None = Field(None, description="TNS alias for Oracle connections")
     environment: str = Field(default="unknown", description="Environment: production, staging, dev")
     owner: str = Field(default="", description="Business owner")
     enabled: bool = Field(default=True, description="Whether polling is enabled")
     poll_profile: dict[str, Any] = Field(default_factory=dict, description="Polling configuration")
     secret_reference: str | None = Field(None, description="Secret vault reference for credentials")
+
+    @field_validator("poll_profile")
+    @classmethod
+    def check_profile(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_profile(value)
 
 
 class DatabaseTargetUpdate(BaseModel):
@@ -29,6 +42,18 @@ class DatabaseTargetUpdate(BaseModel):
     owner: str | None = None
     enabled: bool | None = None
     poll_profile: dict[str, Any] | None = None
+
+    @field_validator("display_name", "environment", "owner", "enabled", "poll_profile")
+    @classmethod
+    def reject_null(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("This field cannot be null")
+        return value
+
+    @field_validator("poll_profile")
+    @classmethod
+    def check_profile(cls, value: dict[str, Any]) -> dict[str, Any]:
+        return validate_profile(value)
 
 
 class ConnectionTestRequest(BaseModel):
@@ -61,10 +86,14 @@ class DatabaseTargetResponse(BaseModel):
     enabled: bool
     poll_profile: dict[str, Any]
     capability_snapshot: dict[str, Any]
-    last_connection_at: datetime | None
+    last_connection_at: UTCDateTime | None
     last_health_status: str
-    created_at: datetime
-    updated_at: datetime
+    created_at: UTCDateTime
+    updated_at: UTCDateTime
+    last_seen: UTCDateTime | None = None
+    monitoring_status: str = "unknown"
+    critical_incident_count: int | None = None
+    trend_snapshots: list[ObservationResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 
@@ -72,8 +101,10 @@ class DatabaseTargetResponse(BaseModel):
 class ObservationResponse(BaseModel):
     """Schema for observation response."""
 
+    id: UUID
+    target_id: UUID
     metric_name: str
-    timestamp: datetime
+    timestamp: UTCDateTime
     value: float | None
     value_str: str | None
     unit: str | None
@@ -82,6 +113,57 @@ class ObservationResponse(BaseModel):
     source: str
 
     model_config = {"from_attributes": True}
+
+
+class FleetResponse(BaseModel):
+    items: list[DatabaseTargetResponse]
+    total: int
+    page: int
+    page_size: int
+    environments: list[str]
+
+
+class PollStatus(BaseModel):
+    probe_type: str
+    status: str
+    last_success_at: UTCDateTime | None
+    last_attempt_at: UTCDateTime | None
+    error_class: str | None
+
+
+class ComplianceSummary(BaseModel):
+    pass_count: int = Field(default=0, serialization_alias="pass")
+    fail: int = 0
+    unknown: int = 7
+
+
+class TablespaceSummary(BaseModel):
+    name: str
+    used_pct: float | None = None
+    size_bytes: float | None = None
+    autoextend: bool | None = None
+    timestamp: UTCDateTime
+
+
+class FraSummary(BaseModel):
+    size_bytes: float | None = None
+    used_bytes: float | None = None
+    used_pct: float | None = None
+    breakdown: list[ObservationResponse] = Field(default_factory=list)
+
+
+class ArchiveSummary(BaseModel):
+    log_mode: str | None = None
+    destinations: list[ObservationResponse] = Field(default_factory=list)
+
+
+class DatabaseDetailResponse(DatabaseTargetResponse):
+    latest_observations: list[ObservationResponse]
+    poll_status: list[PollStatus]
+    compliance: ComplianceSummary
+    tablespaces: list[TablespaceSummary]
+    fra: FraSummary
+    archive: ArchiveSummary
 
 
 class DiagnosticEventResponse(BaseModel):

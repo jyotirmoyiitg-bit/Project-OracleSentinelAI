@@ -34,6 +34,37 @@ class OracleAdapter:
         self.capability_detector = OracleCapabilityDetector()
         self.alert_log_poller = OracleAlertLogPoller()
 
+    async def collect_probe(self, probe: str, alias: str) -> list[Observation]:
+        """Collect exactly one scheduled probe; failures propagate to the poll-run tracker."""
+        from sentinel.collectors.normalization import utcnow
+
+        async with self.connection_manager.connection_context(alias) as conn:
+            if probe == "connectivity":
+                return [Observation(
+                    database_id=alias, metric="connectivity.available", value=True,
+                    collected_at=utcnow(), source="oracle.connect",
+                )]
+            dispatch = {
+                "instance": (self.probes.probe_instance_status,),
+                "storage": (self.probes.probe_tablespace_usage,),
+                "fra_archive": (self.probes.probe_fra_usage, self.probes.probe_fra_detail,
+                                self.probes.probe_archive_dest),
+                "resources": (self.probes.probe_resource_limits,),
+                "configuration": (self.probes.probe_configuration,),
+            }
+            if probe not in dispatch:
+                raise ValueError(f"Unknown probe: {probe}")
+            observations = []
+            for collect in dispatch[probe]:
+                observations.extend(await collect(conn, alias))
+            if probe == "fra_archive":
+                observations.append(Observation(
+                    database_id=alias, metric="storage.fra.configured",
+                    value=any(obs.metric == "storage.fra.space_limit" and obs.value for obs in observations),
+                    source="v$recovery_file_dest",
+                ))
+            return observations
+
     async def test_connection(self, database_id: str) -> dict[str, Any]:
         """Test connectivity to an Oracle database.
         
