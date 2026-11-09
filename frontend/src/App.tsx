@@ -9,6 +9,7 @@ import {
   CircleAlert,
   Clock3,
   Database,
+  FileText,
   HardDrive,
   Layers3,
   Pause,
@@ -18,14 +19,19 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import { ApiError, getFleet, getMetricHistory, getTarget } from './api'
+import { ApiError, getFleet, getFleetSummary, getMetricHistory, getTarget } from './api'
 import { formatBytes, formatDate, formatMetric, relativeTime } from './format'
 import { HealthBadge } from './components/HealthBadge'
 import { MetricCard } from './components/MetricCard'
+import { NotificationBell } from './components/NotificationBell'
+import { DatabaseSidebar } from './components/DatabaseSidebar'
 import { StatePanel } from './components/StatePanel'
 import { TablespaceTable } from './components/TablespaceTable'
 import { TimelineChart } from './components/TimelineChart'
-import type { FleetResponse, Observation, Target, TargetDetails } from './types'
+import { EventsPage } from './EventsPage'
+import { IncidentCenterPage } from './IncidentCenter'
+import { DatabaseRegistrationPage } from './DatabaseRegistrationPage'
+import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
 const PAGE_SIZE = 25
 const REFRESH_OPTIONS = [0, 15, 30, 60]
@@ -37,34 +43,53 @@ const TIME_RANGES = {
 
 type TimeRange = keyof typeof TIME_RANGES
 
-function readHashTarget(): string | null {
-  const match = window.location.hash.match(/^#\/databases\/([^/]+)$/)
-  return match ? decodeURIComponent(match[1]) : null
-}
+type Route =
+  | { page: 'fleet' }
+  | { page: 'register' }
+  | { page: 'database'; id: string }
+  | { page: 'database-events'; id: string }
+  | { page: 'incidents' }
+  | { page: 'incident'; id: string }
 
-function targetUrl(id: string | null): string {
-  return id ? `#/databases/${encodeURIComponent(id)}` : '#/'
+function parseHash(hash: string): Route {
+  if (hash === '#/register') return { page: 'register' }
+  let match = hash.match(/^#\/databases\/([^/]+)\/events$/)
+  if (match) return { page: 'database-events', id: decodeURIComponent(match[1]) }
+  match = hash.match(/^#\/databases\/([^/]+)$/)
+  if (match) return { page: 'database', id: decodeURIComponent(match[1]) }
+  match = hash.match(/^#\/incidents\/([^/]+)$/)
+  if (match) return { page: 'incident', id: decodeURIComponent(match[1]) }
+  if (hash.match(/^#\/incidents\/?$/)) return { page: 'incidents' }
+  return { page: 'fleet' }
 }
 
 function usePageNavigation() {
-  const [targetId, setTargetId] = useState<string | null>(readHashTarget)
+  const [route, setRoute] = useState<Route>(() => parseHash(window.location.hash))
   useEffect(() => {
-    const update = () => setTargetId(readHashTarget())
+    const update = () => setRoute(parseHash(window.location.hash))
     window.addEventListener('hashchange', update)
     if (!window.location.hash) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#/`)
     return () => window.removeEventListener('hashchange', update)
   }, [])
-  const navigate = useCallback((id: string | null) => {
-    window.location.hash = targetUrl(id)
-    setTargetId(id)
+  const navigate = useCallback((hash: string) => {
+    window.location.hash = hash
+    setRoute(parseHash(hash))
   }, [])
-  return { targetId, navigate }
+  return {
+    route,
+    navigateHome: () => navigate('#/'),
+    navigateToDatabase: (id: string) => navigate(`#/databases/${encodeURIComponent(id)}`),
+    navigateToDatabaseEvents: (id: string) => navigate(`#/databases/${encodeURIComponent(id)}/events`),
+    navigateToIncidents: () => navigate('#/incidents'),
+    navigateToIncident: (id: string) => navigate(`#/incidents/${encodeURIComponent(id)}`),
+    navigateToRegistration: () => navigate('#/register'),
+  }
 }
 
 function useRefreshPreference() {
   const [seconds, setSeconds] = useState(() => {
-    const saved = Number(window.localStorage.getItem('oracle-sentinel-refresh'))
-    return REFRESH_OPTIONS.includes(saved) ? saved : 30
+    const saved = window.localStorage.getItem('oracle-sentinel-refresh')
+    return saved !== null && REFRESH_OPTIONS.includes(Number(saved)) ? Number(saved) : 30
   })
   const update = (value: number) => {
     setSeconds(value)
@@ -75,6 +100,9 @@ function useRefreshPreference() {
 
 function AppHeader({
   onHome,
+  onOpenIncidents,
+  onOpenIncident,
+  notificationRefreshKey,
   refreshSeconds,
   onRefreshChange,
   onManualRefresh,
@@ -82,6 +110,9 @@ function AppHeader({
   detailTitle,
 }: {
   onHome: () => void
+  onOpenIncidents: () => void
+  onOpenIncident: (id: string) => void
+  notificationRefreshKey: number
   refreshSeconds: number
   onRefreshChange: (seconds: number) => void
   onManualRefresh: () => void
@@ -96,7 +127,11 @@ function AppHeader({
         <span className="brand-separator" />
         <span className="product-name">Fleet health</span>
       </button>
+      <nav className="topbar-nav">
+        <button className="nav-link" onClick={onOpenIncidents}><ShieldCheck size={15} /> Incidents</button>
+      </nav>
       <div className="topbar-actions">
+        <NotificationBell onOpenIncident={onOpenIncident} refreshSeconds={refreshSeconds} refreshKey={notificationRefreshKey} />
         {detailTitle && <span className="topbar-target"><Database size={15} />{detailTitle}</span>}
         <label className="refresh-select">
           <Clock3 size={15} aria-hidden="true" />
@@ -120,14 +155,18 @@ function AppHeader({
 
 function FleetPage({
   onOpenTarget,
+  onOpenIncidents,
   refreshSeconds,
   onRefreshStatus,
 }: {
   onOpenTarget: (target: Target) => void
+  onOpenIncidents: () => void
   refreshSeconds: number
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
 }) {
   const [fleet, setFleet] = useState<FleetResponse | null>(null)
+  const [summary, setSummary] = useState<FleetHealthSummary | null>(null)
+  const [summaryError, setSummaryError] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [environment, setEnvironment] = useState('')
@@ -142,10 +181,16 @@ function FleetPage({
     inFlight.current = true
     if (initial) setLoading(true)
     setError('')
+    setSummaryError('')
     const controller = new AbortController()
     try {
-      const result = await getFleet(query, controller.signal)
-      setFleet(result)
+      const [result, overview] = await Promise.allSettled([
+        getFleet(query, controller.signal), getFleetSummary(controller.signal),
+      ])
+      if (overview.status === 'fulfilled') setSummary(overview.value)
+      else setSummaryError(overview.reason instanceof ApiError ? overview.reason.message : 'Could not load fleet health summary.')
+      if (result.status === 'rejected') throw result.reason
+      setFleet(result.value)
       setLastUpdated(new Date().toISOString())
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === 'AbortError') return
@@ -170,8 +215,7 @@ function FleetPage({
 
   const items = fleet?.items ?? []
   const pageCount = Math.max(1, Math.ceil((fleet?.total ?? 0) / PAGE_SIZE))
-  const healthyCount = items.filter((target) => target.last_health_status === 'healthy').length
-  const attentionCount = items.filter((target) => ['critical', 'warning', 'offline'].includes(target.last_health_status.toLowerCase())).length
+  const attentionCount = summary ? summary.warning + summary.critical + summary.offline : 0
 
   function changeEnvironment(value: string) {
     setEnvironment(value)
@@ -197,11 +241,31 @@ function FleetPage({
       </section>
 
       <section className="metric-grid" aria-label="Fleet summary">
-        <MetricCard label="Registered databases" value={fleet?.total ?? '—'} detail="Across all environments" icon={<Database size={18} />} />
-        <MetricCard label="Healthy on this page" value={fleet ? healthyCount : '—'} detail="Fresh telemetry and passing probes" icon={<CheckCircle2 size={18} />} tone="good" />
-        <MetricCard label="Needs attention" value={fleet ? attentionCount : '—'} detail="Warning, critical or offline" icon={<CircleAlert size={18} />} tone={attentionCount ? 'warning' : 'default'} />
-        <MetricCard label="Critical incidents" value="Phase 3" detail="Incident counts are not available yet" icon={<ShieldCheck size={18} />} />
+        <MetricCard label="Registered databases" value={!summaryError ? summary?.total ?? '—' : '—'} detail="Across all environments" icon={<Database size={18} />} />
+        <MetricCard label="Healthy databases" value={!summaryError ? summary?.healthy ?? '—' : '—'} detail="Entire registered fleet" icon={<CheckCircle2 size={18} />} tone="good" />
+        <MetricCard label="Needs attention" value={summary && !summaryError ? attentionCount : '—'} detail="Warning, critical or down" icon={<CircleAlert size={18} />} tone={attentionCount ? 'warning' : 'default'} />
+        <div
+          className="metric-card-link"
+          role="link"
+          tabIndex={0}
+          onClick={onOpenIncidents}
+          onKeyDown={(event) => { if (event.key === 'Enter') onOpenIncidents() }}
+        >
+          <MetricCard label="Critical incidents" value="View incidents" detail="Open the incident center" icon={<ShieldCheck size={18} />} />
+        </div>
       </section>
+      {summaryError && <div className="inline-error" role="alert">Fleet summary unavailable: {summaryError}</div>}
+      {summary && !summaryError && (
+        <section className="fleet-health-breakdown" aria-label="Fleet health breakdown">
+          <span>Healthy <strong>{summary.healthy}</strong></span>
+          <span>Warning <strong>{summary.warning}</strong></span>
+          <span>Critical <strong>{summary.critical}</strong></span>
+          <span>Down <strong>{summary.offline}</strong></span>
+          <span>Unknown / stale <strong>{summary.unknown}</strong></span>
+          <span>Disabled <strong>{summary.disabled}</strong></span>
+        </section>
+      )}
+      {summary && !summary.scheduler_enabled && <p className="monitoring-warning">Automatic monitoring is off. Enable SCHEDULER_ENABLED=true in the backend .env and restart to collect data.</p>}
 
       <section className="panel fleet-panel" aria-labelledby="fleet-table-title">
         <div className="panel-heading fleet-panel-heading">
@@ -250,7 +314,7 @@ function FleetPage({
         ) : items.length === 0 ? (
           <StatePanel
             title={environment || health ? 'No databases match these filters' : 'No databases registered'}
-            message={environment || health ? 'Try another environment or health status.' : 'Databases will appear here after they are registered through the API.'}
+            message={environment || health ? 'Try another environment or health status.' : 'Use Add database in the sidebar to register a TNS database alias.'}
             icon={<Database size={24} />}
             action={(environment || health) ? <button className="button button-secondary" onClick={() => { changeEnvironment(''); changeHealth('') }}>Clear filters</button> : undefined}
           />
@@ -331,10 +395,12 @@ function FraGauge({ detail }: { detail: TargetDetails }) {
 function DetailPage({
   targetId,
   onBack,
+  onOpenEvents,
   onRefreshStatus,
 }: {
   targetId: string
   onBack: () => void
+  onOpenEvents: (id: string) => void
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
 }) {
   const [detail, setDetail] = useState<TargetDetails | null>(null)
@@ -438,7 +504,11 @@ function DetailPage({
             <div className="detail-subtitle"><span>{detail.tns_alias || 'TNS alias unavailable'}</span><span className="bullet">·</span><span>{detail.engine || 'Oracle engine details unavailable'}</span></div>
           </div>
         </div>
-        <div className="detail-status"><HealthBadge status={detail.last_health_status} /><span className="updated-note">Last seen {relativeTime(seen)}</span></div>
+        <div className="detail-status">
+          <HealthBadge status={detail.last_health_status} />
+          <span className="updated-note">Last seen {relativeTime(seen)}</span>
+          <button className="button button-secondary events-link" onClick={() => onOpenEvents(targetId)}><FileText size={14} /> Logs &amp; events</button>
+        </div>
       </section>
 
       {error && <div className="inline-error" role="alert"><CircleAlert size={16} /> Details could not be refreshed: {error}<button onClick={() => { void refresh(false) }}>Retry</button></div>}
@@ -542,40 +612,102 @@ function DetailPage({
 }
 
 export default function App() {
-  const { targetId, navigate } = usePageNavigation()
+  const {
+    route,
+    navigateHome,
+    navigateToDatabase,
+    navigateToDatabaseEvents,
+    navigateToIncidents,
+    navigateToIncident,
+    navigateToRegistration,
+  } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
+  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0)
   const refreshAction = useRef<() => void>(() => undefined)
   const registerRefresh = useCallback((pending: boolean, action: () => void) => {
     setRefreshing(pending)
     refreshAction.current = action
   }, [])
-  const onManualRefresh = useCallback(() => refreshAction.current(), [])
+  const onManualRefresh = useCallback(() => {
+    refreshAction.current()
+    setNotificationRefreshKey((value) => value + 1)
+  }, [])
 
   useEffect(() => {
-    if (!targetId || refreshSeconds === 0) return
+    if (route.page === 'fleet' || route.page === 'register' || refreshSeconds === 0) return
     const timer = window.setInterval(() => refreshAction.current(), refreshSeconds * 1000)
     return () => window.clearInterval(timer)
-  }, [targetId, refreshSeconds])
+  }, [route.page, refreshSeconds])
 
   return (
     <div className="app">
       <AppHeader
-        onHome={() => navigate(null)}
+        onHome={navigateHome}
+        onOpenIncidents={navigateToIncidents}
+        onOpenIncident={navigateToIncident}
+        notificationRefreshKey={notificationRefreshKey}
         refreshSeconds={refreshSeconds}
         onRefreshChange={setRefreshSeconds}
         onManualRefresh={onManualRefresh}
         refreshing={refreshing}
       />
-      {targetId ? (
-        <DetailPage key={targetId} targetId={targetId} onBack={() => navigate(null)} onRefreshStatus={registerRefresh} />
+      <div className="database-workspace">
+      <DatabaseSidebar
+        selectedId={route.page === 'database' || route.page === 'database-events' ? route.id : null}
+        homeSelected={route.page === 'fleet'}
+        onHome={navigateHome}
+        onSelect={navigateToDatabase}
+        onRegister={navigateToRegistration}
+        refreshSeconds={refreshSeconds}
+        refreshKey={notificationRefreshKey}
+      />
+      <div className="workspace-content">
+      {route.page === 'register' ? (
+        <DatabaseRegistrationPage onBack={navigateHome} onRefreshStatus={registerRefresh} onRegistered={(target) => {
+          setNotificationRefreshKey((value) => value + 1)
+          navigateToDatabase(target.id)
+        }} />
+      ) : route.page === 'database' ? (
+        <DetailPage key={route.id} targetId={route.id} onBack={navigateHome} onOpenEvents={navigateToDatabaseEvents} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'database-events' ? (
+        <EventsPage
+          key={route.id}
+          targetId={route.id}
+          onBack={() => navigateToDatabase(route.id)}
+          onOpenIncident={navigateToIncident}
+          refreshSeconds={refreshSeconds}
+          onRefreshStatus={registerRefresh}
+        />
+      ) : route.page === 'incidents' ? (
+        <IncidentCenterPage
+          incidentId={null}
+          onOpenIncident={navigateToIncident}
+          onBack={navigateToIncidents}
+          onOpenTarget={navigateToDatabase}
+          refreshSeconds={refreshSeconds}
+          onRefreshStatus={registerRefresh}
+        />
+      ) : route.page === 'incident' ? (
+        <IncidentCenterPage
+          key={route.id}
+          incidentId={route.id}
+          onOpenIncident={navigateToIncident}
+          onBack={navigateToIncidents}
+          onOpenTarget={navigateToDatabase}
+          refreshSeconds={refreshSeconds}
+          onRefreshStatus={registerRefresh}
+        />
       ) : (
         <FleetPage
-          onOpenTarget={(target) => navigate(target.id)}
+          onOpenTarget={(target) => navigateToDatabase(target.id)}
+          onOpenIncidents={navigateToIncidents}
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
         />
       )}
+      </div>
+      </div>
     </div>
   )
 }

@@ -123,6 +123,39 @@ class FleetResponse(BaseModel):
     environments: list[str]
 
 
+class FleetHealthSummary(BaseModel):
+    total: int = 0
+    healthy: int = 0
+    warning: int = 0
+    critical: int = 0
+    offline: int = 0
+    unknown: int = 0
+    disabled: int = 0
+    scheduler_enabled: bool
+
+
+class TnsAliasResponse(BaseModel):
+    name: str
+    registered: bool
+
+
+class TnsAliasListResponse(BaseModel):
+    items: list[TnsAliasResponse]
+    scheduler_enabled: bool
+
+
+class TnsRegistrationRequest(BaseModel):
+    tns_alias: str = Field(min_length=1, max_length=255)
+    display_name: str = Field(min_length=1, max_length=255)
+    environment: str = Field(default="dev", min_length=1, max_length=50)
+    owner: str = Field(default="", max_length=255)
+
+    @field_validator("tns_alias", "display_name", "environment", "owner", mode="before")
+    @classmethod
+    def trim_text(cls, value: Any) -> Any:
+        return value.strip() if isinstance(value, str) else value
+
+
 class PollStatus(BaseModel):
     probe_type: str
     status: str
@@ -170,12 +203,103 @@ class DiagnosticEventResponse(BaseModel):
     """Schema for diagnostic event response."""
 
     id: UUID
+    target_id: UUID
     source: str
     source_event_key: str
-    occurred_at: datetime
+    occurred_at: UTCDateTime
     severity: str
     code: str | None
     message: str
     raw_payload: dict[str, Any]
 
     model_config = {"from_attributes": True}
+
+
+IncidentState = Literal["new", "acknowledged", "resolved"]
+
+
+class IncidentEventResponse(BaseModel):
+    """Audit trail entry for an incident state transition or recurrence."""
+
+    id: UUID
+    type: str
+    timestamp: UTCDateTime
+    actor: str
+    reason: str | None
+    before: dict[str, Any]
+    after: dict[str, Any]
+
+    model_config = {"from_attributes": True}
+
+
+class IncidentResponse(BaseModel):
+    """Schema for incident list/detail response."""
+
+    id: UUID
+    target_id: UUID
+    rule_id: str
+    fingerprint: str
+    state: IncidentState
+    severity: str
+    message: str
+    first_seen: UTCDateTime
+    last_seen: UTCDateTime
+    owner: str | None
+    root_cause_candidate: str | None
+    evidence: dict[str, Any]
+
+    model_config = {"from_attributes": True}
+
+
+class IncidentDetailResponse(IncidentResponse):
+    events: list[IncidentEventResponse] = Field(default_factory=list)
+
+
+class IncidentListResponse(BaseModel):
+    items: list[IncidentResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class IncidentActionRequest(BaseModel):
+    """Acknowledge/resolve request body."""
+
+    actor: str = Field(default="operator", min_length=1, max_length=255)
+    reason: str | None = Field(default=None, max_length=2000)
+
+
+class NotificationResponse(BaseModel):
+    """Schema for notification response."""
+
+    id: UUID
+    incident_id: UUID
+    channel: str
+    recipient: str
+    subject: str
+    attempt_count: int
+    status: str
+    error_class: str | None
+    created_at: UTCDateTime
+    sent_at: UTCDateTime | None
+
+    model_config = {"from_attributes": True}
+
+
+class PortalNotificationResponse(BaseModel):
+    id: UUID
+    incident_id: UUID
+    target_id: UUID
+    target_name: str
+    severity: str
+    message: str
+    status: Literal["unread", "read"]
+    created_at: UTCDateTime
+
+
+class PortalNotificationListResponse(BaseModel):
+    items: list[PortalNotificationResponse]
+    total: int
+    unread_count: int
+    page: int
+    page_size: int

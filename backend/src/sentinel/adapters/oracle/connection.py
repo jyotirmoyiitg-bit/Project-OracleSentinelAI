@@ -2,6 +2,7 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 import oracledb
@@ -10,6 +11,22 @@ from sentinel.config.secrets import get_resolver
 from sentinel.config.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+
+def tns_directory(settings: Settings) -> Path:
+    if not settings.tns_admin:
+        raise ValueError("Configure TNS_ADMIN on the backend to list database aliases")
+    directory = Path(settings.tns_admin)
+    if not directory.is_absolute():
+        directory = Path(__file__).resolve().parents[5] / directory
+    return directory
+
+
+def network_aliases(settings: Settings) -> list[str]:
+    directory = tns_directory(settings)
+    if not (directory / "tnsnames.ora").is_file():
+        raise ValueError("TNS_ADMIN must contain a readable tnsnames.ora file")
+    return sorted(oracledb.ConnectParams(config_dir=str(directory)).get_network_service_names())
 
 
 class OracleConnectionManager:
@@ -70,7 +87,7 @@ class OracleConnectionManager:
                 user=user,
                 password=resolved_password,
                 dsn=tns_alias,
-                config_dir=self.settings.tns_admin,
+                config_dir=str(tns_directory(self.settings)) if self.settings.tns_admin else None,
                 tcp_connect_timeout=self.settings.oracle_connection_timeout,
             )
             connection.call_timeout = self.settings.oracle_statement_timeout * 1000

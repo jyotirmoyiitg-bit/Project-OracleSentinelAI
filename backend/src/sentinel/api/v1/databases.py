@@ -1,16 +1,19 @@
 """Registry and bounded dashboard endpoints. Reads never initiate Oracle collection."""
 
 import asyncio
+import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated
 
+import oracledb
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from sentinel.adapters.oracle.adapter import OracleAdapter
+from sentinel.adapters.oracle.connection import network_aliases
 from sentinel.api.v1.dashboard import detail_response, effective_status, target_response
 from sentinel.api.v1.schemas import (
     ConnectionTestRequest,
@@ -19,9 +22,13 @@ from sentinel.api.v1.schemas import (
     DatabaseTargetCreate,
     DatabaseTargetResponse,
     DatabaseTargetUpdate,
+    FleetHealthSummary,
     FleetResponse,
     HealthStatus,
     ObservationResponse,
+    TnsAliasListResponse,
+    TnsAliasResponse,
+    TnsRegistrationRequest,
 )
 from sentinel.collectors.adapters import adapter_for
 from sentinel.collectors.normalization import naive_utc, utcnow
@@ -32,6 +39,7 @@ from sentinel.persistence.session import get_session
 from sentinel.persistence.telemetry import checkpoints_for, current_for, history
 
 router = APIRouter(prefix="/api/v1/databases", tags=["databases"])
+logger = logging.getLogger(__name__)
 
 
 def runtime_settings(request: Request) -> Settings:
@@ -92,6 +100,87 @@ def register_database(body: DatabaseTargetCreate, session: SessionDep) -> Databa
     target = DatabaseTargetRepository.create(session=session, **body.model_dump(exclude={"secret_reference"}))
     if body.secret_reference:
         TargetCredentialRepository.save_credential(session, target.id, body.secret_reference)
+    session.commit()
+    return target
+
+
+@router.get("/summary", response_model=FleetHealthSummary)
+def fleet_health_summary(session: SessionDep, settings: SettingsDep) -> FleetHealthSummary:
+    status = case((DatabaseTarget.enabled.is_(False), "disabled"), else_=effective_status(utcnow()))
+    counts = dict(session.execute(select(status, func.count()).select_from(DatabaseTarget).group_by(status)).all())
+    return FleetHealthSummary.model_validate({
+        **counts, "total": sum(counts.values()), "scheduler_enabled": settings.scheduler_enabled,
+    })
+
+
+def configured_aliases(settings: Settings) -> list[str]:
+    try:
+        return network_aliases(settings)
+    except ValueError as exc:
+        logger.warning("TNS alias listing unavailable: %s", exc)
+        raise HTTPException(503, str(exc)) from exc
+    except (OSError, oracledb.Error) as exc:
+        logger.error("TNS alias listing failed: error_class=%s", type(exc).__name__)
+        raise HTTPException(503, "Could not read backend TNS aliases; check TNS_ADMIN and tnsnames.ora") from exc
+
+
+@router.get("/tns-aliases", response_model=TnsAliasListResponse)
+def list_tns_aliases(session: SessionDep, settings: SettingsDep) -> TnsAliasListResponse:
+    registered = {alias.casefold() for alias in session.scalars(select(DatabaseTarget.tns_alias)) if alias}
+    return TnsAliasListResponse(
+        items=[TnsAliasResponse(name=alias, registered=alias.casefold() in registered)
+               for alias in configured_aliases(settings)],
+        scheduler_enabled=settings.scheduler_enabled,
+    )
+
+
+def canonical_alias(alias: str, settings: Settings) -> str:
+    match = next((name for name in configured_aliases(settings) if name.casefold() == alias.casefold()), None)
+    if match is None:
+        raise HTTPException(422, "Select a configured alias from the backend tnsnames.ora")
+    return match
+
+
+def check_portal_connection(alias: str, settings: Settings) -> ConnectionTestResponse:
+    target = DatabaseTarget(engine="oracle", tns_alias=alias)
+    try:
+        adapter = adapter_for(target, settings)
+        result = asyncio.run(
+            adapter.connection_manager.test_connection(alias) if isinstance(adapter, OracleAdapter)
+            else adapter.test_connection(alias),
+        )
+    except (ValueError, OSError, oracledb.Error) as exc:
+        logger.warning("Portal connection test failed: alias=%s error_class=%s", alias, type(exc).__name__)
+        raise HTTPException(422, "Connection test failed; check backend credentials, listener and read-only grants") from exc
+    if result["status"] != "connected":
+        logger.warning("Portal connection test did not connect: alias=%s", alias)
+        return ConnectionTestResponse(
+            status="error", message="Connection failed; check backend credentials, listener and read-only grants",
+        )
+    return ConnectionTestResponse(
+        status="connected", message="Connection successful", version=result.get("version"), banner=result.get("banner"),
+    )
+
+
+@router.post("/test-tns-connection", response_model=ConnectionTestResponse)
+def test_tns_connection(body: TnsRegistrationRequest, settings: SettingsDep) -> ConnectionTestResponse:
+    return check_portal_connection(canonical_alias(body.tns_alias, settings), settings)
+
+
+@router.post("/register-from-tns", response_model=DatabaseTargetResponse, status_code=201)
+def register_from_tns(body: TnsRegistrationRequest, session: SessionDep, settings: SettingsDep) -> DatabaseTarget:
+    alias = canonical_alias(body.tns_alias, settings)
+    existing = session.scalar(select(DatabaseTarget.id).where(func.upper(DatabaseTarget.tns_alias) == alias.upper()))
+    if existing is not None:
+        raise HTTPException(409, "This TNS alias is already registered; select it in the database list")
+    result = check_portal_connection(alias, settings)
+    if result.status != "connected":
+        raise HTTPException(422, result.message)
+    target = DatabaseTargetRepository.create(
+        session, engine="oracle", display_name=body.display_name, tns_alias=alias,
+        environment=body.environment, owner=body.owner,
+    )
+    target.last_connection_at = utcnow()
     session.commit()
     return target
 

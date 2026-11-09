@@ -1,0 +1,78 @@
+# Oracle Sentinel AI — default monitoring rules.
+#
+# Expressions are restricted to a single safe comparison (`<metric path> <op> <literal>`),
+# parsed by `sentinel.rules.yaml_loader` with a regex + `ast.literal_eval` — never `eval()`
+# or arbitrary SQL. Metric paths use the same dotted `Observation.metric` names produced by
+# the collectors, or `diagnostic_events.code` for alert-log driven rules.
+rules:
+  - id: tablespace_warning
+    enabled: true
+    scope: all
+    expression: storage.tablespace.used_pct > 85
+    hysteresis: 2
+    cooldown_minutes: 30
+    severity: warning
+    message: "Tablespace {tablespace_name} is {value}% full"
+
+  - id: tablespace_critical
+    enabled: true
+    scope: all
+    expression: storage.tablespace.used_pct > 95
+    hysteresis: 1
+    cooldown_minutes: 15
+    severity: critical
+    message: "Tablespace {tablespace_name} is critically full at {value}%"
+
+  - id: fra_warning
+    enabled: true
+    scope: all
+    expression: storage.fra.used_pct > 80
+    hysteresis: 2
+    cooldown_minutes: 30
+    severity: warning
+    message: "FRA is {value}% full"
+
+  - id: fra_critical
+    enabled: true
+    scope: all
+    expression: storage.fra.used_pct > 95
+    hysteresis: 1
+    cooldown_minutes: 15
+    severity: critical
+    message: "FRA is critically full at {value}%"
+
+  - id: ora_00257
+    enabled: true
+    scope: all
+    expression: diagnostic_events.code == 'ORA-00257'
+    hysteresis: 1
+    cooldown_minutes: 60
+    severity: critical
+    message: "Archive log destination full (ORA-00257)"
+
+  - id: ora_01653
+    enabled: true
+    scope: all
+    expression: diagnostic_events.code == 'ORA-01653'
+    hysteresis: 1
+    cooldown_minutes: 60
+    severity: critical
+    message: "Table/index unable to extend (ORA-01653)"
+
+  - id: ora_04031
+    enabled: true
+    scope: all
+    expression: diagnostic_events.code == 'ORA-04031'
+    hysteresis: 1
+    cooldown_minutes: 60
+    severity: critical
+    message: "Unable to allocate shared pool memory (ORA-04031)"
+
+  - id: resources_warning
+    enabled: true
+    scope: all
+    expression: resources.used_pct > 85
+    hysteresis: 2
+    cooldown_minutes: 30
+    severity: warning
+    message: "Resource utilization is {value}%"

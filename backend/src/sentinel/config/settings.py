@@ -57,12 +57,25 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = Field(default=30, description="LLM request timeout")
 
     # SMTP Notifications
+    smtp_enabled: bool = Field(default=False, description="Opt in to SMTP email delivery; portal alerts remain enabled")
     smtp_host: Optional[str] = Field(default=None, description="SMTP server hostname")
     smtp_port: int = Field(default=587, description="SMTP server port")
     smtp_username: Optional[str] = Field(default=None, description="SMTP username")
     smtp_password_secret_ref: Optional[str] = Field(default=None, description="Secret reference for SMTP password")
     smtp_use_tls: bool = Field(default=True, description="Use TLS for SMTP")
     smtp_from_address: Optional[str] = Field(default=None, description="From address for notifications")
+    notification_recipients: list[str] = Field(
+        default_factory=list, description="Default recipient email addresses for incident notifications",
+    )
+    notification_max_retries: int = Field(default=3, ge=0, description="Max SMTP send retries per notification")
+    notification_retry_backoff_seconds: float = Field(
+        default=5.0, ge=0, description="Base exponential backoff delay between SMTP retries",
+    )
+
+    # Alert-log rules and incidents
+    rules_path: str = Field(default="./rules", description="Path to YAML rule definition files")
+    alert_poll_interval_seconds: int = Field(default=120, ge=10, description="Alert-log polling and rule evaluation interval")
+    alert_max_lookback_hours: int = Field(default=24, ge=1, description="Maximum alert-log backfill lookback")
 
     # Scheduler
     scheduler_enabled: bool = Field(default=False, description="Enable APScheduler collection jobs")

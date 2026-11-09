@@ -11,7 +11,10 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from sentinel.api.v1.databases import router
+from sentinel.api.v1.events import router as events_router
+from sentinel.api.v1.incidents import router as incidents_router
 from sentinel.collectors.adapters import adapter_for
+from sentinel.collectors.alert_flow import AlertEvaluationRunner
 from sentinel.collectors.jobs import CollectionRunner
 from sentinel.collectors.scheduler import CollectorScheduler
 from sentinel.config.secrets import init_resolver
@@ -34,12 +37,17 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             conn.execute(text("SELECT 1"))
             if not inspect(conn).has_table("poll_runs"):
                 raise RuntimeError("Phase 2 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("incidents"):
+                raise RuntimeError("Phase 3 schema missing; run alembic upgrade head before starting")
         scheduler = None
         if settings.scheduler_enabled:
             runner = CollectionRunner(
                 sessions, settings, lambda target: adapter_for(target, settings),
             )
-            scheduler = CollectorScheduler(runner)
+            alert_runner = AlertEvaluationRunner(
+                sessions, settings, lambda target: adapter_for(target, settings),
+            )
+            scheduler = CollectorScheduler(runner, alert_runner)
             scheduler.start()
         app.state.collector_scheduler = scheduler
         try:
@@ -60,6 +68,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
     )
     app.include_router(router)
+    app.include_router(incidents_router)
+    app.include_router(events_router)
 
     @app.get("/health/live")
     def health_live() -> dict[str, str]:

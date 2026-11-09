@@ -43,6 +43,8 @@ class DatabaseTarget(Base):
     )
     poll_runs: Mapped[list[PollRun]] = relationship(cascade="all, delete-orphan")
     current_observations: Mapped[list[CurrentObservation]] = relationship(cascade="all, delete-orphan")
+    rule_states: Mapped[list["RuleState"]] = relationship(cascade="all, delete-orphan")
+    incidents: Mapped[list["Incident"]] = relationship(back_populates="target", cascade="all, delete-orphan")
 
 
 class TargetCredential(Base):
@@ -148,3 +150,104 @@ class CurrentObservation(Base):
     labels: Mapped[dict[str, str]] = mapped_column(JSON)
     quality: Mapped[str] = mapped_column(String(20))
     source: Mapped[str] = mapped_column(String(255))
+
+
+class RuleDefinition(Base):
+    """Rule override/enablement state; the YAML files remain the source of truth for new rules."""
+
+    __tablename__ = "rule_definitions"
+
+    id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=True)
+    scope: Mapped[str] = mapped_column(String(50), default="all", nullable=True)
+    expression: Mapped[str] = mapped_column(Text, default="", nullable=True)
+    hysteresis: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, default=30, server_default="30")
+    severity: Mapped[str] = mapped_column(String(20), default="warning", nullable=True)
+    message: Mapped[str] = mapped_column(Text, default="", nullable=True)
+    source: Mapped[str] = mapped_column(String(20), default="yaml", nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, nullable=True)
+
+
+class RuleState(Base):
+    """Per rule/target (and optional scope key, e.g. tablespace name) hysteresis and cooldown state."""
+
+    __tablename__ = "rule_states"
+    __table_args__ = (UniqueConstraint("rule_id", "target_id", "scope_key", name="uq_rule_target_scope"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    rule_id: Mapped[str] = mapped_column(String(100))
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    scope_key: Mapped[str] = mapped_column(String(255), default="", nullable=True)
+    consecutive_matches: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    last_fired_at: Mapped[datetime | None] = mapped_column(DateTime)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, nullable=True)
+
+
+class Incident(Base):
+    """Deduplicated incident grouping recurring rule firings by fingerprint."""
+
+    __tablename__ = "incidents"
+    __table_args__ = (
+        Index("ix_incidents_fingerprint", "fingerprint"),
+        Index("ix_incidents_target_state", "target_id", "state"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    fingerprint: Mapped[str] = mapped_column(String(255))
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    rule_id: Mapped[str] = mapped_column(String(100))
+    state: Mapped[str] = mapped_column(String(20), default="new", nullable=True)
+    severity: Mapped[str] = mapped_column(String(20), default="warning", nullable=True)
+    message: Mapped[str] = mapped_column(Text, default="", nullable=True)
+    first_seen: Mapped[datetime] = mapped_column(default=utcnow)
+    last_seen: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+    owner: Mapped[str | None] = mapped_column(String(255))
+    root_cause_candidate: Mapped[str | None] = mapped_column(String(255))
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, nullable=True)
+
+    target: Mapped[DatabaseTarget] = relationship(back_populates="incidents")
+    events: Mapped[list["IncidentEvent"]] = relationship(back_populates="incident", cascade="all, delete-orphan")
+    notifications: Mapped[list["Notification"]] = relationship(back_populates="incident", cascade="all, delete-orphan")
+
+
+class IncidentEvent(Base):
+    """Immutable audit trail of incident state transitions, notes, and evidence."""
+
+    __tablename__ = "incident_events"
+    __table_args__ = (Index("ix_incident_events_incident_time", "incident_id", "timestamp"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"))
+    type: Mapped[str] = mapped_column(String(50))
+    timestamp: Mapped[datetime] = mapped_column(default=utcnow)
+    actor: Mapped[str] = mapped_column(String(255), default="system", nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text)
+    before: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=True)
+    after: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=True)
+
+    incident: Mapped[Incident] = relationship(back_populates="events")
+
+
+class Notification(Base):
+    """Persistent portal alert or SMTP delivery attempt for an incident."""
+
+    __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notifications_dedup", "dedup_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    incident_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("incidents.id", ondelete="CASCADE"))
+    channel: Mapped[str] = mapped_column(String(20), default="smtp", nullable=True)
+    recipient: Mapped[str] = mapped_column(String(500), default="", nullable=True)
+    subject: Mapped[str] = mapped_column(String(500), default="", nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=True)
+    dedup_id: Mapped[str] = mapped_column(String(255), default="", nullable=True)
+    error_class: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(default=utcnow, nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+    incident: Mapped[Incident] = relationship(back_populates="notifications")

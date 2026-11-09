@@ -15,7 +15,7 @@ function target(overrides: Partial<Target> = {}): Target {
     tns_alias: 'finance-prd',
     engine: 'Oracle 19c',
     owner: 'DBA team',
-    poll_profile: 'standard',
+    poll_profile: { name: 'standard' },
     capability_snapshot: {},
     last_connection_at: now,
     last_health_status: 'healthy',
@@ -67,7 +67,15 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 function mockFetch(handler: (url: string) => Response | Promise<Response>) {
-  const fetchMock = vi.fn((input: RequestInfo | URL) => Promise.resolve(handler(String(input))))
+  const fetchMock = vi.fn((input: RequestInfo | URL) => Promise.resolve(
+    String(input).includes('/portal-notifications')
+      ? jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 })
+      : String(input).endsWith('/databases/summary')
+      ? jsonResponse({ total: 0, healthy: 0, warning: 0, critical: 0, offline: 0, unknown: 0, disabled: 0, scheduler_enabled: true })
+      : String(input).includes('page_size=100')
+      ? jsonResponse(fleetResponse([]))
+      : handler(String(input)),
+  ))
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
 }
