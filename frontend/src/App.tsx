@@ -28,6 +28,8 @@ import { DatabaseSidebar } from './components/DatabaseSidebar'
 import { StatePanel } from './components/StatePanel'
 import { TablespaceTable } from './components/TablespaceTable'
 import { TimelineChart } from './components/TimelineChart'
+import { CompliancePanel } from './components/CompliancePanel'
+import { ForecastPanel } from './components/ForecastPanel'
 import { EventsPage } from './EventsPage'
 import { IncidentCenterPage } from './IncidentCenter'
 import { DatabaseRegistrationPage } from './DatabaseRegistrationPage'
@@ -412,6 +414,7 @@ function DetailPage({
   const [historyError, setHistoryError] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [phase4RefreshKey, setPhase4RefreshKey] = useState(0)
   const inFlight = useRef(false)
 
   const refresh = useCallback(async (initial = false) => {
@@ -422,6 +425,7 @@ function DetailPage({
     try {
       const result = await getTarget(targetId)
       setDetail(result)
+      setPhase4RefreshKey((value) => value + 1)
       setLastUpdated(new Date().toISOString())
       const availableMetrics = [...new Set(result.latest_observations.filter((item) => item.value != null).map((item) => item.metric_name))]
       if (availableMetrics.length && !availableMetrics.includes(selectedMetric)) setSelectedMetric(availableMetrics[0])
@@ -561,6 +565,9 @@ function DetailPage({
         </div>
         <TablespaceTable tablespaces={detail.tablespaces} />
       </section>
+
+      <CompliancePanel targetId={targetId} refreshKey={phase4RefreshKey} />
+      <ForecastPanel targetId={targetId} refreshKey={phase4RefreshKey} />
 
       <div className="detail-grid lower-grid">
         <section className="panel archive-panel">

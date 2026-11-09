@@ -44,13 +44,27 @@ def test_fleet_detail_metrics_and_offline(client, runner, sessions, make_target)
     assert detail["tablespaces"][0]["autoextend"] is True
     assert detail["fra"]["used_pct"] == 28.7
     assert detail["archive"]["log_mode"] == "ARCHIVELOG"
-    assert detail["compliance"] == {"pass": 0, "fail": 0, "unknown": 7}
+    assert detail["compliance"] == {
+        "pass": 4, "fail": 0, "unknown": 0, "not_applicable": 1, "error": 0,
+    }
     assert all(obs["id"] and obs["source"] and obs["timestamp"].endswith("+00:00")
                for obs in detail["latest_observations"])
     metrics = client.get(f"/api/v1/databases/{healthy}/metrics?metric_name=storage.tablespace.used_pct").json()
     assert len(metrics) == 1
     assert metrics[0]["value"] == 65.5
     assert client.get(f"/api/v1/databases/{healthy}/observations?limit=2").status_code == 200
+    compliance = client.get(f"/api/v1/databases/{healthy}/compliance").json()
+    assert compliance["pass"] == 4
+    assert compliance["not_applicable"] == 1
+    assert all(item["evidence"] or item["result"] == "not_applicable" for item in compliance["items"])
+    archive_evidence = next(item for item in compliance["items"] if item["policy_id"] == "oracle.archivelog.enabled")
+    assert archive_evidence["evidence"]["database.log_mode"]["observation_id"]
+    policies = client.get("/api/v1/compliance/policies").json()["items"]
+    assert len(policies) == 5
+    assert all(item["approval_status"] == "approved" for item in policies)
+    forecast = client.get(f"/api/v1/databases/{healthy}/forecast").json()
+    assert forecast["target_id"] == str(healthy)
+    assert all(item["status"] == "unknown" for item in forecast["items"])
     with sessions() as session:
         before = len(session.scalars(select(PollRun)).all())
     for _ in range(5):

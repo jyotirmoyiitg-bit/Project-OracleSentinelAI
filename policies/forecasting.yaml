@@ -1,0 +1,6 @@
+minimum_points: 5
+minimum_span_hours: 24
+maximum_gap_multiplier: 3
+maximum_observation_age_hours: 72
+early_warning_days: 30
+prediction_horizon_days: 90

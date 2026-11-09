@@ -81,7 +81,7 @@ export interface PollStatus {
 export interface TargetDetails extends Target {
   latest_observations: Observation[]
   poll_status: PollStatus[]
-  compliance: { pass: number; fail: number; unknown: number }
+  compliance: { pass: number; fail: number; unknown: number; not_applicable: number; error: number }
   tablespaces: Array<{
     name: string
     used_pct: number | null
@@ -99,6 +99,77 @@ export interface TargetDetails extends Target {
     log_mode: string | null
     destinations: Observation[]
   }
+}
+
+export type ComplianceStatus = 'pass' | 'fail' | 'unknown' | 'not_applicable' | 'error'
+
+export interface ComplianceResult {
+  policy_id: string
+  policy_version: string
+  name: string
+  result: ComplianceStatus
+  severity: string
+  observed_at: string | null
+  evidence: Record<string, unknown>
+  recommended_action: string
+}
+
+export interface DatabaseCompliance {
+  target_id: string
+  environment: string
+  pass: number
+  fail: number
+  unknown: number
+  not_applicable: number
+  error: number
+  items: ComplianceResult[]
+}
+
+export interface CompliancePolicyVersion {
+  policy_id: string
+  version: string
+  name: string
+  engine: string
+  enabled: boolean
+  approval_status: string
+  severity: string
+  applicability: Record<string, unknown>
+  evaluation_config: Record<string, unknown>
+  environment_overrides: Record<string, unknown>
+  recommended_action: string
+}
+
+export interface CompliancePolicyList {
+  items: CompliancePolicyVersion[]
+}
+
+export interface ForecastProjection {
+  timestamp: string
+  predicted_bytes: number
+  lower_bytes: number
+  upper_bytes: number
+}
+
+export interface CapacityForecast {
+  resource: string
+  status: 'unknown' | 'stable' | 'forecast'
+  capacity_bytes: number | null
+  data_points: number
+  data_span_hours: number
+  growth_rate_gb_per_day: number | null
+  confidence_interval_gb_per_day: [number, number] | null
+  days_to_exhaustion: number | null
+  predicted_exhaustion_at: string | null
+  early_warning: boolean
+  prediction_horizon_days: number
+  history: Array<{ timestamp: string; used_bytes: number }>
+  projection: ForecastProjection[]
+}
+
+export interface CapacityForecastResponse {
+  target_id: string
+  generated_at: string
+  items: CapacityForecast[]
 }
 
 export type IncidentState = 'new' | 'acknowledged' | 'resolved'

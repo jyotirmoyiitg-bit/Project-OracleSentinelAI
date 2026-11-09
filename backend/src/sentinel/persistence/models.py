@@ -251,3 +251,44 @@ class Notification(Base):
     sent_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     incident: Mapped[Incident] = relationship(back_populates="notifications")
+
+
+class CompliancePolicyVersion(Base):
+    """Immutable, reviewable version of a compliance policy."""
+
+    __tablename__ = "policy_definitions"
+    __table_args__ = (UniqueConstraint("policy_id", "version", name="uq_policy_definition_version"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    policy_id: Mapped[str] = mapped_column(String(100), index=True)
+    version: Mapped[str] = mapped_column(String(50))
+    name: Mapped[str] = mapped_column(String(255))
+    engine: Mapped[str] = mapped_column(String(20), default="oracle")
+    enabled: Mapped[bool] = mapped_column(default=True)
+    approval_status: Mapped[str] = mapped_column(String(20), default="approved")
+    severity: Mapped[str] = mapped_column(String(20), default="warning")
+    applicability: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    evaluation_config: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    environment_overrides: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    recommended_action: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class PolicyResult(Base):
+    """Latest durable evaluation for one target and immutable policy version."""
+
+    __tablename__ = "policy_results"
+    __table_args__ = (
+        UniqueConstraint("target_id", "policy_id", "policy_version", name="uq_policy_result_target_version"),
+        Index("ix_policy_results_target_observed", "target_id", "observed_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    policy_id: Mapped[str] = mapped_column(String(100))
+    policy_version: Mapped[str] = mapped_column(String(50))
+    observed_at: Mapped[datetime] = mapped_column(default=utcnow)
+    result: Mapped[str] = mapped_column(String(30))
+    severity: Mapped[str] = mapped_column(String(20))
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    recommended_action: Mapped[str] = mapped_column(Text, default="")

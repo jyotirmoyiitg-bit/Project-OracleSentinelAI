@@ -1,0 +1,61 @@
+policies:
+  - id: oracle.omf.configured
+    version: "1.0"
+    name: Oracle Managed Files configured
+    engine: oracle
+    enabled: true
+    approval_status: approved
+    severity: warning
+    applicability: {}
+    evaluation_config:
+      parameter: db_create_file_dest
+    environment_overrides: {}
+    recommended_action: Configure DB_CREATE_FILE_DEST where OMF is required by the database standard.
+  - id: oracle.archivelog.enabled
+    version: "1.0"
+    name: ARCHIVELOG enabled
+    engine: oracle
+    enabled: true
+    approval_status: approved
+    severity: critical
+    applicability: {}
+    evaluation_config:
+      required_mode: ARCHIVELOG
+    environment_overrides: {}
+    recommended_action: Enable ARCHIVELOG only after DBA review of recovery and storage requirements.
+  - id: oracle.fra.configured
+    version: "1.0"
+    name: Fast Recovery Area configured
+    engine: oracle
+    enabled: true
+    approval_status: approved
+    severity: warning
+    applicability: {}
+    evaluation_config: {}
+    environment_overrides:
+      production:
+        severity: critical
+    recommended_action: Configure a recovery destination and a non-zero recovery area size.
+  - id: oracle.flashback.enabled
+    version: "1.0"
+    name: Flashback enabled
+    engine: oracle
+    enabled: true
+    approval_status: approved
+    severity: warning
+    applicability: {}
+    evaluation_config: {}
+    environment_overrides: {}
+    recommended_action: Enable Flashback only after verifying recovery-area capacity and licensing requirements.
+  - id: oracle.backup.freshness
+    version: "1.0"
+    name: Backup evidence freshness
+    engine: oracle
+    enabled: true
+    approval_status: approved
+    severity: warning
+    applicability: {}
+    evaluation_config:
+      evidence_supported: false
+    environment_overrides: {}
+    recommended_action: No authorized backup evidence source is configured; no backup freshness claim is made.

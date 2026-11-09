@@ -90,12 +90,37 @@ in the application database or returned by the API.
 - `tablespaces`: name, used percentage, size, autoextend, measurement timestamp.
 - `fra`: size/used bytes, used percentage, and usage-by-type observations.
 - `archive`: archive mode and destination status/error observations.
-- `compliance`: `{pass:0,fail:0,unknown:7}`. Phase 2 collects configuration evidence;
-  policy evaluation belongs to Phase 4, so unevaluated checks remain unknown.
+- `compliance`: current Phase 4 totals for pass, fail, unknown, not-applicable, and
+  evaluator-error policy results. Missing/stale evidence remains unknown.
 
 No observations means `unknown`, not healthy. A recent failed connectivity poll
 means `offline`; failures of other required probes or stale data mean `unknown`.
 Historical/stale values remain inspectable and are flagged `stale` in detail.
+
+## Compliance and Capacity Forecasting
+
+- `GET /api/v1/compliance/policies` returns all persisted immutable policy versions,
+  including approval state, applicability, evaluation configuration, and
+  environment overrides. The reviewed catalog is [policies/compliance.yaml](../policies/compliance.yaml).
+  Policy changes require a new version; editing an already-persisted version fails
+  rather than silently changing the meaning of historical results. Catalog changes
+  should be reviewed and approved through the normal source-control review process.
+- `GET /api/v1/databases/{target_id}/compliance` returns the current policy result,
+  version, actual metric evidence with source observation IDs and timestamps, severity, and
+  recommended action. Policies are evaluated when relevant Oracle probes succeed.
+  Oracle OMF, ARCHIVELOG, FRA, and Flashback checks use collected observations;
+  backup freshness is not asserted without an authorized evidence source. A policy
+  can be overridden per environment in the catalog, including required/not-required
+  applicability, severity, and supported evaluation parameters.
+- `GET /api/v1/databases/{target_id}/forecast` returns tablespace and FRA trend
+  forecasts calculated from retained `bytes_used`/`space_used` observations and
+  current capacity. [policies/forecasting.yaml](../policies/forecasting.yaml)
+  configures the minimum sample count/span, irregular-gap limit, prediction horizon,
+  and early-warning threshold. Sparse, stale-by-absence, or irregular data returns
+  `status=unknown` with no predicted exhaustion date. Positive-growth forecasts
+  include a 95% regression-slope interval and set `early_warning=true` when the
+  predicted exhaustion falls within the configured threshold. Forecast warnings
+  are surfaced in the portal; they do not execute database changes.
 
 ## Metrics and Observations
 

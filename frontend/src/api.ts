@@ -14,6 +14,9 @@ import type {
   PortalNotification,
   PortalNotificationListResponse,
   TargetDetails,
+  DatabaseCompliance,
+  CompliancePolicyList,
+  CapacityForecastResponse,
 } from './types'
 
 export class ApiError extends Error {
@@ -95,6 +98,18 @@ export function registerFromTns(body: DatabaseRegistration): Promise<Target> {
 
 export function getTarget(id: string, signal?: AbortSignal): Promise<TargetDetails> {
   return request(`/api/v1/databases/${encodeURIComponent(id)}`, signal)
+}
+
+export function getDatabaseCompliance(id: string, signal?: AbortSignal): Promise<DatabaseCompliance> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/compliance`, signal)
+}
+
+export function getCompliancePolicies(signal?: AbortSignal): Promise<CompliancePolicyList> {
+  return request('/api/v1/compliance/policies', signal)
+}
+
+export function getDatabaseForecast(id: string, signal?: AbortSignal): Promise<CapacityForecastResponse> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/forecast`, signal)
 }
 
 export function getMetricHistory(

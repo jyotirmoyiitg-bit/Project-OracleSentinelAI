@@ -16,7 +16,9 @@ function target(id: string, health = 'unknown', enabled = true): Target {
 
 function details(item: Target): TargetDetails {
   return {
-    ...item, latest_observations: [], poll_status: [], compliance: { pass: 0, fail: 0, unknown: 7 },
+    ...item, latest_observations: [], poll_status: [], compliance: {
+      pass: 0, fail: 0, unknown: 7, not_applicable: 0, error: 0,
+    },
     tablespaces: [], fra: { size_bytes: null, used_bytes: null, used_pct: null, breakdown: [] },
     archive: { log_mode: null, destinations: [] },
   }

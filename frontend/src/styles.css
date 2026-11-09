@@ -65,6 +65,24 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 .registration-error button { margin-top: 8px; }
 .registration-form .registration-error, .registration-form .registration-note { padding: 12px 0; }
 .registration-success { color: #21805c; font-size: 12px; margin-top: 16px; }
+.compliance-panel, .forecast-panel { margin-top: 20px; }
+.compliance-table { min-width: 1080px; }
+.compliance-table td { vertical-align: top; }
+.compliance-table td small { display: block; color: var(--muted); font-size: 10px; margin-top: 4px; }
+.compliance-table code { display: block; max-width: 360px; white-space: normal; overflow-wrap: anywhere; color: #59677c; font-size: 10px; line-height: 1.5; }
+.policy-result, .forecast-status { display: inline-flex; align-items: center; padding: 4px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.policy-pass, .forecast-stable { color: #217858; background: #e8f6ef; }
+.policy-fail, .policy-error, .forecast-warning { color: #a53140; background: #fdebed; }
+.policy-unknown, .policy-not_applicable, .forecast-unknown { color: #6a7588; background: #eff2f6; }
+.forecast-forecast { color: #916016; background: #fff3df; }
+.forecast-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 14px; padding: 0 20px 20px; }
+.forecast-card { min-width: 0; border: 1px solid var(--line); border-radius: 10px; padding: 15px; }
+.forecast-card > header { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 12px; }
+.forecast-chart { width: 100%; height: 190px; margin-top: 10px; }
+.forecast-warning { display: flex; align-items: flex-start; gap: 7px; padding: 9px; border-radius: 7px; font-size: 11px; line-height: 1.5; }
+.forecast-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 12px 0 0; }
+.forecast-stats dt { color: var(--muted); font-size: 10px; }
+.forecast-stats dd { margin: 5px 0 0; font-size: 11px; font-weight: 700; overflow-wrap: anywhere; }
 @media (max-width: 1100px) {
   .database-workspace { grid-template-columns: 220px minmax(0, 1fr); }
   .workspace-content .detail-grid { grid-template-columns: 1fr; }
@@ -78,6 +96,8 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 }
 @media (max-width: 500px) {
   .registration-form fieldset { grid-template-columns: 1fr; }
+  .forecast-grid { grid-template-columns: minmax(0, 1fr); padding: 0 12px 12px; }
+  .forecast-stats { grid-template-columns: 1fr; }
 }
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;

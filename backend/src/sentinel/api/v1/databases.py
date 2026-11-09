@@ -16,6 +16,7 @@ from sentinel.adapters.oracle.adapter import OracleAdapter
 from sentinel.adapters.oracle.connection import network_aliases
 from sentinel.api.v1.dashboard import detail_response, effective_status, target_response
 from sentinel.api.v1.schemas import (
+    ComplianceSummary,
     ConnectionTestRequest,
     ConnectionTestResponse,
     DatabaseDetailResponse,
@@ -37,6 +38,8 @@ from sentinel.persistence.models import CollectorCheckpoint, CurrentObservation,
 from sentinel.persistence.repositories import DatabaseTargetRepository, TargetCredentialRepository
 from sentinel.persistence.session import get_session
 from sentinel.persistence.telemetry import checkpoints_for, current_for, history
+from sentinel.rules.compliance_store import current_compliance_results, sync_policy_definitions
+from sentinel.rules.policy_definitions import load_policy_definitions
 
 router = APIRouter(prefix="/api/v1/databases", tags=["databases"])
 logger = logging.getLogger(__name__)
@@ -188,9 +191,24 @@ def register_from_tns(body: TnsRegistrationRequest, session: SessionDep, setting
 @router.get("/{target_id}", response_model=DatabaseDetailResponse)
 def get_database(target_id: str, session: SessionDep, settings: SettingsDep) -> DatabaseDetailResponse:
     target = find_target(session, target_id)
-    return detail_response(
+    definitions = load_policy_definitions()
+    sync_policy_definitions(session, definitions)
+    results = current_compliance_results(session, target.id)
+    current_results = [results.get((item.policy_id, item.version)) for item in definitions]
+    counts: dict[str, int] = {
+        "pass_count": sum(result is not None and result.result == "pass" for result in current_results),
+        "fail": sum(result is not None and result.result == "fail" for result in current_results),
+        "unknown": sum(result is None or result.result == "unknown" for result in current_results),
+        "not_applicable": sum(
+            result is not None and result.result == "not_applicable" for result in current_results
+        ),
+        "error": sum(result is not None and result.result == "error" for result in current_results),
+    }
+    response = detail_response(
         target, checkpoints_for(session, [target.id]), current_for(session, [target.id]), settings, utcnow(),
     )
+    response.compliance = ComplianceSummary(**counts)
+    return response
 
 
 @router.put("/{target_id}", response_model=DatabaseTargetResponse)

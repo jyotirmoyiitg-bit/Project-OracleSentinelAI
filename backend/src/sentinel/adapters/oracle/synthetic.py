@@ -135,6 +135,13 @@ class SyntheticOracleAdapter:
                 collected_at=now,
                 labels={"source": "v$database"},
             ),
+            Observation(
+                database_id=database_id,
+                metric="database.flashback_on",
+                value="YES",
+                collected_at=now,
+                labels={"source": "v$database"},
+            ),
         ]
 
     async def collect_capacity(self, database_id: str) -> list[Observation]:
@@ -190,6 +197,13 @@ class SyntheticOracleAdapter:
                 value="/u02/fast_recovery_area",
                 collected_at=now,
                 labels={"parameter": "db_recovery_file_dest", "source": "v$parameter"},
+            ),
+            Observation(
+                database_id=database_id,
+                metric="config.parameter",
+                value="10G",
+                collected_at=now,
+                labels={"parameter": "db_recovery_file_dest_size", "source": "v$parameter"},
             ),
         ]
 

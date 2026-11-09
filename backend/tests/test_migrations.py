@@ -20,7 +20,7 @@ def test_fresh_migration_downgrade_and_existing_registry_upgrade(migration_confi
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT display_name FROM database_targets")) == "existing"
         assert "poll_runs" in inspect(connection).get_table_names()
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0004"
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
     command.downgrade(migration_config, "0001")
     command.upgrade(migration_config, "head")

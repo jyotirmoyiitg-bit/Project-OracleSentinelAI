@@ -54,7 +54,7 @@ function detailResponse(overrides: Partial<TargetDetails> = {}): TargetDetails {
     ...target(),
     latest_observations: [observation()],
     poll_status: [{ probe_type: 'connectivity', status: 'healthy', last_success_at: now, last_attempt_at: now, error_class: null }],
-    compliance: { pass: 8, fail: 1, unknown: 2 },
+    compliance: { pass: 8, fail: 1, unknown: 2, not_applicable: 0, error: 0 },
     tablespaces: [{ name: 'USERS', used_pct: 72.5, size_bytes: 1024 ** 3, autoextend: true, timestamp: now }],
     fra: { size_bytes: 10 * 1024 ** 3, used_bytes: 6 * 1024 ** 3, used_pct: 60, breakdown: [] },
     archive: { log_mode: 'ARCHIVELOG', destinations: [] },
@@ -70,6 +70,12 @@ function mockFetch(handler: (url: string) => Response | Promise<Response>) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => Promise.resolve(
     String(input).includes('/portal-notifications')
       ? jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 })
+      : String(input).includes('/compliance/policies')
+      ? jsonResponse({ items: [] })
+      : String(input).includes('/compliance')
+      ? jsonResponse({ target_id: 'target-1', environment: 'production', pass: 0, fail: 0, unknown: 0, not_applicable: 0, error: 0, items: [] })
+      : String(input).includes('/forecast')
+      ? jsonResponse({ target_id: 'target-1', generated_at: now, items: [] })
       : String(input).endsWith('/databases/summary')
       ? jsonResponse({ total: 0, healthy: 0, warning: 0, critical: 0, offline: 0, unknown: 0, disabled: 0, scheduler_enabled: true })
       : String(input).includes('page_size=100')
@@ -156,6 +162,8 @@ describe('Oracle Sentinel dashboard', () => {
     expect(screen.getByText('60%')).toBeInTheDocument()
     expect(await screen.findByText('No history available')).toBeInTheDocument()
     expect(screen.getByRole('img', { name: 'Recovery area 60.0 percent used' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Compliance policies' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Capacity forecasts' })).toBeInTheDocument()
   })
 
   it('plots metric history returned by the metrics endpoint', async () => {

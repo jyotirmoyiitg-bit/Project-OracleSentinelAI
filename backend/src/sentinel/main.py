@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sentinel.api.v1.databases import router
 from sentinel.api.v1.events import router as events_router
 from sentinel.api.v1.incidents import router as incidents_router
+from sentinel.api.v1.compliance import router as compliance_router
 from sentinel.collectors.adapters import adapter_for
 from sentinel.collectors.alert_flow import AlertEvaluationRunner
 from sentinel.collectors.jobs import CollectionRunner
@@ -20,6 +21,7 @@ from sentinel.collectors.scheduler import CollectorScheduler
 from sentinel.config.secrets import init_resolver
 from sentinel.config.settings import Settings, get_settings
 from sentinel.persistence import session as persistence
+from sentinel.rules.compliance_store import sync_policy_definitions
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("Phase 2 schema missing; run alembic upgrade head before starting")
             if not inspect(conn).has_table("incidents"):
                 raise RuntimeError("Phase 3 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("policy_results"):
+                raise RuntimeError("Phase 4 schema missing; run alembic upgrade head before starting")
+        with sessions.begin() as session:
+            sync_policy_definitions(session)
         scheduler = None
         if settings.scheduler_enabled:
             runner = CollectionRunner(
@@ -70,6 +76,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router)
     app.include_router(incidents_router)
     app.include_router(events_router)
+    app.include_router(compliance_router)
 
     @app.get("/health/live")
     def health_live() -> dict[str, str]:

@@ -167,7 +167,9 @@ class PollStatus(BaseModel):
 class ComplianceSummary(BaseModel):
     pass_count: int = Field(default=0, serialization_alias="pass")
     fail: int = 0
-    unknown: int = 7
+    unknown: int = 0
+    not_applicable: int = 0
+    error: int = 0
 
 
 class TablespaceSummary(BaseModel):
@@ -197,6 +199,85 @@ class DatabaseDetailResponse(DatabaseTargetResponse):
     tablespaces: list[TablespaceSummary]
     fra: FraSummary
     archive: ArchiveSummary
+
+
+class CompliancePolicyResponse(BaseModel):
+    policy_id: str
+    version: str
+    name: str
+    engine: str
+    enabled: bool
+    approval_status: str
+    severity: str
+    applicability: dict[str, Any]
+    evaluation_config: dict[str, Any]
+    environment_overrides: dict[str, Any]
+    recommended_action: str
+
+    model_config = {"from_attributes": True}
+
+
+PolicyResultStatus = Literal["pass", "fail", "unknown", "not_applicable", "error"]
+
+
+class PolicyResultResponse(BaseModel):
+    policy_id: str
+    policy_version: str
+    name: str
+    result: PolicyResultStatus
+    severity: str
+    observed_at: UTCDateTime | None
+    evidence: dict[str, Any]
+    recommended_action: str
+
+
+class DatabaseComplianceResponse(BaseModel):
+    target_id: UUID
+    environment: str
+    pass_count: int = Field(serialization_alias="pass")
+    fail: int
+    unknown: int
+    not_applicable: int
+    error: int
+    items: list[PolicyResultResponse]
+
+
+class CompliancePolicyListResponse(BaseModel):
+    items: list[CompliancePolicyResponse]
+
+
+class ForecastHistoryPoint(BaseModel):
+    timestamp: UTCDateTime
+    used_bytes: float
+
+
+class ForecastProjectionPoint(BaseModel):
+    timestamp: UTCDateTime
+    predicted_bytes: float
+    lower_bytes: float
+    upper_bytes: float
+
+
+class CapacityForecastItem(BaseModel):
+    resource: str
+    status: Literal["unknown", "stable", "forecast"]
+    capacity_bytes: float | None
+    data_points: int
+    data_span_hours: float
+    growth_rate_gb_per_day: float | None
+    confidence_interval_gb_per_day: tuple[float, float] | None
+    days_to_exhaustion: float | None
+    predicted_exhaustion_at: UTCDateTime | None
+    early_warning: bool
+    prediction_horizon_days: float
+    history: list[ForecastHistoryPoint]
+    projection: list[ForecastProjectionPoint]
+
+
+class CapacityForecastResponse(BaseModel):
+    target_id: UUID
+    generated_at: UTCDateTime
+    items: list[CapacityForecastItem]
 
 
 class DiagnosticEventResponse(BaseModel):

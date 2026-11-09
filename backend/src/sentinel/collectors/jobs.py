@@ -18,6 +18,7 @@ from sentinel.domain.models import CapabilityMatrix, Observation
 from sentinel.persistence.models import DatabaseTarget, DiagnosticEvent, PollRun
 from sentinel.persistence.models import Observation as StoredObservation
 from sentinel.persistence.telemetry import checkpoints_for, current_for, save_batch
+from sentinel.rules.compliance_store import evaluate_target_compliance
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,8 @@ class CollectionRunner:
                     target.capability_snapshot = caps
             points = checkpoints_for(session, [target_id])
             current = current_for(session, [target_id])
+            if probe in {"configuration", "instance", "fra_archive"}:
+                evaluate_target_compliance(session, target, current, points, self.settings, finished)
             target.last_health_status = compute_health(target, points, current, self.settings, finished)
             if target.last_health_status == "offline":
                 target.health_valid_until = finished + timedelta(seconds=stale_after(

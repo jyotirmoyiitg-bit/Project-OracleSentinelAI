@@ -1,7 +1,7 @@
 # Phase 4 — Compliance and Proactive Analysis
 
 **Phase:** 4  
-**Status:** Pending  
+**Status:** Implemented; live Oracle validation remains
 **Prerequisites:** Phase 3 (Alert-Log, Rules, and Incidents)  
 **Master Plan:** [Oracle_Sentinel_AI_Implementation_Plan.md](Oracle_Sentinel_AI_Implementation_Plan.md)
 
@@ -156,13 +156,13 @@ flowchart TB
 
 ## 4. Acceptance Criteria
 
-- [ ] Configured policy overrides work correctly
-- [ ] Insufficient history yields `unknown`, never an invented forecast
-- [ ] Compliance evidence cites actual metrics
-- [ ] A predicted exhaustion scenario triggers an early warning
-- [ ] Policy versions are tracked and displayed
-- [ ] Forecast charts show trend and confidence
-- [ ] Not applicable policies are correctly identified
+- [x] Configured policy overrides work correctly
+- [x] Insufficient history yields `unknown`, never an invented forecast
+- [x] Compliance evidence cites actual metrics
+- [x] A predicted exhaustion scenario triggers an early warning
+- [x] Policy versions are tracked and displayed
+- [x] Forecast charts show trend and confidence
+- [x] Not applicable policies are correctly identified
 
 ---
 
