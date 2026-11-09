@@ -1,49 +1,50 @@
--- ============================================================================
--- Oracle Sentinel AI — GSYSTEM Emergency Revoke
--- ============================================================================
--- Run as SYSDBA to revoke all privileges and lock the GSYSTEM account.
--- ============================================================================
+-- Oracle Sentinel AI: emergency lock and revoke direct monitoring grants.
+-- Run as SYSDBA in the target PDB (or non-CDB). Existing data is not deleted.
+WHENEVER OSERROR EXIT FAILURE
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 
--- Revoke all grants
-<<<<<<< HEAD
--- NOTE: Revoke from SYS.V_$ (the actual objects), not v$ (PUBLIC synonyms).
-REVOKE SELECT ON SYS.V_$INSTANCE FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$DATABASE FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$VERSION FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$TABLESPACE FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$TEMP_SPACE_HEADER FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$RECOVERY_FILE_DEST FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$FLASH_RECOVERY_AREA_USAGE FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$ARCHIVE_DEST_STATUS FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$PARAMETER FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$RESOURCE_LIMIT FROM GSYSTEM;
-REVOKE SELECT ON SYS.V_$DIAG_ALERT_EXT FROM GSYSTEM;
-REVOKE SELECT ON SYS.DBA_TABLESPACES FROM GSYSTEM;
-REVOKE SELECT ON SYS.DBA_DATA_FILES FROM GSYSTEM;
-REVOKE SELECT ON SYS.DBA_FREE_SPACE FROM GSYSTEM;
-REVOKE SELECT ON SYS.DBA_TEMP_FILES FROM GSYSTEM;
-=======
-REVOKE SELECT ON v$instance FROM GSYSTEM;
-REVOKE SELECT ON v$database FROM GSYSTEM;
-REVOKE SELECT ON v$version FROM GSYSTEM;
-REVOKE SELECT ON v$tablespace FROM GSYSTEM;
-REVOKE SELECT ON v$temp_space_header FROM GSYSTEM;
-REVOKE SELECT ON v$recovery_file_dest FROM GSYSTEM;
-REVOKE SELECT ON v$flash_recovery_area_usage FROM GSYSTEM;
-REVOKE SELECT ON v$archive_dest_status FROM GSYSTEM;
-REVOKE SELECT ON v$parameter FROM GSYSTEM;
-REVOKE SELECT ON v$resource_limit FROM GSYSTEM;
-REVOKE SELECT ON v$diag_alert_ext FROM GSYSTEM;
-REVOKE SELECT ON dba_tablespaces FROM GSYSTEM;
-REVOKE SELECT ON dba_data_files FROM GSYSTEM;
-REVOKE SELECT ON dba_free_space FROM GSYSTEM;
-REVOKE SELECT ON dba_temp_files FROM GSYSTEM;
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
-REVOKE SELECT ON dual FROM GSYSTEM;
-REVOKE CREATE SESSION FROM GSYSTEM;
+DECLARE
+    user_count PLS_INTEGER;
+BEGIN
+    IF SYS_CONTEXT('USERENV', 'CON_NAME') IN ('CDB$ROOT', 'PDB$SEED') THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Connect to the target PDB before revoking local monitoring access.');
+    END IF;
+    SELECT COUNT(*) INTO user_count FROM SYS.DBA_USERS WHERE username = 'GSYSTEM';
+    IF user_count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'GSYSTEM does not exist in this container.');
+    END IF;
+END;
+/
 
--- Lock the account
+-- Lock first so a missing grant cannot prevent new-login containment.
 ALTER USER GSYSTEM ACCOUNT LOCK;
 
--- Optionally drop the user
--- DROP USER GSYSTEM CASCADE;
+BEGIN
+    FOR grant_row IN (
+        SELECT table_name
+        FROM SYS.DBA_TAB_PRIVS
+        WHERE grantee = 'GSYSTEM' AND owner = 'SYS' AND privilege = 'SELECT'
+          AND table_name IN (
+              'V_$INSTANCE', 'V_$DATABASE', 'V_$VERSION', 'V_$TEMP_SPACE_HEADER',
+              'V_$RECOVERY_FILE_DEST', 'V_$FLASH_RECOVERY_AREA_USAGE',
+              'V_$ARCHIVE_DEST_STATUS', 'V_$PARAMETER', 'V_$RESOURCE_LIMIT',
+              'V_$DIAG_ALERT_EXT', 'DBA_TABLESPACES', 'DBA_DATA_FILES',
+              'DBA_FREE_SPACE', 'DUAL',
+              -- Clean up extra grants from earlier provisioning scripts as well.
+              'V_$TABLESPACE', 'DBA_TEMP_FILES', 'V_$SESSION', 'V_$SYSSTAT', 'V_$SYSMETRIC'
+          )
+    ) LOOP
+        EXECUTE IMMEDIATE 'REVOKE SELECT ON SYS.' || grant_row.table_name || ' FROM GSYSTEM';
+    END LOOP;
+    FOR grant_row IN (
+        SELECT privilege FROM SYS.DBA_SYS_PRIVS
+        WHERE grantee = 'GSYSTEM' AND privilege = 'CREATE SESSION'
+    ) LOOP
+        EXECUTE IMMEDIATE 'REVOKE CREATE SESSION FROM GSYSTEM';
+    END LOOP;
+END;
+/
+
+SELECT username, account_status FROM SYS.DBA_USERS WHERE username = 'GSYSTEM';
+PROMPT GSYSTEM locked and direct monitoring grants revoked. Existing sessions are not terminated.
+PROMPT Review any separately assigned roles/system privileges; PUBLIC privileges are unchanged.

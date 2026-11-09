@@ -1,63 +1,27 @@
--- ============================================================================
--- Oracle Sentinel AI — GSYSTEM Read-Only Monitoring User
--- ============================================================================
--- This script creates the GSYSTEM user with minimal read-only privileges
--- for Oracle Sentinel AI monitoring. Run as SYSDBA on each target database.
--- ============================================================================
+-- Oracle Sentinel AI: create a dedicated local monitoring user.
+-- Run in SQL*Plus/SQLcl as SYSDBA connected to the target PDB (or non-CDB).
+-- For an existing GSYSTEM account, run 02_grant_readonly_monitoring.sql instead.
+SET ECHO OFF
+SET VERIFY OFF
+SET DEFINE ON
+WHENEVER OSERROR EXIT FAILURE
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 
--- Create the GSYSTEM user
-CREATE USER GSYSTEM IDENTIFIED BY "ChangeMe123!"
-    DEFAULT TABLESPACE USERS
-    QUOTA UNLIMITED ON USERS;
+BEGIN
+    IF SYS_CONTEXT('USERENV', 'CON_NAME') IN ('CDB$ROOT', 'PDB$SEED') THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Connect to the target PDB, not CDB$ROOT/PDB$SEED. Do not change _ORACLE_SCRIPT.');
+    END IF;
+END;
+/
 
--- Grant minimal session privilege
-GRANT CREATE SESSION TO GSYSTEM;
+-- Use a unique password without double quotes or ampersands (SQL*Plus substitution).
+-- Do not spool this session or supply the password on the command line.
+ACCEPT gsystem_password CHAR PROMPT 'New GSYSTEM password: ' HIDE
+CREATE USER GSYSTEM IDENTIFIED BY "&gsystem_password";
+UNDEFINE gsystem_password
 
--- Grant read-only access to required views
-<<<<<<< HEAD
--- NOTE: v$ views are PUBLIC synonyms for SYS.V_$ fixed tables.
--- Direct GRANT on v$ fails with ORA-02030. Grant on SYS.V_$ instead.
-GRANT SELECT ON SYS.V_$INSTANCE TO GSYSTEM;
-GRANT SELECT ON SYS.V_$DATABASE TO GSYSTEM;
-GRANT SELECT ON SYS.V_$VERSION TO GSYSTEM;
-GRANT SELECT ON SYS.V_$TABLESPACE TO GSYSTEM;
-GRANT SELECT ON SYS.V_$TEMP_SPACE_HEADER TO GSYSTEM;
-GRANT SELECT ON SYS.V_$RECOVERY_FILE_DEST TO GSYSTEM;
-GRANT SELECT ON SYS.V_$FLASH_RECOVERY_AREA_USAGE TO GSYSTEM;
-GRANT SELECT ON SYS.V_$ARCHIVE_DEST_STATUS TO GSYSTEM;
-GRANT SELECT ON SYS.V_$PARAMETER TO GSYSTEM;
-GRANT SELECT ON SYS.V_$RESOURCE_LIMIT TO GSYSTEM;
-GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO GSYSTEM;
+-- No object-creation privileges or tablespace quota are needed for monitoring.
+@@02_grant_readonly_monitoring.sql
 
--- Grant read-only access to DBA views
--- NOTE: DBA_* are PUBLIC synonyms for SYS.DBA_* views owned by SYS.
--- Grant on the underlying SYS.DBA_* objects to avoid ORA-02030.
-GRANT SELECT ON SYS.DBA_TABLESPACES TO GSYSTEM;
-GRANT SELECT ON SYS.DBA_DATA_FILES TO GSYSTEM;
-GRANT SELECT ON SYS.DBA_FREE_SPACE TO GSYSTEM;
-GRANT SELECT ON SYS.DBA_TEMP_FILES TO GSYSTEM;
-=======
-GRANT SELECT ON v$instance TO GSYSTEM;
-GRANT SELECT ON v$database TO GSYSTEM;
-GRANT SELECT ON v$version TO GSYSTEM;
-GRANT SELECT ON v$tablespace TO GSYSTEM;
-GRANT SELECT ON v$temp_space_header TO GSYSTEM;
-GRANT SELECT ON v$recovery_file_dest TO GSYSTEM;
-GRANT SELECT ON v$flash_recovery_area_usage TO GSYSTEM;
-GRANT SELECT ON v$archive_dest_status TO GSYSTEM;
-GRANT SELECT ON v$parameter TO GSYSTEM;
-GRANT SELECT ON v$resource_limit TO GSYSTEM;
-GRANT SELECT ON v$diag_alert_ext TO GSYSTEM;
-
--- Grant read-only access to DBA views
-GRANT SELECT ON dba_tablespaces TO GSYSTEM;
-GRANT SELECT ON dba_data_files TO GSYSTEM;
-GRANT SELECT ON dba_free_space TO GSYSTEM;
-GRANT SELECT ON dba_temp_files TO GSYSTEM;
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
-
--- Grant access to dual
-GRANT SELECT ON dual TO GSYSTEM;
-
--- Verify the user
-SELECT username, account_status FROM dba_users WHERE username = 'GSYSTEM';
+SELECT username, account_status FROM SYS.DBA_USERS WHERE username = 'GSYSTEM';
+PROMPT GSYSTEM created. Connect as GSYSTEM to the same service and run 03_verify_gsystem.sql.

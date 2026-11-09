@@ -1,21 +1,37 @@
--- ============================================================================
--- Oracle Sentinel AI — GSYSTEM Read-Only Monitoring Grants
--- ============================================================================
--- Additional grants for GSYSTEM if needed. Run as SYSDBA.
--- ============================================================================
+-- Oracle Sentinel AI: complete, rerunnable Phase 1-3 monitoring grant set.
+-- Run as SYSDBA in each target PDB (or non-CDB), after GSYSTEM exists.
+WHENEVER OSERROR EXIT FAILURE
+WHENEVER SQLERROR EXIT SQL.SQLCODE
 
--- Grant SELECT ANY DICTIONARY if specific view grants are insufficient
--- WARNING: This is broader than needed — use only if specific grants fail
--- GRANT SELECT ANY DICTIONARY TO GSYSTEM;
+DECLARE
+    user_count PLS_INTEGER;
+BEGIN
+    IF SYS_CONTEXT('USERENV', 'CON_NAME') IN ('CDB$ROOT', 'PDB$SEED') THEN
+        RAISE_APPLICATION_ERROR(-20001, 'Connect to the target PDB before granting local monitoring access.');
+    END IF;
+    SELECT COUNT(*) INTO user_count FROM SYS.DBA_USERS WHERE username = 'GSYSTEM';
+    IF user_count = 0 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'GSYSTEM does not exist in this container. Run 01_create_gsystem.sql first.');
+    END IF;
+END;
+/
 
--- Grant access to additional views if needed
-<<<<<<< HEAD
--- NOTE: Use SYS.V_$ not v$ — direct GRANT on v$ fails with ORA-02030.
-GRANT SELECT ON SYS.V_$SESSION TO GSYSTEM;
-GRANT SELECT ON SYS.V_$SYSSTAT TO GSYSTEM;
-GRANT SELECT ON SYS.V_$SYSMETRIC TO GSYSTEM;
-=======
-GRANT SELECT ON v$session TO GSYSTEM;
-GRANT SELECT ON v$sysstat TO GSYSTEM;
-GRANT SELECT ON v$sysmetric TO GSYSTEM;
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
+GRANT CREATE SESSION TO GSYSTEM;
+
+-- V$ names are public synonyms; grant on the underlying SYS.V_$ objects.
+GRANT SELECT ON SYS.V_$INSTANCE TO GSYSTEM;
+GRANT SELECT ON SYS.V_$DATABASE TO GSYSTEM;
+GRANT SELECT ON SYS.V_$VERSION TO GSYSTEM;
+GRANT SELECT ON SYS.V_$TEMP_SPACE_HEADER TO GSYSTEM;
+GRANT SELECT ON SYS.V_$RECOVERY_FILE_DEST TO GSYSTEM;
+GRANT SELECT ON SYS.V_$FLASH_RECOVERY_AREA_USAGE TO GSYSTEM;
+GRANT SELECT ON SYS.V_$ARCHIVE_DEST_STATUS TO GSYSTEM;
+GRANT SELECT ON SYS.V_$PARAMETER TO GSYSTEM;
+GRANT SELECT ON SYS.V_$RESOURCE_LIMIT TO GSYSTEM;
+GRANT SELECT ON SYS.V_$DIAG_ALERT_EXT TO GSYSTEM;
+GRANT SELECT ON SYS.DBA_TABLESPACES TO GSYSTEM;
+GRANT SELECT ON SYS.DBA_DATA_FILES TO GSYSTEM;
+GRANT SELECT ON SYS.DBA_FREE_SPACE TO GSYSTEM;
+GRANT SELECT ON SYS.DUAL TO GSYSTEM;
+
+PROMPT Monitoring grants applied in the current container. Existing passwords and account locks were not changed.
