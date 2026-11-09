@@ -148,9 +148,6 @@ def test_connection(alias: str, username: str, password: str, tns_admin: str) ->
     }
 
     try:
-        # Initialize Oracle client with custom TNS config
-        oracledb.init_oracle_client(config_dir=tns_admin)
-
         # Connect
         conn = oracledb.connect(
             user=username,
