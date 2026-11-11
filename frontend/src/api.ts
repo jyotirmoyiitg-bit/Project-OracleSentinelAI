@@ -17,6 +17,9 @@ import type {
   DatabaseCompliance,
   CompliancePolicyList,
   CapacityForecastResponse,
+  KnowledgeDocumentList,
+  KnowledgeReindexResponse,
+  KnowledgeSearchResponse,
 } from './types'
 
 export class ApiError extends Error {
@@ -214,4 +217,23 @@ export function getPortalNotifications(page: number, signal?: AbortSignal): Prom
 
 export function readPortalNotification(id: string): Promise<PortalNotification> {
   return request(`/api/v1/portal-notifications/${encodeURIComponent(id)}/read`, undefined, { method: 'POST' })
+}
+
+export function listKnowledgeDocuments(signal?: AbortSignal): Promise<KnowledgeDocumentList> {
+  return request('/api/v1/knowledge/documents?page=1&page_size=100', signal)
+}
+
+export function searchKnowledge(query: string, category: string, signal?: AbortSignal): Promise<KnowledgeSearchResponse> {
+  return request('/api/v1/knowledge/search', signal, {
+    method: 'POST',
+    body: JSON.stringify({ query, limit: 8, category: category || null, rerank: true }),
+  })
+}
+
+export function reindexKnowledge(): Promise<KnowledgeReindexResponse> {
+  return request('/api/v1/knowledge/reindex', undefined, {
+    method: 'POST',
+    body: JSON.stringify({}),
+    headers: { 'X-Sentinel-Role': 'admin' },
+  })
 }

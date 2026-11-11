@@ -254,3 +254,67 @@ export interface PortalNotificationListResponse {
   page: number
   page_size: number
 }
+
+export interface KnowledgeDocument {
+  id: string
+  file_name: string
+  relative_path: string
+  category: 'Knowledge' | 'Policy'
+  version: number
+  ingestion_status: 'indexed' | 'deleted' | 'quarantined'
+  size_bytes: number
+  page_count: number | null
+  quality_score: number | null
+  embedding_provider: string
+  embedding_model: string
+  embedding_disclosure: string
+  indexed_at: string | null
+  updated_at: string
+  acl_roles: string[]
+}
+
+export interface KnowledgeDocumentList {
+  items: KnowledgeDocument[]
+  total: number
+  page: number
+  page_size: number
+}
+
+export interface KnowledgeCitation {
+  document_id: string
+  document_name: string
+  relative_path: string
+  category: string
+  version: number
+  page_start: number | null
+  page_end: number | null
+  heading: string
+  chunk_index: number
+}
+
+export interface KnowledgePassage {
+  chunk_id: string
+  excerpt: string
+  score: number
+  authoritative_policy: boolean
+  citation: KnowledgeCitation
+}
+
+export interface KnowledgeSearchResponse {
+  query: string
+  retrieval: 'hybrid'
+  llm_used: false
+  prioritization: string
+  items: KnowledgePassage[]
+}
+
+export interface KnowledgeReindexResponse {
+  scanned: number
+  indexed: number
+  updated: number
+  unchanged: number
+  deleted: number
+  quarantined: number
+  skipped: number
+  errors: string[]
+}

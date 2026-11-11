@@ -33,3 +33,7 @@ frontend/dist/
 
 # Logs
 *.log
+
+# Quarantined knowledge files stay on the server and are not committed.
+knowledge-intake/Quarantine/*
+!knowledge-intake/Quarantine/.gitkeep

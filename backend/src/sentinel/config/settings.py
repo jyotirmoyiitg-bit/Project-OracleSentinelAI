@@ -1,10 +1,11 @@
 """Typed application settings using pydantic-settings."""
 
 from pathlib import Path
-from typing import Optional
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
+
+from sentinel.knowledge.constants import EMBEDDING_DIMENSIONS
 
 
 class Settings(BaseSettings):
@@ -25,17 +26,17 @@ class Settings(BaseSettings):
     database_max_overflow: int = 10
 
     # Oracle
-    tns_admin: Optional[str] = Field(
+    tns_admin: str | None = Field(
         default=None,
         description="Path to directory containing tnsnames.ora",
     )
     oracle_username: str = Field(default="GSYSTEM", description="Default Oracle monitoring username")
-    oracle_password: Optional[str] = Field(
+    oracle_password: str | None = Field(
         default=None,
         description="Oracle GSYSTEM password. Can be plain-text or Fernet-encrypted (starts with gAAAAA). "
         "Use `python scripts/encrypt-secret.py` to encrypt. The app decrypts it at startup.",
     )
-    oracle_password_secret_ref: Optional[str] = Field(
+    oracle_password_secret_ref: str | None = Field(
         default=None,
         description="Secret reference for Oracle password (never the actual password)",
     )
@@ -49,7 +50,7 @@ class Settings(BaseSettings):
     ai_enabled: bool = Field(default=False, description="Enable AI copilot features")
     ai_provider: str = Field(default="disabled", description="AI provider: local, hosted, or disabled")
     ai_local_url: str = Field(default="http://localhost:11434", description="Ollama local URL")
-    ai_hosted_api_key_secret_ref: Optional[str] = Field(
+    ai_hosted_api_key_secret_ref: str | None = Field(
         default=None,
         description="Secret reference for hosted LLM API key",
     )
@@ -58,12 +59,12 @@ class Settings(BaseSettings):
 
     # SMTP Notifications
     smtp_enabled: bool = Field(default=False, description="Opt in to SMTP email delivery; portal alerts remain enabled")
-    smtp_host: Optional[str] = Field(default=None, description="SMTP server hostname")
+    smtp_host: str | None = Field(default=None, description="SMTP server hostname")
     smtp_port: int = Field(default=587, description="SMTP server port")
-    smtp_username: Optional[str] = Field(default=None, description="SMTP username")
-    smtp_password_secret_ref: Optional[str] = Field(default=None, description="Secret reference for SMTP password")
+    smtp_username: str | None = Field(default=None, description="SMTP username")
+    smtp_password_secret_ref: str | None = Field(default=None, description="Secret reference for SMTP password")
     smtp_use_tls: bool = Field(default=True, description="Use TLS for SMTP")
-    smtp_from_address: Optional[str] = Field(default=None, description="From address for notifications")
+    smtp_from_address: str | None = Field(default=None, description="From address for notifications")
     notification_recipients: list[str] = Field(
         default_factory=list, description="Default recipient email addresses for incident notifications",
     )
@@ -103,12 +104,32 @@ class Settings(BaseSettings):
                 raise ValueError(f"{name} must contain a positive interval for each of {sorted(probes)}")
         return self
 
-    # Knowledge
+    # Knowledge ingestion and local embeddings
     knowledge_intake_path: str = Field(
         default="./knowledge-intake",
         description="Path to knowledge intake folders",
     )
-    knowledge_enabled: bool = Field(default=False, description="Enable knowledge ingestion")
+    knowledge_enabled: bool = Field(default=False, description="Schedule scans of the knowledge intake folders")
+    knowledge_scan_interval_seconds: int = Field(default=300, ge=30, le=86400)
+    knowledge_max_file_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
+    knowledge_max_pages: int = Field(default=500, ge=1)
+    knowledge_parser_timeout_seconds: float = Field(default=30.0, ge=0.01, le=120)
+    knowledge_min_extracted_chars: int = Field(default=20, ge=1)
+    knowledge_chunk_size: int = Field(default=800, ge=40)
+    knowledge_chunk_overlap: int = Field(default=120, ge=0)
+    knowledge_malware_scanner: str = Field(
+        default="",
+        description="Optional scanner executable. It receives the file path as its only argument; exit code 1 quarantines.",
+    )
+    embedding_provider: str = Field(default="local", description="local or explicitly approved remote")
+    embedding_model: str = Field(default="local-hashing-v1")
+    embedding_dimensions: int = Field(default=EMBEDDING_DIMENSIONS)
+    embedding_remote_url: str = Field(default="")
+    embedding_remote_approved: bool = Field(
+        default=False,
+        description="Remote embeddings stay disabled until this is set with a privacy disclosure",
+    )
+    embedding_remote_privacy_disclosure: str = Field(default="")
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level: DEBUG, INFO, WARNING, ERROR")
@@ -118,6 +139,28 @@ class Settings(BaseSettings):
         default=["http://localhost:5173", "http://localhost:3000"],
         description="Allowed CORS origins",
     )
+
+    @model_validator(mode="after")
+    def validate_knowledge(self) -> Settings:
+        if self.embedding_dimensions != EMBEDDING_DIMENSIONS:
+            raise ValueError(
+                "embedding_dimensions is fixed at "
+                f"{EMBEDDING_DIMENSIONS} until a migration changes the pgvector column",
+            )
+        if self.embedding_provider not in {"local", "remote"}:
+            raise ValueError("embedding_provider must be local or remote")
+        if self.knowledge_chunk_overlap >= self.knowledge_chunk_size:
+            raise ValueError("knowledge_chunk_overlap must be smaller than knowledge_chunk_size")
+        if self.embedding_provider == "remote" and (
+            not self.embedding_remote_approved
+            or not self.embedding_remote_url.strip()
+            or not self.embedding_remote_privacy_disclosure.strip()
+        ):
+            raise ValueError(
+                "Remote embeddings require embedding_remote_approved, embedding_remote_url, "
+                "and embedding_remote_privacy_disclosure",
+            )
+        return self
 
     model_config = {
         "env_file": str(Path(__file__).resolve().parents[4] / ".env"),

@@ -1,7 +1,7 @@
 # Phase 5 — Knowledge Ingestion and RAG
 
 **Phase:** 5  
-**Status:** Pending  
+**Status:** Implemented. Automated checks pass on SQLite. Live PostgreSQL with pgvector is covered by `test_real_phase5/Verify_Phase5_Real.ps1` and was not executed in this session.
 **Prerequisites:** Phase 4 (Compliance and Forecasting)  
 **Master Plan:** [Oracle_Sentinel_AI_Implementation_Plan.md](Oracle_Sentinel_AI_Implementation_Plan.md)
 
@@ -187,14 +187,14 @@ flowchart TB
 
 ## 4. Acceptance Criteria
 
-- [ ] New/changed/deleted docs are reflected in the index
-- [ ] Search displays document + page/section citations
-- [ ] Unauthorized docs never appear in search results
-- [ ] Corrupted docs are quarantined
-- [ ] No-LLM document search works
-- [ ] Retrieval test dataset passes chosen thresholds (Recall@k, nDCG)
-- [ ] Document versioning works correctly
-- [ ] ACL filtering prevents unauthorized access
+- [x] New/changed/deleted docs are reflected in the index
+- [x] Search displays document + page/section citations
+- [x] Unauthorized docs never appear in search results
+- [x] Corrupted docs are quarantined
+- [x] No-LLM document search works
+- [x] Retrieval test dataset passes chosen thresholds (Recall@k, nDCG)
+- [x] Document versioning works correctly
+- [x] ACL filtering prevents unauthorized access
 
 ---
 
@@ -231,7 +231,7 @@ flowchart TB
 ```toml
 [project]
 dependencies = [
-    "pymupdf>=1.24",        # PDF parsing
+    "pymupdf>=1.24,<2",     # PDF parsing (1.x; 2.x pulls extra native packages)
     "python-docx>=1.1",     # DOCX parsing
     "pgvector>=0.2",        # pgvector integration
 ]

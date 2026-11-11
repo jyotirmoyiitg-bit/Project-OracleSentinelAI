@@ -384,3 +384,92 @@ class PortalNotificationListResponse(BaseModel):
     unread_count: int
     page: int
     page_size: int
+
+
+class KnowledgeDocumentResponse(BaseModel):
+    id: UUID
+    file_name: str
+    relative_path: str
+    category: Literal["Knowledge", "Policy"]
+    version: int
+    ingestion_status: Literal["indexed", "deleted", "quarantined"]
+    size_bytes: int
+    page_count: int | None
+    quality_score: float | None
+    embedding_provider: str
+    embedding_model: str
+    embedding_disclosure: str
+    indexed_at: UTCDateTime | None
+    updated_at: UTCDateTime
+    acl_roles: list[str]
+
+
+class KnowledgeDocumentListResponse(BaseModel):
+    items: list[KnowledgeDocumentResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class KnowledgeReindexRequest(BaseModel):
+    paths: list[str] | None = None
+
+    @field_validator("paths")
+    @classmethod
+    def check_paths(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        from sentinel.knowledge.paths import validate_requested_path
+
+        return [validate_requested_path(item) for item in value]
+
+
+class KnowledgeReindexResponse(BaseModel):
+    scanned: int
+    indexed: int
+    updated: int
+    unchanged: int
+    deleted: int
+    quarantined: int
+    skipped: int
+    errors: list[str]
+
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=8, ge=1, le=20)
+    category: Literal["Knowledge", "Policy"] | None = None
+    rerank: bool = True
+
+
+class KnowledgeCitationResponse(BaseModel):
+    document_id: UUID
+    document_name: str
+    relative_path: str
+    category: str
+    version: int
+    page_start: int | None
+    page_end: int | None
+    heading: str
+    chunk_index: int
+
+
+class KnowledgePassageResponse(BaseModel):
+    chunk_id: UUID
+    excerpt: str
+    score: float
+    authoritative_policy: bool
+    citation: KnowledgeCitationResponse
+
+
+class KnowledgeSearchResponse(BaseModel):
+    query: str
+    retrieval: Literal["hybrid"] = "hybrid"
+    llm_used: Literal[False] = False
+    prioritization: str
+    items: list[KnowledgePassageResponse]
+
+
+class KnowledgeAclRequest(BaseModel):
+    roles: list[str] = Field(default_factory=list)
+    principals: list[str] = Field(default_factory=list)

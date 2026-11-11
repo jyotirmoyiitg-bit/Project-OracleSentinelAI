@@ -14,6 +14,7 @@ from sentinel.api.v1.compliance import router as compliance_router
 from sentinel.api.v1.databases import router
 from sentinel.api.v1.events import router as events_router
 from sentinel.api.v1.incidents import router as incidents_router
+from sentinel.api.v1.knowledge import router as knowledge_router
 from sentinel.collectors.adapters import adapter_for
 from sentinel.collectors.alert_flow import AlertEvaluationRunner
 from sentinel.collectors.jobs import CollectionRunner
@@ -44,9 +45,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("Phase 3 schema missing; run alembic upgrade head before starting")
             if not inspect(conn).has_table("policy_results"):
                 raise RuntimeError("Phase 4 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("documents"):
+                raise RuntimeError("Phase 5 schema missing; run alembic upgrade head before starting")
         with sessions.begin() as session:
             sync_policy_definitions(session)
         scheduler = None
+        knowledge_scheduler = None
         if settings.scheduler_enabled:
             notifier = SMTPNotifier(settings)
             runner = CollectionRunner(
@@ -57,12 +61,27 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
             scheduler = CollectorScheduler(runner, alert_runner)
             scheduler.start()
+        if settings.knowledge_enabled:
+            from sentinel.knowledge.service import KnowledgeIndexer, KnowledgeScheduler
+
+            try:
+                knowledge_scheduler = KnowledgeScheduler(
+                    KnowledgeIndexer(sessions, settings), settings.knowledge_scan_interval_seconds,
+                )
+                knowledge_scheduler.start()
+            except Exception:
+                logger.exception("Knowledge scheduler failed to start")
+                knowledge_scheduler = None
         app.state.collector_scheduler = scheduler
+        app.state.session_factory = sessions
+        app.state.knowledge_scheduler = knowledge_scheduler
         try:
             yield
         finally:
             if scheduler:
                 await asyncio.to_thread(scheduler.stop)
+            if knowledge_scheduler:
+                await asyncio.to_thread(knowledge_scheduler.stop)
     finally:
         engine.dispose()
 
@@ -79,6 +98,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(incidents_router)
     app.include_router(events_router)
     app.include_router(compliance_router)
+    app.include_router(knowledge_router)
 
     @app.get("/health/live")
     def health_live() -> dict[str, str]:

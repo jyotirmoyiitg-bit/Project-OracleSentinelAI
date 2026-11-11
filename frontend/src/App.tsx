@@ -3,6 +3,7 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
@@ -33,6 +34,7 @@ import { ForecastPanel } from './components/ForecastPanel'
 import { EventsPage } from './EventsPage'
 import { IncidentCenterPage } from './IncidentCenter'
 import { DatabaseRegistrationPage } from './DatabaseRegistrationPage'
+import { KnowledgePage } from './KnowledgePage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
 const PAGE_SIZE = 25
@@ -52,6 +54,7 @@ type Route =
   | { page: 'database-events'; id: string }
   | { page: 'incidents' }
   | { page: 'incident'; id: string }
+  | { page: 'knowledge' }
 
 function parseHash(hash: string): Route {
   if (hash === '#/register') return { page: 'register' }
@@ -62,6 +65,7 @@ function parseHash(hash: string): Route {
   match = hash.match(/^#\/incidents\/([^/]+)$/)
   if (match) return { page: 'incident', id: decodeURIComponent(match[1]) }
   if (hash.match(/^#\/incidents\/?$/)) return { page: 'incidents' }
+  if (hash.match(/^#\/knowledge\/?$/)) return { page: 'knowledge' }
   return { page: 'fleet' }
 }
 
@@ -85,6 +89,7 @@ function usePageNavigation() {
     navigateToIncidents: () => navigate('#/incidents'),
     navigateToIncident: (id: string) => navigate(`#/incidents/${encodeURIComponent(id)}`),
     navigateToRegistration: () => navigate('#/register'),
+    navigateToKnowledge: () => navigate('#/knowledge'),
   }
 }
 
@@ -101,8 +106,10 @@ function useRefreshPreference() {
 }
 
 function AppHeader({
+  currentPage,
   onHome,
   onOpenIncidents,
+  onOpenKnowledge,
   onOpenIncident,
   notificationRefreshKey,
   refreshSeconds,
@@ -111,8 +118,10 @@ function AppHeader({
   refreshing,
   detailTitle,
 }: {
+  currentPage: Route['page']
   onHome: () => void
   onOpenIncidents: () => void
+  onOpenKnowledge: () => void
   onOpenIncident: (id: string) => void
   notificationRefreshKey: number
   refreshSeconds: number
@@ -130,7 +139,8 @@ function AppHeader({
         <span className="product-name">Fleet health</span>
       </button>
       <nav className="topbar-nav">
-        <button className="nav-link" onClick={onOpenIncidents}><ShieldCheck size={15} /> Incidents</button>
+        <button className="nav-link" aria-current={currentPage === 'incidents' || currentPage === 'incident' ? 'page' : undefined} onClick={onOpenIncidents}><ShieldCheck size={15} /> Incidents</button>
+        <button className="nav-link" aria-current={currentPage === 'knowledge' ? 'page' : undefined} onClick={onOpenKnowledge}><BookOpen size={15} /> Knowledge</button>
       </nav>
       <div className="topbar-actions">
         <NotificationBell onOpenIncident={onOpenIncident} refreshSeconds={refreshSeconds} refreshKey={notificationRefreshKey} />
@@ -627,6 +637,7 @@ export default function App() {
     navigateToIncidents,
     navigateToIncident,
     navigateToRegistration,
+    navigateToKnowledge,
   } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
@@ -650,8 +661,10 @@ export default function App() {
   return (
     <div className="app">
       <AppHeader
+        currentPage={route.page}
         onHome={navigateHome}
         onOpenIncidents={navigateToIncidents}
+        onOpenKnowledge={navigateToKnowledge}
         onOpenIncident={navigateToIncident}
         notificationRefreshKey={notificationRefreshKey}
         refreshSeconds={refreshSeconds}
@@ -705,6 +718,8 @@ export default function App() {
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
         />
+      ) : route.page === 'knowledge' ? (
+        <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} />
       ) : (
         <FleetPage
           onOpenTarget={(target) => navigateToDatabase(target.id)}

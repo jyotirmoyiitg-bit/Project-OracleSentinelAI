@@ -47,6 +47,10 @@ flowchart TB
     AGENT --> MODEL
 ```
 
+## Knowledge ingestion
+
+Approved files in `knowledge-intake/Knowledge` and `knowledge-intake/Policy` are parsed, chunked, embedded locally, and stored in PostgreSQL. Search combines pgvector similarity with full-text ranking and returns a document, version, page, and section citation. Callers only receive passages their ACL allows. Collection, rules, incidents, and alerts do not call this pipeline and do not require a language model. Remote embeddings are used only when explicitly approved with a privacy disclosure.
+
 ## Non-Negotiable Principles
 
 - **Monitoring never depends on an LLM** — collection, rules, incidents continue if AI is disabled

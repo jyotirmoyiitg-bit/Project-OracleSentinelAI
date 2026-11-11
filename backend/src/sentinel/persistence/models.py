@@ -4,11 +4,13 @@ import uuid
 from datetime import datetime
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from sentinel.collectors.normalization import utcnow
+from sentinel.knowledge.constants import EMBEDDING_DIMENSIONS
 
 
 class Base(DeclarativeBase):
@@ -43,8 +45,8 @@ class DatabaseTarget(Base):
     )
     poll_runs: Mapped[list[PollRun]] = relationship(cascade="all, delete-orphan")
     current_observations: Mapped[list[CurrentObservation]] = relationship(cascade="all, delete-orphan")
-    rule_states: Mapped[list["RuleState"]] = relationship(cascade="all, delete-orphan")
-    incidents: Mapped[list["Incident"]] = relationship(back_populates="target", cascade="all, delete-orphan")
+    rule_states: Mapped[list[RuleState]] = relationship(cascade="all, delete-orphan")
+    incidents: Mapped[list[Incident]] = relationship(back_populates="target", cascade="all, delete-orphan")
 
 
 class TargetCredential(Base):
@@ -210,8 +212,8 @@ class Incident(Base):
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, nullable=True)
 
     target: Mapped[DatabaseTarget] = relationship(back_populates="incidents")
-    events: Mapped[list["IncidentEvent"]] = relationship(back_populates="incident", cascade="all, delete-orphan")
-    notifications: Mapped[list["Notification"]] = relationship(back_populates="incident", cascade="all, delete-orphan")
+    events: Mapped[list[IncidentEvent]] = relationship(back_populates="incident", cascade="all, delete-orphan")
+    notifications: Mapped[list[Notification]] = relationship(back_populates="incident", cascade="all, delete-orphan")
 
 
 class IncidentEvent(Base):
@@ -292,3 +294,64 @@ class PolicyResult(Base):
     severity: Mapped[str] = mapped_column(String(20))
     evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     recommended_action: Mapped[str] = mapped_column(Text, default="")
+
+
+class Document(Base):
+    """One ingested Knowledge or Policy file and its current version."""
+
+    __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint("relative_path", name="uq_documents_relative_path"),
+        Index("ix_documents_category_status", "category", "ingestion_status"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    relative_path: Mapped[str] = mapped_column(String(700))
+    file_name: Mapped[str] = mapped_column(String(255))
+    category: Mapped[str] = mapped_column(String(20))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    previous_hash: Mapped[str | None] = mapped_column(String(64))
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    ingestion_status: Mapped[str] = mapped_column(String(20), default="indexed")
+    acl: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    quality_score: Mapped[float | None] = mapped_column(Float)
+    quality_report: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    embedding_provider: Mapped[str] = mapped_column(String(20), default="local")
+    embedding_model: Mapped[str] = mapped_column(String(100), default="")
+    embedding_disclosure: Mapped[str] = mapped_column(Text, default="")
+    indexed_at: Mapped[datetime | None] = mapped_column(DateTime)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    chunks: Mapped[list[DocumentChunk]] = relationship(back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentChunk(Base):
+    """A citable section of one document version."""
+
+    __tablename__ = "document_chunks"
+    __table_args__ = (
+        UniqueConstraint("document_id", "document_version", "chunk_index", name="uq_document_chunk_version_index"),
+        Index("ix_document_chunks_document", "document_id", "document_version"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
+    document_version: Mapped[int] = mapped_column(Integer)
+    chunk_index: Mapped[int] = mapped_column(Integer)
+    heading: Mapped[str] = mapped_column(String(300), default="")
+    page_start: Mapped[int | None] = mapped_column(Integer)
+    page_end: Mapped[int | None] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(Text, default="")
+    embedding: Mapped[list[float] | None] = mapped_column(
+        JSON().with_variant(Vector(EMBEDDING_DIMENSIONS), "postgresql"),
+    )
+    content_tsv: Mapped[str | None] = mapped_column(Text().with_variant(TSVECTOR(), "postgresql"))
+    category: Mapped[str] = mapped_column(String(20))
+    acl: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    document: Mapped[Document] = relationship(back_populates="chunks")

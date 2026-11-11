@@ -212,4 +212,30 @@ uses a fresh UUID and can run immediately after a prior resolved verification.
 Portal-feed verification follows pagination rather than checking only the first page.
 Temporary YAML files are removed automatically; test database records remain for audit.
 
+## Knowledge search
+
+Document search does not call a language model. Monitoring, rules, and incidents keep running when embeddings or the optional knowledge scan are unavailable.
+
+- `GET /api/v1/knowledge/documents?page=1&page_size=25&category=Policy&status=indexed&q=archive`
+  returns `{items, total, page, page_size}` for documents the caller may see. The caller role
+  defaults to `operator` from `X-Sentinel-Role`. An empty ACL denies access. The `admin` role
+  can see every document so an ACL can be repaired. Items include name, category, version,
+  ingestion status, last indexed time, embedding provider, and the local-or-remote disclosure.
+- `POST /api/v1/knowledge/search` accepts `{query, limit, category, rerank}` and returns
+  `{query, retrieval: "hybrid", llm_used: false, prioritization, items}`. Each item has an
+  excerpt and a citation with document, version, page, and section. Passages are filtered by
+  ACL before they are returned. Policy documents are labeled `authoritative_policy` and are
+  not given a hidden rank boost; set `category` to search one collection.
+- `POST /api/v1/knowledge/reindex` is administrator-only (`X-Sentinel-Role: admin`). An optional
+  `{paths: ["Knowledge/file.md"]}` limits the scan to those files and does not treat absent
+  files as deletions. A full scan with no paths reflects additions, changes, and deletions.
+  Paths that leave `Knowledge/` or `Policy/` are rejected. A scan already in progress returns 409.
+- `POST /api/v1/knowledge/documents/{id}/acl` with `{roles, principals}` is administrator-only
+  and copies the new grant onto every chunk of that document.
+
+Scheduled scans run only when `KNOWLEDGE_ENABLED=true`. Embeddings stay local unless
+`EMBEDDING_PROVIDER=remote`, `EMBEDDING_REMOTE_APPROVED=true`, a URL, and a privacy disclosure
+are all set. There is no automatic failover from local to remote. The vector width is fixed at
+128 until a migration changes the pgvector column.
+
 Full request/response schemas are available at `/docs`.
