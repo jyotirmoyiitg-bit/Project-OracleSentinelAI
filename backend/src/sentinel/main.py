@@ -10,16 +10,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from sentinel.api.v1.compliance import router as compliance_router
 from sentinel.api.v1.databases import router
 from sentinel.api.v1.events import router as events_router
 from sentinel.api.v1.incidents import router as incidents_router
-from sentinel.api.v1.compliance import router as compliance_router
 from sentinel.collectors.adapters import adapter_for
 from sentinel.collectors.alert_flow import AlertEvaluationRunner
 from sentinel.collectors.jobs import CollectionRunner
 from sentinel.collectors.scheduler import CollectorScheduler
 from sentinel.config.secrets import init_resolver
 from sentinel.config.settings import Settings, get_settings
+from sentinel.notifications.smtp import SMTPNotifier
 from sentinel.persistence import session as persistence
 from sentinel.rules.compliance_store import sync_policy_definitions
 
@@ -47,11 +48,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             sync_policy_definitions(session)
         scheduler = None
         if settings.scheduler_enabled:
+            notifier = SMTPNotifier(settings)
             runner = CollectionRunner(
-                sessions, settings, lambda target: adapter_for(target, settings),
+                sessions, settings, lambda target: adapter_for(target, settings), notifier,
             )
             alert_runner = AlertEvaluationRunner(
-                sessions, settings, lambda target: adapter_for(target, settings),
+                sessions, settings, lambda target: adapter_for(target, settings), notifier,
             )
             scheduler = CollectorScheduler(runner, alert_runner)
             scheduler.start()

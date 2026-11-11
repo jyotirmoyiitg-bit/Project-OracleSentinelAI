@@ -91,6 +91,17 @@ def test_failed_measurement_preserves_last_good_checkpoint(runner, sessions, mak
         assert len(current_for(session, [target_id])) == 3
 
 
+def test_compliance_evaluation_failure_is_a_notification_boundary_not_a_hard_stop(runner, sessions, make_target):
+    target_id = make_target()
+    with patch("sentinel.collectors.jobs.evaluate_target_compliance", side_effect=RuntimeError("fixture bug")):
+        assert runner.run(target_id, "instance") == "success"
+    with sessions() as session:
+        target = session.get(DatabaseTarget, target_id)
+        assert target.last_seen is not None
+        assert session.scalar(select(PollRun.status)) == "success"
+        assert checkpoints.get_checkpoint(session, target_id, "instance").error_class is None
+
+
 def test_inflight_old_configuration_cannot_commit(runner, sessions, make_target):
     target_id = make_target()
     original = runner.adapters

@@ -15,10 +15,11 @@ from sentinel.collectors.normalization import normalize, utcnow
 from sentinel.collectors.profiles import stale_after
 from sentinel.config.settings import Settings
 from sentinel.domain.models import CapabilityMatrix, Observation
+from sentinel.notifications.smtp import SMTPNotifier
 from sentinel.persistence.models import DatabaseTarget, DiagnosticEvent, PollRun
 from sentinel.persistence.models import Observation as StoredObservation
 from sentinel.persistence.telemetry import checkpoints_for, current_for, save_batch
-from sentinel.rules.compliance_store import evaluate_target_compliance
+from sentinel.rules.compliance_store import evaluate_target_compliance, sync_compliance_notifications
 
 logger = logging.getLogger(__name__)
 
@@ -33,10 +34,14 @@ class AdapterFactory(Protocol):
 
 
 class CollectionRunner:
-    def __init__(self, sessions: sessionmaker[Session], settings: Settings, adapters: AdapterFactory):
+    def __init__(
+        self, sessions: sessionmaker[Session], settings: Settings, adapters: AdapterFactory,
+        notifier: SMTPNotifier | None = None,
+    ):
         self.sessions = sessions
         self.settings = settings
         self.adapters = adapters
+        self.notifier = notifier or SMTPNotifier(settings)
 
     def run(self, target_id: uuid.UUID, probe: str) -> str:
         started = utcnow()
@@ -116,7 +121,7 @@ class CollectionRunner:
             points = checkpoints_for(session, [target_id])
             current = current_for(session, [target_id])
             if probe in {"configuration", "instance", "fra_archive"}:
-                evaluate_target_compliance(session, target, current, points, self.settings, finished)
+                self._evaluate_compliance(session, target, current, points, finished)
             target.last_health_status = compute_health(target, points, current, self.settings, finished)
             if target.last_health_status == "offline":
                 target.health_valid_until = finished + timedelta(seconds=stale_after(
@@ -135,6 +140,18 @@ class CollectionRunner:
                 )
                 target.health_valid_until = min(expirations) if expirations else None
         return "failed" if error_class else "success"
+
+    def _evaluate_compliance(self, session: Session, target: DatabaseTarget, current, points, finished) -> None:
+        # A SAVEPOINT isolates a compliance bug from the outer poll transaction: on failure we
+        # roll back only the compliance work (never raising) and the rest of the poll still commits.
+        try:
+            with session.begin_nested():
+                evaluations = evaluate_target_compliance(session, target, current, points, self.settings, finished)
+                sync_compliance_notifications(session, target, evaluations, self.settings, self.notifier, finished)
+        except Exception as exc:  # noqa: BLE001 -- a compliance bug must never hard-stop collection
+            logger.error(
+                "Compliance evaluation failed: target=%s error_class=%s", target.id, type(exc).__name__,
+            )
 
     def retain(self) -> None:
         cutoff = utcnow() - timedelta(days=self.settings.observation_retention_days)
