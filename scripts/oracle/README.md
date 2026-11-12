@@ -81,6 +81,17 @@ to avoid synonym grant errors such as ORA-02030.
 | Resource limits | `V_$RESOURCE_LIMIT` |
 | Configuration | `V_$PARAMETER` |
 | Phase 3 alert ingestion | `V_$DIAG_ALERT_EXT` |
+| Copilot datafiles | `DBA_DATA_FILES`, `DBA_TEMP_FILES` |
+| Copilot memory | `V_$SGAINFO`, `V_$PGASTAT` |
+| Copilot top SQL | `V_$SQL` |
+| Copilot sessions | `V_$SESSION` |
+| Copilot backups | `V_$SESSION_LONGOPS`, `V_$RMAN_BACKUP_JOB_DETAILS` |
+| Copilot running jobs | `DBA_SCHEDULER_RUNNING_JOBS`, `DBA_JOBS_RUNNING` |
+| Readings: availability | `V_$PDBS`, `V_$SERVICES` |
+| Readings: performance | `V_$OSSTAT`, `V_$SYS_TIME_MODEL`, `V_$SYSTEM_EVENT`, `V_$FILESTAT` |
+| Readings: memory and parse | `V_$SYSSTAT`, `V_$LIBRARYCACHE` |
+| Readings: recovery and Data Guard | `V_$ARCHIVED_LOG`, `V_$DATAGUARD_STATS` |
+| Readings: accounts, objects, roles, failed jobs | `DBA_USERS`, `DBA_OBJECTS`, `DBA_ROLE_PRIVS`, `DBA_SCHEDULER_JOB_RUN_DETAILS` |
 
 Reference: [Oracle probes](../../backend/src/sentinel/adapters/oracle/probes.py),
 [alert poller](../../backend/src/sentinel/adapters/oracle/alert_log.py),

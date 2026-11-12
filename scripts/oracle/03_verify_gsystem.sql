@@ -25,13 +25,14 @@ SELECT banner FROM v$version WHERE rownum <= 1;
 SELECT instance_name, status, database_status, host_name, version, startup_time
 FROM v$instance WHERE rownum <= 1;
 
-SELECT name, open_mode, database_role, log_mode, flashback_on, platform_name, created
+SELECT name, open_mode, database_role, log_mode, flashback_on, platform_name, created,
+       protection_mode, switchover_status
 FROM v$database WHERE rownum <= 1;
 
 SELECT tablespace_name, status, contents, logging, extent_management
 FROM dba_tablespaces WHERE rownum <= 1;
 
-SELECT tablespace_name, bytes, autoextensible
+SELECT tablespace_name, bytes, maxbytes, autoextensible
 FROM dba_data_files WHERE rownum <= 1;
 
 SELECT tablespace_name, bytes FROM dba_free_space WHERE rownum <= 1;
@@ -55,6 +56,58 @@ WHERE name IN ('db_create_file_dest', 'db_create_online_log_dest_1',
 
 SELECT resource_name, current_utilization, max_utilization, initial_allocation, limit_value
 FROM v$resource_limit WHERE rownum <= 1;
+
+SELECT file_name, tablespace_name, bytes, autoextensible, status
+FROM dba_temp_files WHERE rownum <= 1;
+
+SELECT name, bytes FROM v$sgainfo WHERE rownum <= 1;
+
+SELECT name, value FROM v$pgastat WHERE rownum <= 1;
+
+SELECT sql_id FROM v$sql WHERE rownum <= 1;
+
+SELECT username, status, sid FROM v$session WHERE type = 'USER' AND rownum <= 1;
+
+SELECT opname, sofar, totalwork FROM v$session_longops WHERE rownum <= 1;
+
+SELECT input_type, status, start_time FROM v$rman_backup_job_details WHERE rownum <= 1;
+
+SELECT owner, job_name, session_id FROM dba_scheduler_running_jobs WHERE rownum <= 1;
+
+SELECT job, sid FROM dba_jobs_running WHERE rownum <= 1;
+
+SELECT name, open_mode, restricted FROM v$pdbs WHERE rownum <= 1;
+
+SELECT name FROM v$services WHERE rownum <= 1;
+
+SELECT stat_name, value FROM v$osstat WHERE rownum <= 1;
+
+SELECT stat_name, value FROM v$sys_time_model WHERE rownum <= 1;
+
+SELECT event, total_waits, time_waited_micro FROM v$system_event WHERE rownum <= 1;
+
+SELECT file# AS file_no, phyrds, phywrts, readtim, writetim
+FROM v$filestat WHERE rownum <= 1;
+
+SELECT name, value FROM v$sysstat WHERE rownum <= 1;
+
+SELECT namespace, gets, gethits, reloads, invalidations
+FROM v$librarycache WHERE rownum <= 1;
+
+SELECT sequence# AS sequence_no, completion_time, archived, status, backup_count
+FROM v$archived_log WHERE rownum <= 1;
+
+SELECT name, value FROM v$dataguard_stats WHERE rownum <= 1;
+
+SELECT username, account_status, lock_date, expiry_date
+FROM dba_users WHERE rownum <= 1;
+
+SELECT owner, object_type, object_name, status FROM dba_objects WHERE rownum <= 1;
+
+SELECT grantee, granted_role FROM dba_role_privs WHERE rownum <= 1;
+
+SELECT owner, job_name, status, log_date
+FROM dba_scheduler_job_run_details WHERE rownum <= 1;
 
 -- Check the actual alert-poller columns without dumping message text/client details.
 SELECT record_id, originating_timestamp, message_type,

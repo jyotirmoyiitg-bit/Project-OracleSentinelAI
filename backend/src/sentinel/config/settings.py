@@ -54,8 +54,24 @@ class Settings(BaseSettings):
         default=None,
         description="Secret reference for hosted LLM API key",
     )
-    ai_model_name: str = Field(default="llama3", description="Model name for the LLM provider")
+    ai_model_name: str = Field(default="llama3", description="Local model name")
     ai_timeout_seconds: int = Field(default=30, description="LLM request timeout")
+    ai_fallback_provider: str = Field(
+        default="disabled",
+        description="Only disabled is allowed. A local outage must not send data to a hosted model.",
+    )
+    ai_hosted_api_base: str = Field(default="", description="OpenAI-compatible base URL for an approved hosted model")
+    ai_hosted_model: str = Field(default="", description="Hosted model name. Empty uses no hosted model name.")
+    ai_max_tool_calls: int = Field(default=5, ge=1, le=8)
+    ai_max_output_tokens: int = Field(default=600, ge=64, le=4000)
+    ai_max_context_tokens: int = Field(default=12000, ge=500, le=32000)
+    ai_require_citations: bool = Field(default=True)
+    ai_redact_sensitive_telemetry: bool = Field(default=True)
+    ai_hosted_approved: bool = Field(
+        default=False,
+        description="Hosted chat stays disabled until this is set with a base URL, secret reference, and disclosure",
+    )
+    ai_hosted_privacy_disclosure: str = Field(default="")
 
     # SMTP Notifications
     smtp_enabled: bool = Field(default=False, description="Opt in to SMTP email delivery; portal alerts remain enabled")
@@ -160,6 +176,42 @@ class Settings(BaseSettings):
                 "Remote embeddings require embedding_remote_approved, embedding_remote_url, "
                 "and embedding_remote_privacy_disclosure",
             )
+        return self
+
+    auth_required: bool = Field(default=False, description="Require an operator sign-in before API use")
+    auth_session_hours: int = Field(default=8, ge=1, le=24)
+    auth_cookie_secure: bool = Field(default=False, description="Mark the session cookie Secure")
+    auth_password_iterations: int = Field(default=200_000, ge=1000, le=1_000_000)
+    auth_bootstrap_username: str = Field(default="", description="Local account created once when sign-in is enabled")
+    auth_bootstrap_password: str = Field(default="")
+    auth_bootstrap_role: str = Field(default="admin")
+    auth_ad_url: str = Field(default="", description="ldap:// or ldaps:// domain controller")
+    auth_ad_domain: str = Field(default="", description="Active Directory DNS name, such as contoso.com")
+    auth_ad_base_dn: str = Field(default="", description="Search base; derived from the domain when empty")
+    auth_ad_operator_group: str = Field(default="")
+    auth_ad_dba_group: str = Field(default="")
+    auth_ad_admin_group: str = Field(default="")
+
+    @model_validator(mode="after")
+    def validate_ai(self) -> Settings:
+        if self.ai_provider not in {"local", "hosted", "disabled"}:
+            raise ValueError("ai_provider must be local, hosted, or disabled")
+        if self.ai_fallback_provider != "disabled":
+            raise ValueError("ai_fallback_provider must stay disabled")
+        if self.ai_timeout_seconds < 1 or self.ai_timeout_seconds > 120:
+            raise ValueError("ai_timeout_seconds must be between 1 and 120")
+        return self
+
+    @model_validator(mode="after")
+    def validate_auth(self) -> Settings:
+        if self.auth_ad_url.strip() and not self.auth_ad_url.lower().startswith(("ldap://", "ldaps://")):
+            raise ValueError("auth_ad_url must start with ldap:// or ldaps://")
+        if self.auth_bootstrap_role not in {"operator", "dba", "admin", "auditor"}:
+            raise ValueError("auth_bootstrap_role is not a known role")
+        if self.auth_required and not self.auth_ad_url.strip() and not self.auth_bootstrap_username.strip():
+            raise ValueError("Sign-in requires AUTH_AD_URL or AUTH_BOOTSTRAP_USERNAME")
+        if self.auth_required and self.auth_bootstrap_username.strip() and len(self.auth_bootstrap_password) < 8:
+            raise ValueError("AUTH_BOOTSTRAP_PASSWORD must be at least 8 characters")
         return self
 
     model_config = {

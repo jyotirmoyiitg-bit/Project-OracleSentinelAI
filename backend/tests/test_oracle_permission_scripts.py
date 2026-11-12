@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from sentinel.adapters.oracle.activity import CATALOG
 from sentinel.adapters.oracle.alert_log import OracleAlertLogPoller
 from sentinel.adapters.oracle.capabilities import OracleCapabilityDetector
 from sentinel.adapters.oracle.probes import OracleProbes
@@ -31,7 +32,8 @@ def test_grants_match_collector_queries_and_capabilities_exactly():
     sql = "\n".join(
         value for name, value in vars(OracleProbes).items() if name.endswith("_SQL") and isinstance(value, str)
     )
-    views = queried_views(sql + OracleAlertLogPoller.ALERT_LOG_SQL)
+    activity_sql = "\n".join(query.sql for queries in CATALOG.values() for query in queries)
+    views = queried_views(sql + OracleAlertLogPoller.ALERT_LOG_SQL + activity_sql)
     views.update(view.upper() for view in OracleCapabilityDetector.VIEWS_TO_CHECK)
     views.update({"V$VERSION", "DUAL"})
     granted = set(re.findall(r"GRANT SELECT ON (\S+) TO GSYSTEM;", statements("02_grant_readonly_monitoring.sql")))
@@ -52,6 +54,29 @@ def test_grants_match_collector_queries_and_capabilities_exactly():
     ("v$parameter", ["name", "value", "issys_modifiable"]),
     ("v$resource_limit", ["resource_name", "current_utilization", "max_utilization", "initial_allocation", "limit_value"]),
     ("v$diag_alert_ext", ["record_id", "originating_timestamp", "message_text", "message_type", "module", "client_id"]),
+    ("dba_temp_files", ["file_name", "tablespace_name", "bytes", "autoextensible", "status"]),
+    ("v$sgainfo", ["name", "bytes"]),
+    ("v$pgastat", ["name", "value"]),
+    ("v$sql", ["sql_id"]),
+    ("v$session", ["username", "status", "sid"]),
+    ("v$session_longops", ["opname", "sofar", "totalwork"]),
+    ("v$rman_backup_job_details", ["input_type", "status", "start_time"]),
+    ("dba_scheduler_running_jobs", ["owner", "job_name", "session_id"]),
+    ("dba_jobs_running", ["job", "sid"]),
+    ("v$pdbs", ["name", "open_mode", "restricted"]),
+    ("v$services", ["name"]),
+    ("v$osstat", ["stat_name", "value"]),
+    ("v$sys_time_model", ["stat_name", "value"]),
+    ("v$system_event", ["event", "total_waits", "time_waited_micro"]),
+    ("v$filestat", ["file_no", "phyrds", "phywrts", "readtim", "writetim"]),
+    ("v$sysstat", ["name", "value"]),
+    ("v$librarycache", ["namespace", "gets", "gethits", "reloads", "invalidations"]),
+    ("v$archived_log", ["sequence_no", "completion_time", "archived", "status", "backup_count"]),
+    ("v$dataguard_stats", ["name", "value"]),
+    ("dba_users", ["username", "account_status", "lock_date", "expiry_date"]),
+    ("dba_objects", ["owner", "object_type", "object_name", "status"]),
+    ("dba_role_privs", ["grantee", "granted_role"]),
+    ("dba_scheduler_job_run_details", ["owner", "job_name", "status", "log_date"]),
 ])
 def test_verification_checks_required_columns_with_bounded_queries(view, columns):
     query = next(

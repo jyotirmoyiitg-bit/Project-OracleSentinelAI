@@ -6,6 +6,7 @@ import {
   ChevronDown,
   CircleAlert,
   Eye,
+  MessageSquare,
   RefreshCw,
   ShieldCheck,
   X,
@@ -242,11 +243,13 @@ function IncidentDetailView({
   incidentId,
   onBack,
   onOpenTarget,
+  onAskCopilot,
   onRefreshStatus,
 }: {
   incidentId: string
   onBack: () => void
   onOpenTarget: (id: string) => void
+  onAskCopilot?: (id: string) => void
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
 }) {
   const [incident, setIncident] = useState<IncidentDetail | null>(null)
@@ -328,7 +331,15 @@ function IncidentDetailView({
             </div>
           </div>
         </div>
-        <div className="detail-status"><IncidentStatusBadge state={incident.state} /><SeverityBadge severity={incident.severity} /></div>
+        <div className="detail-status">
+          <IncidentStatusBadge state={incident.state} />
+          <SeverityBadge severity={incident.severity} />
+          {onAskCopilot && (
+            <button className="button button-secondary" type="button" onClick={() => onAskCopilot(incident.id)}>
+              <MessageSquare size={14} /> Ask copilot
+            </button>
+          )}
+        </div>
       </section>
 
       {actionError && <div className="inline-error" role="alert"><CircleAlert size={16} /> {actionError}</div>}
@@ -386,6 +397,7 @@ export function IncidentCenterPage({
   onOpenIncident,
   onBack,
   onOpenTarget,
+  onAskCopilot,
   refreshSeconds,
   onRefreshStatus,
 }: {
@@ -393,11 +405,21 @@ export function IncidentCenterPage({
   onOpenIncident: (id: string) => void
   onBack: () => void
   onOpenTarget: (id: string) => void
+  onAskCopilot?: (id: string) => void
   refreshSeconds: number
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
 }) {
   if (incidentId) {
-    return <IncidentDetailView key={incidentId} incidentId={incidentId} onBack={onBack} onOpenTarget={onOpenTarget} onRefreshStatus={onRefreshStatus} />
+    return (
+      <IncidentDetailView
+        key={incidentId}
+        incidentId={incidentId}
+        onBack={onBack}
+        onOpenTarget={onOpenTarget}
+        onAskCopilot={onAskCopilot}
+        onRefreshStatus={onRefreshStatus}
+      />
+    )
   }
   return <IncidentListView onOpenIncident={onOpenIncident} onOpenTarget={onOpenTarget} refreshSeconds={refreshSeconds} onRefreshStatus={onRefreshStatus} />
 }

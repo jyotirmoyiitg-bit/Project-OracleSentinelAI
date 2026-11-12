@@ -29,9 +29,16 @@ BEGIN
               'V_$RECOVERY_FILE_DEST', 'V_$FLASH_RECOVERY_AREA_USAGE',
               'V_$ARCHIVE_DEST_STATUS', 'V_$PARAMETER', 'V_$RESOURCE_LIMIT',
               'V_$DIAG_ALERT_EXT', 'DBA_TABLESPACES', 'DBA_DATA_FILES',
-              'DBA_FREE_SPACE', 'DUAL',
+              'DBA_FREE_SPACE', 'DBA_TEMP_FILES', 'DUAL',
+              'V_$SGAINFO', 'V_$PGASTAT', 'V_$SQL', 'V_$SESSION',
+              'V_$SESSION_LONGOPS', 'V_$RMAN_BACKUP_JOB_DETAILS',
+              'DBA_SCHEDULER_RUNNING_JOBS', 'DBA_JOBS_RUNNING',
+              'V_$PDBS', 'V_$SERVICES', 'V_$OSSTAT', 'V_$SYS_TIME_MODEL',
+              'V_$SYSTEM_EVENT', 'V_$FILESTAT', 'V_$LIBRARYCACHE',
+              'V_$ARCHIVED_LOG', 'V_$DATAGUARD_STATS', 'DBA_USERS',
+              'DBA_OBJECTS', 'DBA_ROLE_PRIVS', 'DBA_SCHEDULER_JOB_RUN_DETAILS',
               -- Clean up extra grants from earlier provisioning scripts as well.
-              'V_$TABLESPACE', 'DBA_TEMP_FILES', 'V_$SESSION', 'V_$SYSSTAT', 'V_$SYSMETRIC'
+              'V_$TABLESPACE', 'V_$SYSSTAT', 'V_$SYSMETRIC'
           )
     ) LOOP
         EXECUTE IMMEDIATE 'REVOKE SELECT ON SYS.' || grant_row.table_name || ' FROM GSYSTEM';

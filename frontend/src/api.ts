@@ -20,7 +20,17 @@ import type {
   KnowledgeDocumentList,
   KnowledgeReindexResponse,
   KnowledgeSearchResponse,
+  ChatMessage,
+  ChatThread,
 } from './types'
+
+export interface AuthSession {
+  required: boolean
+  authenticated: boolean
+  principal: string
+  role: string
+  method: string
+}
 
 export class ApiError extends Error {
   constructor(
@@ -37,6 +47,7 @@ async function request<T>(path: string, signal?: AbortSignal, init?: RequestInit
   try {
     response = await fetch(path, {
       ...init,
+      credentials: 'include',
       headers: {
         Accept: 'application/json',
         ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
@@ -71,6 +82,38 @@ export interface FleetParams {
   pageSize: number
   environment: string
   healthStatus: string
+}
+
+const openSession: AuthSession = {
+  required: false, authenticated: true, principal: '', role: 'operator', method: '',
+}
+
+export async function getSession(signal?: AbortSignal): Promise<AuthSession> {
+  try {
+    const body = await request<Partial<AuthSession>>('/api/v1/auth/session', signal)
+    if (body.required !== true) return openSession
+    return {
+      required: true,
+      authenticated: Boolean(body.authenticated),
+      principal: body.principal ?? '',
+      role: body.role ?? '',
+      method: body.method ?? '',
+    }
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
+    return openSession
+  }
+}
+
+export function login(username: string, password: string, local: boolean): Promise<AuthSession> {
+  return request<AuthSession>('/api/v1/auth/login', undefined, {
+    method: 'POST',
+    body: JSON.stringify({ username, password, local }),
+  })
+}
+
+export function logout(): Promise<{ authenticated: boolean }> {
+  return request('/api/v1/auth/logout', undefined, { method: 'POST', body: '{}' })
 }
 
 export function getFleet(params: FleetParams, signal?: AbortSignal): Promise<FleetResponse> {
@@ -236,4 +279,60 @@ export function reindexKnowledge(): Promise<KnowledgeReindexResponse> {
     body: JSON.stringify({}),
     headers: { 'X-Sentinel-Role': 'admin' },
   })
+}
+
+export function createChatThread(scopeType: ChatThread['scope_type'], scopeId: string | null): Promise<ChatThread> {
+  return request('/api/v1/chat/threads', undefined, {
+    method: 'POST',
+    body: JSON.stringify({ scope_type: scopeType, scope_id: scopeId }),
+  })
+}
+
+export async function sendChatMessage(threadId: string, content: string): Promise<ChatMessage> {
+  let response: Response
+  try {
+    response = await fetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    })
+  } catch {
+    throw new ApiError('Could not reach the Oracle Sentinel API. Check the connection and try again.')
+  }
+  if (!response.ok) {
+    let detail = `Request failed (${response.status} ${response.statusText || 'error'})`
+    try {
+      const body: unknown = await response.json()
+      if (typeof body === 'object' && body !== null && 'detail' in body && typeof body.detail === 'string') {
+        detail = body.detail
+      }
+    } catch {
+      // Error bodies are JSON when the API rejects the message before streaming.
+    }
+    throw new ApiError(detail, response.status)
+  }
+  const events = parseServerEvents(await response.text())
+  const message = events.find((event) => event.name === 'message')
+  if (!message || !isChatMessage(message.data)) throw new ApiError('The copilot did not return an answer.')
+  return message.data
+}
+
+function parseServerEvents(body: string): { name: string; data: unknown }[] {
+  const events: { name: string; data: unknown }[] = []
+  for (const block of body.split('\n\n')) {
+    let name = 'message'
+    const dataLines: string[] = []
+    for (const line of block.split('\n')) {
+      if (line.startsWith('event:')) name = line.slice(6).trim()
+      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+    }
+    if (dataLines.length === 0) continue
+    events.push({ name, data: JSON.parse(dataLines.join('\n')) as unknown })
+  }
+  return events
+}
+
+function isChatMessage(value: unknown): value is ChatMessage {
+  return typeof value === 'object' && value !== null && 'content' in value && 'llm_used' in value
 }

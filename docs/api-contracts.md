@@ -238,4 +238,17 @@ Scheduled scans run only when `KNOWLEDGE_ENABLED=true`. Embeddings stay local un
 are all set. There is no automatic failover from local to remote. The vector width is fixed at
 128 until a migration changes the pgvector column.
 
+## Copilot
+
+The model never writes SQL and never chooses tools. An operator prompt that contains a SQL statement is refused before any tool or model runs. On a database chat, availability, error, tablespace, growth, performance, blocking, SQL, memory, backup, Data Guard, account, and job questions call the local readings MCP server, which runs one fixed read-only reading for the database alias. The answer lists those rows. Fleet chat does not open a database connection for those questions. A disabled or unreachable language model still leaves `/health/live`, fleet collection, and this chat available. The no-model answer includes guided commands and citations from the tools that ran.
+
+When `AUTH_REQUIRED=true`, every API route except health and `/api/v1/auth/login`, `/api/v1/auth/session`, and `/api/v1/auth/logout` requires the `sentinel_session` cookie. The role comes from that session. `X-Sentinel-Role` is ignored while sign-in is required. Directory sign-in uses an LDAP bind and an allowed group. A local account is accepted only when the sign-in request sets `local` to true. With `AUTH_REQUIRED=false`, the portal stays in the pre-authentication mode used by the test harness.
+
+- `POST /api/v1/chat/threads` accepts `{scope_type, scope_id}`. `scope_type` is `fleet`, `database`, or `incident`. Fleet rejects a scope id. A database or incident id must exist, and a disabled database returns 404. The response includes `id`, `provider`, `model`, `llm_enabled`, `disclosure`, and `guided_commands`. It does not include an API key or a provider URL.
+- `POST /api/v1/chat/threads/{id}/messages` accepts `{content}` of 1 to 2000 characters and returns `text/event-stream` after the answer is stored. Events are `status`, `tool`, `citation`, `message`, and `done`. The `message` event includes `llm_used`, `provider_status`, `citations`, `tools`, and `guided_commands`. `llm_used` is false when the model is disabled, unreachable, or returns an invalid reply.
+- `GET /api/v1/chat/threads/{id}/messages` returns the stored user and assistant messages for that thread.
+- `GET /api/v1/admin/ai/providers` requires `X-Sentinel-Role: admin`. It reports the selected provider, whether hosted use is approved, and whether a hosted secret reference is configured. It does not return the secret or the provider URL.
+
+`X-Sentinel-Role` defaults to `operator` until Phase 7 authentication. Document search inside the copilot uses the same ACL as `POST /api/v1/knowledge/search`.
+
 Full request/response schemas are available at `/docs`.

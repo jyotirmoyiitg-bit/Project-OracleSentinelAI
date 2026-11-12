@@ -1,7 +1,7 @@
 # Phase 6 — AI Copilot with LLM Gateway
 
 **Phase:** 6  
-**Status:** Pending  
+**Status:** Implemented. Automated checks pass on SQLite. The portal was verified with AI disabled. Live Ollama, a hosted model API, and live Oracle were not called.<br>
 **Prerequisites:** Phase 5 (Knowledge and RAG)  
 **Master Plan:** [Oracle_Sentinel_AI_Implementation_Plan.md](Oracle_Sentinel_AI_Implementation_Plan.md)
 
@@ -201,14 +201,14 @@ flowchart TB
 
 ## 4. Acceptance Criteria
 
-- [ ] Same test prompt works through local test provider and hosted-provider mock
-- [ ] API keys are secret-referenced, never hardcoded
-- [ ] LLM outage does not break monitoring
-- [ ] Injection tests cannot force unauthorized tool calls
-- [ ] Queries cite sources and evidence
-- [ ] No-LLM fallback provides guided commands and document search
-- [ ] Tool execution is audited and authorized
-- [ ] Model provider badge is displayed in chat
+- [x] Same test prompt works through local test provider and hosted-provider mock
+- [x] API keys are secret-referenced, never hardcoded
+- [x] LLM outage does not break monitoring
+- [x] Injection tests cannot force unauthorized tool calls
+- [x] Queries cite sources and evidence
+- [x] No-LLM fallback provides guided commands and document search
+- [x] Tool execution is audited and authorized
+- [x] Model provider badge is displayed in chat
 
 ---
 

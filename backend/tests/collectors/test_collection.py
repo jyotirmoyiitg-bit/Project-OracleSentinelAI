@@ -68,6 +68,19 @@ def test_stale_evidence_unknown_and_recovery_persists(runner, sessions, make_tar
         assert session.get(DatabaseTarget, target_id).last_health_status == "healthy"
 
 
+def test_alert_log_checkpoint_does_not_roll_back_a_probe(runner, sessions, make_target):
+    target_id = make_target()
+    with sessions.begin() as session:
+        session.add(CollectorCheckpoint(
+            target_id=target_id, collector_type="alert_log", cursor={}, lease_version=0,
+            last_success_at=utcnow(), status="success",
+        ))
+    assert runner.run(target_id, "connectivity") == "success"
+    with sessions() as session:
+        point = checkpoints.get_checkpoint(session, target_id, "connectivity")
+        assert point.last_success_at is not None
+
+
 def test_missing_connection_configuration_unknown_not_offline(runner, sessions, make_target):
     target_id = make_target()
     with sessions.begin() as session:

@@ -35,6 +35,9 @@ function json(body: unknown, status = 200) {
 function setupApi(items: Target[] = [], override?: (url: string, init?: RequestInit) => Response | undefined) {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url.includes('/api/v1/auth/session')) {
+      return Promise.resolve(json({ required: false, authenticated: true, principal: '', role: 'operator', method: '' }))
+    }
     const custom = override?.(url, init)
     if (custom) return Promise.resolve(custom)
     if (url.includes('/portal-notifications')) return Promise.resolve(json({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 }))
@@ -67,7 +70,7 @@ describe('Multi-database workspace', () => {
     })
     const user = userEvent.setup()
     render(<App />)
-    const sidebar = screen.getByRole('complementary', { name: 'Registered databases' })
+    const sidebar = await screen.findByRole('complementary', { name: 'Registered databases' })
     await within(sidebar).findByRole('button', { name: 'Select FINANCE' })
     expect(within(sidebar).getByLabelText('FINANCE: Healthy')).toHaveClass('sidebar-health-healthy')
     expect(within(sidebar).getByLabelText('WAREHOUSE: Warning')).toHaveClass('sidebar-health-warning')
@@ -99,7 +102,7 @@ describe('Multi-database workspace', () => {
     })
     const user = userEvent.setup()
     const view = render(<App />)
-    await user.click(screen.getByRole('button', { name: 'Add database' }))
+    await user.click(await screen.findByRole('button', { name: 'Add database' }))
     const alias = await screen.findByLabelText('TNS alias')
     await waitFor(() => expect(screen.getByRole('option', { name: 'FINANCE (already registered)' })).toBeDisabled())
     await user.selectOptions(alias, 'REPORTING')
@@ -178,7 +181,7 @@ describe('Multi-database workspace', () => {
     setupApi(items, (url) => url.includes('page_size=100') && fail ? json({ detail: 'Registry unavailable' }, 503) : undefined)
     const user = userEvent.setup()
     render(<App />)
-    const sidebar = screen.getByRole('complementary', { name: 'Registered databases' })
+    const sidebar = await screen.findByRole('complementary', { name: 'Registered databases' })
     expect(await within(sidebar).findByRole('alert')).toHaveTextContent('Registry unavailable')
     fail = false
     await user.click(screen.getByRole('button', { name: 'Retry database list' }))
@@ -198,11 +201,11 @@ describe('Multi-database workspace', () => {
   it('defaults to 30-second refresh but respects an explicitly saved off preference', async () => {
     setupApi()
     const view = render(<App />)
-    expect(screen.getByLabelText('Auto refresh interval')).toHaveValue('30')
+    expect(await screen.findByLabelText('Auto refresh interval')).toHaveValue('30')
     await screen.findByText('No databases registered. Add a database to begin monitoring.')
     view.unmount()
     window.localStorage.setItem('oracle-sentinel-refresh', '0')
     render(<App />)
-    expect(screen.getByLabelText('Auto refresh interval')).toHaveValue('0')
+    expect(await screen.findByLabelText('Auto refresh interval')).toHaveValue('0')
   })
 })

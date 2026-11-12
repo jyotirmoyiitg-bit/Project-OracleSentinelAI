@@ -68,7 +68,9 @@ function jsonResponse(body: unknown, status = 200) {
 
 function mockFetch(handler: (url: string) => Response | Promise<Response>) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => Promise.resolve(
-    String(input).includes('/portal-notifications')
+    String(input).includes('/api/v1/auth/session')
+      ? jsonResponse({ required: false, authenticated: true, principal: '', role: 'operator', method: '' })
+      : String(input).includes('/portal-notifications')
       ? jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 })
       : String(input).includes('/compliance/policies')
       ? jsonResponse({ items: [] })

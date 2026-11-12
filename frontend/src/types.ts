@@ -318,3 +318,50 @@ export interface KnowledgeReindexResponse {
   skipped: number
   errors: string[]
 }
+
+export interface GuidedCommand {
+  label: string
+  prompt: string
+}
+
+export interface ChatThread {
+  id: string
+  scope_type: 'fleet' | 'database' | 'incident'
+  scope_id: string | null
+  provider: string
+  model: string
+  llm_enabled: boolean
+  disclosure: string
+  guided_commands: GuidedCommand[]
+}
+
+export interface ChatCitation {
+  kind: string
+  label: string
+  source: string
+  detail: string
+  target_id: string | null
+  document_path: string | null
+  heading: string | null
+}
+
+export interface ChatToolTrace {
+  tool: string
+  decision: 'allowed' | 'denied' | string
+  summary: string
+  reason: string
+  duration_ms: number
+}
+
+export interface ChatMessage {
+  id: string
+  role: string
+  content: string
+  citations: ChatCitation[]
+  tools: ChatToolTrace[]
+  provider: string
+  model: string
+  llm_used: boolean
+  provider_status?: string
+  guided_commands?: GuidedCommand[]
+}

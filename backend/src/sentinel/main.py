@@ -10,11 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from sentinel.api.v1.auth import router as auth_router
+from sentinel.api.v1.chat import router as chat_router
 from sentinel.api.v1.compliance import router as compliance_router
 from sentinel.api.v1.databases import router
 from sentinel.api.v1.events import router as events_router
 from sentinel.api.v1.incidents import router as incidents_router
 from sentinel.api.v1.knowledge import router as knowledge_router
+from sentinel.auth.middleware import RequireSignIn
+from sentinel.auth.service import ensure_bootstrap_operator
 from sentinel.collectors.adapters import adapter_for
 from sentinel.collectors.alert_flow import AlertEvaluationRunner
 from sentinel.collectors.jobs import CollectionRunner
@@ -47,8 +51,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("Phase 4 schema missing; run alembic upgrade head before starting")
             if not inspect(conn).has_table("documents"):
                 raise RuntimeError("Phase 5 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("chat_threads"):
+                raise RuntimeError("Phase 6 schema missing; run alembic upgrade head before starting")
+            if settings.auth_required and not inspect(conn).has_table("operator_accounts"):
+                raise RuntimeError("Sign-in schema missing; run alembic upgrade head before starting")
         with sessions.begin() as session:
             sync_policy_definitions(session)
+            if settings.auth_required:
+                ensure_bootstrap_operator(session, settings)
         scheduler = None
         knowledge_scheduler = None
         if settings.scheduler_enabled:
@@ -94,11 +104,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware, allow_origins=settings.cors_origins,
         allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
     )
+    app.add_middleware(RequireSignIn, settings=settings)
+    app.include_router(auth_router)
     app.include_router(router)
     app.include_router(incidents_router)
     app.include_router(events_router)
     app.include_router(compliance_router)
     app.include_router(knowledge_router)
+    app.include_router(chat_router)
 
     @app.get("/health/live")
     def health_live() -> dict[str, str]:

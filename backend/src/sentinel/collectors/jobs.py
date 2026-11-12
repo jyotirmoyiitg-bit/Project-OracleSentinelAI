@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from sentinel.collectors import checkpoints
 from sentinel.collectors.health_status import compute_health
-from sentinel.collectors.normalization import normalize, utcnow
+from sentinel.collectors.normalization import PROBES, normalize, utcnow
 from sentinel.collectors.profiles import stale_after
 from sentinel.config.settings import Settings
 from sentinel.domain.models import CapabilityMatrix, Observation
@@ -131,12 +131,12 @@ class CollectionRunner:
                 expirations = [
                     point.last_success_at + timedelta(seconds=stale_after(
                         self.settings, target.poll_profile, target.environment, point.collector_type,
-                    )) for point in points if point.last_success_at
+                    )) for point in points if point.last_success_at and point.collector_type in PROBES
                 ]
                 expirations.extend(
                     obs.timestamp + timedelta(seconds=stale_after(
                         self.settings, target.poll_profile, target.environment, obs.probe_type,
-                    )) for obs in current
+                    )) for obs in current if obs.probe_type in PROBES
                 )
                 target.health_valid_until = min(expirations) if expirations else None
         return "failed" if error_class else "success"

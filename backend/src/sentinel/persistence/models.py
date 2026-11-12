@@ -355,3 +355,91 @@ class DocumentChunk(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     document: Mapped[Document] = relationship(back_populates="chunks")
+
+
+class ChatThread(Base):
+    """One copilot conversation and the provider selected when it was opened."""
+
+    __tablename__ = "chat_threads"
+    __table_args__ = (Index("ix_chat_threads_scope", "scope_type", "scope_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    principal: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(20), default="operator")
+    scope_type: Mapped[str] = mapped_column(String(20))
+    scope_id: Mapped[str | None] = mapped_column(String(36))
+    provider: Mapped[str] = mapped_column(String(20))
+    model: Mapped[str] = mapped_column(String(100), default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow)
+
+    messages: Mapped[list[ChatMessage]] = relationship(
+        "ChatMessage", back_populates="thread", cascade="all, delete-orphan",
+    )
+    tool_executions: Mapped[list[ToolExecution]] = relationship(
+        "ToolExecution", back_populates="thread", cascade="all, delete-orphan",
+    )
+
+
+class ChatMessage(Base):
+    """A user or assistant turn, with citations and the tool transcript."""
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (Index("ix_chat_messages_thread_created", "thread_id", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    thread_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chat_threads.id", ondelete="CASCADE"))
+    role: Mapped[str] = mapped_column(String(20))
+    content: Mapped[str] = mapped_column(Text, default="")
+    citations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    tool_trace: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    provider: Mapped[str] = mapped_column(String(20), default="disabled")
+    model: Mapped[str] = mapped_column(String(100), default="")
+    llm_used: Mapped[bool] = mapped_column(default=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    correlation_id: Mapped[str] = mapped_column(String(36), default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    thread: Mapped[ChatThread] = relationship("ChatThread", back_populates="messages")
+
+
+class OperatorAccount(Base):
+    """Local operator account used when Active Directory is not configured or cannot be reached."""
+
+    __tablename__ = "operator_accounts"
+    __table_args__ = (Index("ix_operator_accounts_username", "username", unique=True),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    username: Mapped[str] = mapped_column(String(80))
+    password_hash: Mapped[str] = mapped_column(String(200))
+    role: Mapped[str] = mapped_column(String(20))
+    enabled: Mapped[bool] = mapped_column(nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class ToolExecution(Base):
+    """Audit row for an allowed or denied copilot tool call."""
+
+    __tablename__ = "tool_executions"
+    __table_args__ = (
+        Index("ix_tool_executions_thread", "thread_id", "created_at"),
+        Index("ix_tool_executions_correlation", "correlation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("chat_threads.id", ondelete="CASCADE"))
+    message_id: Mapped[uuid.UUID | None] = mapped_column()
+    correlation_id: Mapped[str] = mapped_column(String(36), default="")
+    principal: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(20), default="operator")
+    target_id: Mapped[str | None] = mapped_column(String(36))
+    tool_name: Mapped[str] = mapped_column(String(100))
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    decision: Mapped[str] = mapped_column(String(20))
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    result_digest: Mapped[str] = mapped_column(String(64), default="")
+    summary: Mapped[str] = mapped_column(String(500), default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    thread: Mapped[ChatThread | None] = relationship("ChatThread", back_populates="tool_executions")

@@ -47,6 +47,9 @@ def _factory(request: Request) -> sessionmaker[Session]:
 
 
 def _caller(request: Request) -> Caller:
+    existing = getattr(request.state, "caller", None)
+    if isinstance(existing, Caller):
+        return existing
     try:
         return caller_from_headers(
             request.headers.get("X-Sentinel-Role"),

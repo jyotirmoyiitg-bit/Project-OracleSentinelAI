@@ -13,6 +13,7 @@ import {
   FileText,
   HardDrive,
   Layers3,
+  MessageSquare,
   Pause,
   Play,
   RefreshCw,
@@ -20,7 +21,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react'
-import { ApiError, getFleet, getFleetSummary, getMetricHistory, getTarget } from './api'
+import { ApiError, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
 import { formatBytes, formatDate, formatMetric, relativeTime } from './format'
 import { HealthBadge } from './components/HealthBadge'
 import { MetricCard } from './components/MetricCard'
@@ -35,6 +36,8 @@ import { EventsPage } from './EventsPage'
 import { IncidentCenterPage } from './IncidentCenter'
 import { DatabaseRegistrationPage } from './DatabaseRegistrationPage'
 import { KnowledgePage } from './KnowledgePage'
+import { CopilotPage } from './CopilotPage'
+import { LoginPage } from './LoginPage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
 const PAGE_SIZE = 25
@@ -55,6 +58,9 @@ type Route =
   | { page: 'incidents' }
   | { page: 'incident'; id: string }
   | { page: 'knowledge' }
+  | { page: 'copilot' }
+  | { page: 'copilot-database'; id: string }
+  | { page: 'copilot-incident'; id: string }
 
 function parseHash(hash: string): Route {
   if (hash === '#/register') return { page: 'register' }
@@ -66,6 +72,11 @@ function parseHash(hash: string): Route {
   if (match) return { page: 'incident', id: decodeURIComponent(match[1]) }
   if (hash.match(/^#\/incidents\/?$/)) return { page: 'incidents' }
   if (hash.match(/^#\/knowledge\/?$/)) return { page: 'knowledge' }
+  match = hash.match(/^#\/copilot\/databases\/([^/]+)$/)
+  if (match) return { page: 'copilot-database', id: decodeURIComponent(match[1]) }
+  match = hash.match(/^#\/copilot\/incidents\/([^/]+)$/)
+  if (match) return { page: 'copilot-incident', id: decodeURIComponent(match[1]) }
+  if (hash.match(/^#\/copilot\/?$/)) return { page: 'copilot' }
   return { page: 'fleet' }
 }
 
@@ -90,6 +101,9 @@ function usePageNavigation() {
     navigateToIncident: (id: string) => navigate(`#/incidents/${encodeURIComponent(id)}`),
     navigateToRegistration: () => navigate('#/register'),
     navigateToKnowledge: () => navigate('#/knowledge'),
+    navigateToCopilot: () => navigate('#/copilot'),
+    navigateToDatabaseCopilot: (id: string) => navigate(`#/copilot/databases/${encodeURIComponent(id)}`),
+    navigateToIncidentCopilot: (id: string) => navigate(`#/copilot/incidents/${encodeURIComponent(id)}`),
   }
 }
 
@@ -110,6 +124,7 @@ function AppHeader({
   onHome,
   onOpenIncidents,
   onOpenKnowledge,
+  onOpenCopilot,
   onOpenIncident,
   notificationRefreshKey,
   refreshSeconds,
@@ -117,11 +132,14 @@ function AppHeader({
   onManualRefresh,
   refreshing,
   detailTitle,
+  principal,
+  onSignOut,
 }: {
   currentPage: Route['page']
   onHome: () => void
   onOpenIncidents: () => void
   onOpenKnowledge: () => void
+  onOpenCopilot: () => void
   onOpenIncident: (id: string) => void
   notificationRefreshKey: number
   refreshSeconds: number
@@ -129,6 +147,8 @@ function AppHeader({
   onManualRefresh: () => void
   refreshing: boolean
   detailTitle?: string
+  principal?: string
+  onSignOut?: () => void
 }) {
   return (
     <header className="topbar">
@@ -141,6 +161,7 @@ function AppHeader({
       <nav className="topbar-nav">
         <button className="nav-link" aria-current={currentPage === 'incidents' || currentPage === 'incident' ? 'page' : undefined} onClick={onOpenIncidents}><ShieldCheck size={15} /> Incidents</button>
         <button className="nav-link" aria-current={currentPage === 'knowledge' ? 'page' : undefined} onClick={onOpenKnowledge}><BookOpen size={15} /> Knowledge</button>
+        <button className="nav-link" aria-current={currentPage === 'copilot' || currentPage === 'copilot-database' || currentPage === 'copilot-incident' ? 'page' : undefined} onClick={onOpenCopilot}><MessageSquare size={15} /> Copilot</button>
       </nav>
       <div className="topbar-actions">
         <NotificationBell onOpenIncident={onOpenIncident} refreshSeconds={refreshSeconds} refreshKey={notificationRefreshKey} />
@@ -159,7 +180,12 @@ function AppHeader({
         <button className={`icon-button refresh-button ${refreshing ? 'is-refreshing' : ''}`} onClick={onManualRefresh} aria-label="Refresh data" title="Refresh data">
           <RefreshCw size={17} />
         </button>
-        <span className="user-avatar" aria-label="Oracle Sentinel monitoring">OS</span>
+        {principal ? (
+          <span className="signed-in">
+            <span>{principal}</span>
+            <button className="nav-link" type="button" onClick={onSignOut}>Sign out</button>
+          </span>
+        ) : <span className="user-avatar" aria-label="Oracle Sentinel monitoring">OS</span>}
       </div>
     </header>
   )
@@ -408,11 +434,13 @@ function DetailPage({
   targetId,
   onBack,
   onOpenEvents,
+  onAskCopilot,
   onRefreshStatus,
 }: {
   targetId: string
   onBack: () => void
   onOpenEvents: (id: string) => void
+  onAskCopilot: (id: string) => void
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
 }) {
   const [detail, setDetail] = useState<TargetDetails | null>(null)
@@ -522,6 +550,7 @@ function DetailPage({
           <HealthBadge status={detail.last_health_status} />
           <span className="updated-note">Last seen {relativeTime(seen)}</span>
           <button className="button button-secondary events-link" onClick={() => onOpenEvents(targetId)}><FileText size={14} /> Logs &amp; events</button>
+          <button className="button button-secondary" type="button" onClick={() => onAskCopilot(targetId)}><MessageSquare size={14} /> Ask copilot</button>
         </div>
       </section>
 
@@ -638,6 +667,9 @@ export default function App() {
     navigateToIncident,
     navigateToRegistration,
     navigateToKnowledge,
+    navigateToCopilot,
+    navigateToDatabaseCopilot,
+    navigateToIncidentCopilot,
   } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
@@ -651,12 +683,27 @@ export default function App() {
     refreshAction.current()
     setNotificationRefreshKey((value) => value + 1)
   }, [])
-
+  const [session, setSession] = useState<AuthSession | null>(null)
   useEffect(() => {
-    if (route.page === 'fleet' || route.page === 'register' || refreshSeconds === 0) return
+    const controller = new AbortController()
+    getSession(controller.signal).then(setSession).catch((reason: unknown) => {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      setSession({ required: false, authenticated: true, principal: '', role: 'operator', method: '' })
+    })
+    return () => controller.abort()
+  }, [])
+  useEffect(() => {
+    if (route.page === 'fleet' || route.page === 'register' || route.page.startsWith('copilot') || refreshSeconds === 0) return
     const timer = window.setInterval(() => refreshAction.current(), refreshSeconds * 1000)
     return () => window.clearInterval(timer)
   }, [route.page, refreshSeconds])
+
+  if (!session) {
+    return <main className="page-shell detail-loading"><div className="loading-state" role="status"><span className="spinner" /> Checking sign-in…</div></main>
+  }
+  if (session.required && !session.authenticated) {
+    return <LoginPage onSuccess={setSession} />
+  }
 
   return (
     <div className="app">
@@ -665,16 +712,21 @@ export default function App() {
         onHome={navigateHome}
         onOpenIncidents={navigateToIncidents}
         onOpenKnowledge={navigateToKnowledge}
+        onOpenCopilot={navigateToCopilot}
         onOpenIncident={navigateToIncident}
         notificationRefreshKey={notificationRefreshKey}
         refreshSeconds={refreshSeconds}
         onRefreshChange={setRefreshSeconds}
         onManualRefresh={onManualRefresh}
         refreshing={refreshing}
+        principal={session.required ? session.principal : undefined}
+        onSignOut={() => {
+          void logout().finally(() => setSession({ ...session, authenticated: false, principal: '', role: '', method: '' }))
+        }}
       />
       <div className="database-workspace">
       <DatabaseSidebar
-        selectedId={route.page === 'database' || route.page === 'database-events' ? route.id : null}
+        selectedId={route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database' ? route.id : null}
         homeSelected={route.page === 'fleet'}
         onHome={navigateHome}
         onSelect={navigateToDatabase}
@@ -689,7 +741,7 @@ export default function App() {
           navigateToDatabase(target.id)
         }} />
       ) : route.page === 'database' ? (
-        <DetailPage key={route.id} targetId={route.id} onBack={navigateHome} onOpenEvents={navigateToDatabaseEvents} onRefreshStatus={registerRefresh} />
+        <DetailPage key={route.id} targetId={route.id} onBack={navigateHome} onOpenEvents={navigateToDatabaseEvents} onAskCopilot={navigateToDatabaseCopilot} onRefreshStatus={registerRefresh} />
       ) : route.page === 'database-events' ? (
         <EventsPage
           key={route.id}
@@ -715,11 +767,19 @@ export default function App() {
           onOpenIncident={navigateToIncident}
           onBack={navigateToIncidents}
           onOpenTarget={navigateToDatabase}
+          onAskCopilot={navigateToIncidentCopilot}
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
         />
       ) : route.page === 'knowledge' ? (
         <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'copilot' || route.page === 'copilot-database' || route.page === 'copilot-incident' ? (
+        <CopilotPage
+          key={`${route.page}:${'id' in route ? route.id : 'fleet'}`}
+          scopeType={route.page === 'copilot-database' ? 'database' : route.page === 'copilot-incident' ? 'incident' : 'fleet'}
+          scopeId={'id' in route ? route.id : null}
+          onRefreshStatus={registerRefresh}
+        />
       ) : (
         <FleetPage
           onOpenTarget={(target) => navigateToDatabase(target.id)}
