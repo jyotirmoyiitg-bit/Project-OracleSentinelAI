@@ -2,13 +2,18 @@
 
 from dataclasses import dataclass
 
-from sentinel.knowledge.constants import ALLOWED_ROLES, DEFAULT_ROLES
+from sentinel.knowledge.constants import ADMIN_OPERATOR_ROLE, ALLOWED_ROLES, DEFAULT_ROLES
 
 
 @dataclass(frozen=True)
 class Caller:
     role: str
     principal: str
+
+
+def is_admin_operator(role: str) -> bool:
+    """An admin operator may list database users. operator, dba, and auditor may not."""
+    return role == ADMIN_OPERATOR_ROLE
 
 
 def caller_from_headers(role: str | None, principal: str | None) -> Caller:

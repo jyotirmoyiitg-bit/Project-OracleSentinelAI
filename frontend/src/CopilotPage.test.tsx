@@ -95,5 +95,46 @@ describe('Copilot page', () => {
     expect(screen.getByText(/storage\.fra\.used_pct/)).toBeInTheDocument()
     expect(screen.getAllByText(/91 percent used/).length).toBeGreaterThan(0)
     expect(screen.getByText('No language model')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Answer' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Functions' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Evidence' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Collected evidence' })).toBeInTheDocument()
+  })
+
+  it('splits a model reply into answer, limitations, and next steps', async () => {
+    const modelAnswer: ChatMessage = {
+      ...answer,
+      id: 'message-2',
+      content: 'The FRA is configured and empty.\nLimitations: No backup history is stored.\nNext steps: Check the archive destination; Confirm a backup job\n\nDatabase reading:\nFRA space limit is 6.77 GB',
+      provider: 'hosted',
+      model: 'claude-sonnet-4-5',
+      llm_used: true,
+      provider_status: 'answered',
+      citations: [],
+      tools: [],
+    }
+    const hostedThread: ChatThread = { ...thread, provider: 'hosted', model: 'claude-sonnet-4-5', llm_enabled: true }
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/portal-notifications')) return Promise.resolve(jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 }))
+      if (url.includes('page_size=100') && url.includes('/databases')) return Promise.resolve(jsonResponse({ items: [], total: 0, page: 1, page_size: 100, environments: [] }))
+      if (url.endsWith('/api/v1/chat/threads') && init?.method === 'POST') return Promise.resolve(jsonResponse(hostedThread))
+      if (url.includes('/api/v1/chat/threads/thread-1/messages')) return Promise.resolve(eventResponse(modelAnswer))
+      return Promise.resolve(jsonResponse({ detail: 'not found' }, 404))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(<App />)
+    expect(await screen.findByText('Hosted model · claude-sonnet-4-5')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'FRA status' }))
+    expect(await screen.findByText('The FRA is configured and empty.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Limitations' })).toBeInTheDocument()
+    expect(screen.getByText('No backup history is stored.')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Next steps' })).toBeInTheDocument()
+    expect(screen.getByText('Check the archive destination')).toBeInTheDocument()
+    expect(screen.getByText('Confirm a backup job')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Database reading' })).toBeInTheDocument()
+    expect(screen.getByText('FRA space limit is 6.77 GB')).toBeInTheDocument()
+    expect(screen.getByText('Answered')).toBeInTheDocument()
   })
 })

@@ -16,6 +16,7 @@ TOOL_NAMES = {
     "jobs": "get_running_jobs",
     "availability": "get_database_availability",
     "errors": "get_critical_errors",
+    "alert_log": "get_alert_log",
     "tablespace": "get_tablespace_pressure",
     "growth": "get_tablespace_growth",
     "performance": "get_performance_status",
@@ -24,6 +25,7 @@ TOOL_NAMES = {
     "memory_config": "get_memory_configuration",
     "recovery": "get_recovery_status",
     "dataguard": "get_data_guard_status",
+    "database_users": "list_database_users",
     "security": "get_security_posture",
     "failed_jobs": "get_failed_jobs",
     "issues": "get_current_issues",
@@ -46,8 +48,10 @@ def match_activity(content: str) -> str | None:
         "most critical", "root cause", "corrective action", "happened before", "what changed",
     )):
         return "issues"
-    if any(phrase in text for phrase in ("ora-", "ora error", "critical ora", "alert log")):
+    if any(phrase in text for phrase in ("ora-", "ora error", "critical ora")):
         return "errors"
+    if "alert log" in text or "alertlog" in text:
+        return "alert_log"
     if any(phrase in text for phrase in (
         "currently running", "and healthy", "restarted", "outage", "pdb",
         "services operational", "critical status", "unknown, warning",
@@ -111,6 +115,11 @@ def match_activity(content: str) -> str | None:
         return "memory_config"
     if any(word in text for word in ("memory", "sga", "pga")):
         return "memory"
+    if any(phrase in text for phrase in (
+        "list database user", "list the database user", "list of database user", "list of users",
+        "list users", "list the users", "database user list", "show database user",
+    )):
+        return "database_users"
     if any(phrase in text for phrase in ("locked", "expired", "privileged", "invalid object", "invalid database")):
         return "security"
     return None
@@ -376,6 +385,12 @@ SYNTHETIC: dict[str, tuple[dict[str, str], ...]] = {
             "message_text": "ORA-00600: internal error code",
         },
     ),
+    "alert_log": (
+        {
+            "source": "v$diag_alert_ext", "occurred_at": "2026-11-12 04:00:00",
+            "message_text": "Thread 1 advanced to log sequence 120",
+        },
+    ),
     "tablespace": (
         {
             "source": "tablespace", "tablespace_name": "USERS", "bytes_total": "1073741824",
@@ -485,6 +500,10 @@ SYNTHETIC: dict[str, tuple[dict[str, str], ...]] = {
             "status": "ERROR", "error": "ORA-16198",
         },
         {"source": "v$dataguard_stats", "name": "apply lag", "value": "+00 00:05:00"},
+    ),
+    "database_users": (
+        {"source": "dba_users", "username": "APPUSER", "account_status": "OPEN"},
+        {"source": "dba_users", "username": "REPORTING", "account_status": "LOCKED"},
     ),
     "security": (
         {

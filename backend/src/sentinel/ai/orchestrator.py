@@ -24,13 +24,13 @@ from sentinel.ai.tools.context import ToolContext
 from sentinel.ai.tools.registry import execute_tool
 from sentinel.ai.types import Answer, Assessment, EvidenceCitation, ProviderError, ToolOutcome
 from sentinel.config.settings import Settings
-from sentinel.knowledge.acl import Caller
+from sentinel.knowledge.acl import Caller, is_admin_operator
 from sentinel.persistence.models import ChatMessage, ChatThread, DatabaseTarget, Incident, ToolExecution
 
 logger = logging.getLogger(__name__)
 
 GUIDED_COMMANDS = (
-    {"label": "FRA status", "prompt": "What is the fast recovery area status?"},
+    {"label": "FRA status", "prompt": "What is the FRA status?"},
     {"label": "Tablespaces", "prompt": "Which tablespaces are under space pressure?"},
     {"label": "Datafiles", "prompt": "List the datafiles"},
     {"label": "Memory", "prompt": "How full is the memory?"},
@@ -40,12 +40,15 @@ GUIDED_COMMANDS = (
     {"label": "Jobs", "prompt": "Is a scheduler job running?"},
     {"label": "Health", "prompt": "Is the selected database running and healthy?"},
     {"label": "Errors", "prompt": "Has the database logged any critical ORA errors in the last 24 hours?"},
+    {"label": "Alert log", "prompt": "What are the latest alert log entries?"},
     {"label": "Blocking", "prompt": "Are any sessions currently blocking other sessions?"},
     {"label": "Data Guard", "prompt": "Is the Data Guard configuration healthy?"},
     {"label": "Open incidents", "prompt": "Summarize open incidents"},
     {"label": "Compliance", "prompt": "Which compliance policies are failing?"},
     {"label": "Search runbooks", "prompt": "Search knowledge for ORA-00257"},
+    {"label": "Database users", "prompt": "List the database users"},
 )
+USER_LIST_DENIAL = "Authorization failed. Listing database users is limited to an admin operator."
 _OPERATION = re.compile(r"\b(alter|drop|truncate|shutdown|grant|revoke|execute)\b", re.IGNORECASE)
 _ORA = re.compile(r"\b(ORA-\d{5})\b", re.IGNORECASE)
 _TABLESPACE = re.compile(r"\btablespace\s+([A-Za-z][A-Za-z0-9_$#]{0,29})\b", re.IGNORECASE)
@@ -82,6 +85,12 @@ class Orchestrator:
             )
         target_id, incident_id = _scope_ids(session, thread)
         activity = None if intent == "operation_proposal" else match_activity(clean_question)
+        if activity == "database_users" and not is_admin_operator(caller.role):
+            denial = ToolOutcome("list_database_users", "denied", USER_LIST_DENIAL, reason="authorization")
+            return self._finish(
+                session, thread, caller, target_id, correlation_id, [denial],
+                USER_LIST_DENIAL, False, "denied", 0, 0, intent,
+            )
         context = ToolContext(session, self.settings, caller, target_id, incident_id)
         outcomes = _denied_from_text(clean_question, "instructions in the question cannot call tools")
         if intent == "operation_proposal":
@@ -278,7 +287,14 @@ def _load_model_json(content: str) -> object:
     if text.startswith("```"):
         lines = [line for line in text.splitlines() if not line.strip().startswith("```")]
         text = "\n".join(lines).strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            return json.loads(text[start:end + 1])
+        raise
 
 
 def _fallback(intent: str, citations: list[EvidenceCitation]) -> str:

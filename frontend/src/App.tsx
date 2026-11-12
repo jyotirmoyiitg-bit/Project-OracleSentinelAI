@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
+  UserRound,
   X,
 } from 'lucide-react'
 import { ApiError, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
@@ -119,6 +120,14 @@ function useRefreshPreference() {
   return [seconds, update] as const
 }
 
+function roleLabel(role: string | undefined): string {
+  if (role === 'admin') return 'Admin'
+  if (role === 'dba') return 'DBA'
+  if (role === 'auditor') return 'Auditor'
+  if (role === 'operator') return 'Operator'
+  return role ?? ''
+}
+
 function AppHeader({
   currentPage,
   onHome,
@@ -133,6 +142,7 @@ function AppHeader({
   refreshing,
   detailTitle,
   principal,
+  role,
   onSignOut,
 }: {
   currentPage: Route['page']
@@ -148,6 +158,7 @@ function AppHeader({
   refreshing: boolean
   detailTitle?: string
   principal?: string
+  role?: string
   onSignOut?: () => void
 }) {
   return (
@@ -181,8 +192,12 @@ function AppHeader({
           <RefreshCw size={17} />
         </button>
         {principal ? (
-          <span className="signed-in">
-            <span>{principal}</span>
+          <span className="signed-in" role="status" aria-label={`Signed in as ${principal}${roleLabel(role) ? `, ${roleLabel(role)}` : ''}`}>
+            <span className="signed-in-face" aria-hidden="true"><UserRound size={16} strokeWidth={2.25} /></span>
+            <span className="signed-in-identity">
+              <strong>{principal}</strong>
+              {roleLabel(role) && <small>{roleLabel(role)}</small>}
+            </span>
             <button className="nav-link" type="button" onClick={onSignOut}>Sign out</button>
           </span>
         ) : <span className="user-avatar" aria-label="Oracle Sentinel monitoring">OS</span>}
@@ -720,6 +735,7 @@ export default function App() {
         onManualRefresh={onManualRefresh}
         refreshing={refreshing}
         principal={session.required ? session.principal : undefined}
+        role={session.required ? session.role : undefined}
         onSignOut={() => {
           void logout().finally(() => setSession({ ...session, authenticated: false, principal: '', role: '', method: '' }))
         }}

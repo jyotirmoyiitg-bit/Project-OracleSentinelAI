@@ -28,6 +28,7 @@ _SCHEMA: dict[str, Any] = {
 _DESCRIPTIONS = {
     "get_database_availability": "Live instance, open mode, startup, PDBs, services, and recent startup or shutdown lines.",
     "get_critical_errors": "Critical ORA and fatal alert-log lines from the last 24 hours.",
+    "get_alert_log": "Newest alert log lines from V$DIAG_ALERT_EXT for the last 7 days.",
     "get_tablespace_pressure": "Tablespace percent used, 80/90/95 bands, autoextend headroom, and temporary space.",
     "get_tablespace_growth": "When a tablespace may fill, from retained samples rather than AWR.",
     "get_performance_status": "Startup CPU ratio, active sessions, top waits, and file I/O latency.",
@@ -36,6 +37,7 @@ _DESCRIPTIONS = {
     "get_memory_configuration": "Temporary space, hard parses, library cache, parameters, and resource limits.",
     "get_recovery_status": "Last successful and failed backups, fast recovery area, and recent archive logs.",
     "get_data_guard_status": "Database role, archive destinations, and Data Guard lag when a standby exists.",
+    "list_database_users": "Database usernames and account status. The API allows this only for an admin operator.",
     "get_security_posture": "Locked or expired accounts, invalid objects, and current privileged role grants.",
     "get_failed_jobs": "Scheduler jobs that failed or stopped in the last 2 days.",
     "get_current_issues": "Current availability, critical errors, space, and blocking evidence.",

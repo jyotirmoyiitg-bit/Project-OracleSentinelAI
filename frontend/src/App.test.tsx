@@ -195,4 +195,24 @@ describe('Oracle Sentinel dashboard', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Target does not exist')
     expect(screen.getByRole('button', { name: 'Back to fleet' })).toBeInTheDocument()
   })
+
+  it('shows the signed-in user, role, and face icon', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url.includes('/api/v1/auth/session')) {
+        return Promise.resolve(jsonResponse({
+          required: true, authenticated: true, principal: 'sentinel', role: 'admin', method: 'local',
+        }))
+      }
+      if (url.includes('/portal-notifications')) return Promise.resolve(jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 }))
+      if (url.endsWith('/databases/summary')) return Promise.resolve(jsonResponse({ total: 0, healthy: 0, warning: 0, critical: 0, offline: 0, unknown: 0, disabled: 0, scheduler_enabled: true }))
+      if (url.includes('/databases')) return Promise.resolve(jsonResponse(fleetResponse([])))
+      return Promise.resolve(jsonResponse({}))
+    }))
+    render(<App />)
+    const signedIn = await screen.findByRole('status', { name: 'Signed in as sentinel, Admin' })
+    expect(within(signedIn).getByText('sentinel')).toBeInTheDocument()
+    expect(within(signedIn).getByText('Admin')).toBeInTheDocument()
+    expect(signedIn.querySelector('.lucide-user-round')).toBeTruthy()
+  })
 })

@@ -60,7 +60,14 @@ class Settings(BaseSettings):
         default="disabled",
         description="Only disabled is allowed. A local outage must not send data to a hosted model.",
     )
-    ai_hosted_api_base: str = Field(default="", description="OpenAI-compatible base URL for an approved hosted model")
+    ai_hosted_vendor: str = Field(
+        default="openai",
+        description="Hosted API shape: openai or anthropic. Used only when ai_provider is hosted.",
+    )
+    ai_hosted_api_base: str = Field(
+        default="",
+        description="Hosted base URL. Empty uses https://api.openai.com/v1 or https://api.anthropic.com.",
+    )
     ai_hosted_model: str = Field(default="", description="Hosted model name. Empty uses no hosted model name.")
     ai_max_tool_calls: int = Field(default=5, ge=1, le=8)
     ai_max_output_tokens: int = Field(default=600, ge=64, le=4000)
@@ -69,7 +76,7 @@ class Settings(BaseSettings):
     ai_redact_sensitive_telemetry: bool = Field(default=True)
     ai_hosted_approved: bool = Field(
         default=False,
-        description="Hosted chat stays disabled until this is set with a base URL, secret reference, and disclosure",
+        description="Hosted chat stays disabled until this is set with a model, secret reference, and disclosure",
     )
     ai_hosted_privacy_disclosure: str = Field(default="")
 
@@ -196,6 +203,8 @@ class Settings(BaseSettings):
     def validate_ai(self) -> Settings:
         if self.ai_provider not in {"local", "hosted", "disabled"}:
             raise ValueError("ai_provider must be local, hosted, or disabled")
+        if self.ai_hosted_vendor not in {"openai", "anthropic"}:
+            raise ValueError("ai_hosted_vendor must be openai or anthropic")
         if self.ai_fallback_provider != "disabled":
             raise ValueError("ai_fallback_provider must stay disabled")
         if self.ai_timeout_seconds < 1 or self.ai_timeout_seconds > 120:

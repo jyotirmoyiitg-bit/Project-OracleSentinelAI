@@ -1,11 +1,13 @@
 """Provider selection, the shared prompt contract, and the hosted-egress guard."""
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
 
 from sentinel.ai.gateway import build_gateway
+from sentinel.ai.orchestrator import _load_model_json
 from sentinel.ai.types import ProviderError
 from sentinel.config.secrets import SecretResolver
 from sentinel.config.settings import Settings
@@ -111,3 +113,113 @@ async def test_disabled_mode_and_native_tools_do_not_call_network() -> None:
 def test_fallback_provider_cannot_be_hosted() -> None:
     with pytest.raises(ValueError, match="ai_fallback_provider"):
         _settings(ai_fallback_provider="hosted")
+
+
+def test_hosted_vendor_must_be_openai_or_anthropic() -> None:
+    with pytest.raises(ValueError, match="ai_hosted_vendor"):
+        _settings(ai_hosted_vendor="azure")
+
+
+@pytest.mark.asyncio
+async def test_anthropic_uses_the_messages_api(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test-secret")
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["api_key"] = request.headers.get("x-api-key")
+        captured["version"] = request.headers.get("anthropic-version")
+        captured["authorization"] = request.headers.get("authorization")
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={
+            "content": [{"type": "text", "text": "anthropic answer"}],
+            "usage": {"input_tokens": 4, "output_tokens": 2},
+        })
+
+    settings = _settings(
+        ai_provider="hosted", ai_hosted_vendor="anthropic", ai_hosted_model="claude-test",
+        ai_hosted_approved=True, ai_hosted_api_key_secret_ref="secret://ANTHROPIC_API_KEY",
+        ai_hosted_privacy_disclosure="Sent to Anthropic.",
+    )
+    async with _client(httpx.MockTransport(handler)) as client:
+        gateway = build_gateway(settings, SecretResolver("not-a-fernet-key"), client=client)
+        reply = await gateway.generate([
+            {"role": "system", "content": "stay grounded"},
+            {"role": "user", "content": "question"},
+        ], tools=None, correlation_id="anthropic")
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert captured["url"] == "https://api.anthropic.com/v1/messages"
+    assert captured["api_key"] == "anthropic-test-secret"
+    assert captured["version"] == "2023-06-01"
+    assert captured["authorization"] is None
+    assert body["system"] == "stay grounded"
+    assert body["messages"] == [{"role": "user", "content": "question"}]
+    assert reply.content == "anthropic answer"
+    assert reply.prompt_tokens == 4
+    assert reply.completion_tokens == 2
+
+
+@pytest.mark.asyncio
+async def test_openai_uses_the_default_chat_completions_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-test-secret")
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers["authorization"]
+        captured["body"] = json.loads(request.content.decode())
+        return httpx.Response(200, json={"choices": [{"message": {"content": "openai answer"}}], "usage": {}})
+
+    settings = _settings(
+        ai_provider="hosted", ai_hosted_vendor="openai", ai_hosted_model="gpt-test",
+        ai_hosted_approved=True, ai_hosted_api_key_secret_ref="secret://OPENAI_API_KEY",
+        ai_hosted_privacy_disclosure="Sent to OpenAI.",
+    )
+    async with _client(httpx.MockTransport(handler)) as client:
+        gateway = build_gateway(settings, SecretResolver("not-a-fernet-key"), client=client)
+        reply = await gateway.generate(
+            [{"role": "user", "content": "question"}], tools=None, correlation_id="openai",
+        )
+    body = captured["body"]
+    assert isinstance(body, dict)
+    assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+    assert captured["authorization"] == "Bearer openai-test-secret"
+    assert body["response_format"] == {"type": "json_object"}
+    assert reply.content == "openai answer"
+    assert reply.provider == "hosted"
+
+
+@pytest.mark.asyncio
+async def test_hosted_key_is_read_from_the_env_file_without_using_other_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text('OPENAI_API_KEY="file-secret"\nORACLE_PASSWORD=leave-this\n', encoding="utf-8")
+    monkeypatch.setattr("sentinel.ai.providers.hosted._ENV_FILE", env_file)
+    captured: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["authorization"] = request.headers["authorization"]
+        return httpx.Response(200, json={"choices": [{"message": {"content": "from file"}}], "usage": {}})
+
+    settings = _settings(
+        ai_provider="hosted", ai_hosted_vendor="openai", ai_hosted_model="gpt-test",
+        ai_hosted_approved=True, ai_hosted_api_key_secret_ref="secret://OPENAI_API_KEY",
+        ai_hosted_privacy_disclosure="Sent to OpenAI.",
+    )
+    async with _client(httpx.MockTransport(handler)) as client:
+        gateway = build_gateway(settings, SecretResolver("not-a-fernet-key"), client=client)
+        reply = await gateway.generate(
+            [{"role": "user", "content": "question"}], tools=None, correlation_id="file-key",
+        )
+    assert captured["authorization"] == "Bearer file-secret"
+    assert "leave-this" not in captured["authorization"]
+    assert reply.content == "from file"
+
+
+def test_hosted_json_can_be_read_when_the_model_adds_surrounding_text() -> None:
+    parsed = _load_model_json('Here is the result:\n{"assessment": "USERS is 5 MB", "confidence": "high"}')
+    assert isinstance(parsed, dict)
+    assert parsed["assessment"] == "USERS is 5 MB"

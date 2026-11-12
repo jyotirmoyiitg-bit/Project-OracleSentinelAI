@@ -291,7 +291,9 @@ This note is reference text. It does not change a database and it is not execute
     if ($Thread.disclosure -notlike '*language model is disabled*') { throw 'The thread disclosure does not say the language model is disabled.' }
     $Guided = @($Thread.guided_commands | Where-Object { $_.label -eq 'FRA status' })
     if ($Guided.Count -ne 1) { throw 'The copilot did not offer the FRA status guided command.' }
-    $FraAnswer = Get-ChatEvents -ThreadId $Thread.id -Content 'What is the fast recovery area status?'
+    # The abbreviation FRA is required. "fast recovery area" alone does not contain it.
+    if ($Guided[0].prompt -notlike '*FRA*') { throw 'The FRA guided command does not ask about the FRA.' }
+    $FraAnswer = Get-ChatEvents -ThreadId $Thread.id -Content $Guided[0].prompt
     if ($FraAnswer.llm_used) { throw 'The FRA answer reported that a language model was used.' }
     if ($FraAnswer.provider_status -ne 'disabled') { throw "Expected provider_status disabled, received $($FraAnswer.provider_status)." }
     Assert-NoAllowedSql $FraAnswer

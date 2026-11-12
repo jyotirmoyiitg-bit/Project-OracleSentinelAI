@@ -501,13 +501,65 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .copilot-disclosure { margin: 0 0 12px; color: #536176; font-size: 12px; line-height: 1.5; }
 .copilot-commands { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .copilot-commands .button { margin-top: 0; }
-.copilot-transcript { display: flex; flex-direction: column; gap: 14px; min-height: 72px; }
-.copilot-turn { padding-top: 12px; border-top: 1px solid #f0f2f6; }
-.copilot-question { margin: 0 0 6px; color: #1d2736; font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
-.copilot-answer { margin: 0; color: #3e4b60; font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.copilot-tools, .copilot-citations { margin: 10px 0 0; padding: 0; list-style: none; }
-.copilot-tools li, .copilot-citations li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin-top: 6px; color: #536176; font-size: 11px; overflow-wrap: anywhere; }
-.copilot-citations p { flex-basis: 100%; margin: 0; color: #3e4b60; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.copilot-transcript { display: flex; flex-direction: column; gap: 16px; min-height: 72px; }
+.copilot-turn { padding-top: 14px; border-top: 1px solid #f0f2f6; }
+.copilot-question {
+  display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; color: #1d2736;
+  font-family: Manrope, 'Segoe UI', sans-serif; font-size: 15px; font-weight: 750; letter-spacing: -.2px; overflow-wrap: anywhere;
+}
+.copilot-question span {
+  color: #6d7c93; font-family: 'DM Sans', 'Segoe UI', sans-serif; font-size: 10px; font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.copilot-answer-card {
+  display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px;
+  background: #fff; border: 1px solid #e4eaf3; border-left: 4px solid #566fe7; border-radius: 12px;
+}
+.copilot-answer-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.copilot-answer-head h2, .copilot-section h3 {
+  margin: 0; color: #5c6b82; font-family: 'DM Sans', 'Segoe UI', sans-serif; font-size: 10px; font-weight: 750;
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.copilot-status { padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.copilot-status-answered { color: #1f7a52; background: #e7f6ee; }
+.copilot-status-unavailable { color: #9a5b12; background: #fff3df; }
+.copilot-status-disabled { color: #5d6b82; background: #eef2f7; }
+.copilot-status-denied { color: #a53140; background: #fdebed; }
+.copilot-prose p, .copilot-fallback p {
+  margin: 0; color: #1c2838; font-family: Georgia, Cambria, 'Iowan Old Style', serif; font-size: 15.5px; line-height: 1.65; overflow-wrap: anywhere;
+}
+.copilot-prose p + p, .copilot-fallback p + p { margin-top: 8px; }
+.copilot-section { padding: 12px 14px; border-radius: 10px; }
+.copilot-section p, .copilot-section li { color: #243044; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.copilot-section-limits { background: #fff8ee; border: 1px solid #f0ddb4; }
+.copilot-section-limits h3 { color: #8a5a12; }
+.copilot-section-steps { background: #f4f6fd; border: 1px solid #d9e1f8; }
+.copilot-section-steps h3 { color: #3d53b8; }
+.copilot-section-steps ol, .copilot-section ul { margin: 8px 0 0; padding-left: 18px; }
+.copilot-section-steps li + li, .copilot-section-collected li + li, .copilot-section-reading li + li { margin-top: 6px; }
+.copilot-section-collected { background: #f7f8fb; border: 1px solid #e4e9f2; }
+.copilot-section-reading { background: #f3faf6; border: 1px solid #cfe6d8; }
+.copilot-section-reading h3 { color: #1f7a52; }
+.copilot-section-reading li { font-family: Georgia, Cambria, serif; }
+.copilot-note { margin: 0; color: #6a5830; font-size: 12px; }
+.copilot-section-tools, .copilot-section-evidence { padding: 0; background: transparent; }
+.copilot-tools, .copilot-citations { margin: 8px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.copilot-tools li, .copilot-citations li {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; margin: 0; padding: 10px 12px;
+  background: #f8fafc; border: 1px solid #e6ebf3; border-radius: 8px; color: #3d4b61; font-size: 12px; overflow-wrap: anywhere;
+}
+.copilot-tools code, .copilot-citations code {
+  font-family: Consolas, 'Cascadia Mono', 'Courier New', monospace; font-size: 12px; color: #243049;
+}
+.copilot-duration { color: #7b8798; font-size: 11px; }
+.copilot-citations strong { color: #1d2736; font-weight: 700; }
+.copilot-citation-path { flex-basis: 100%; color: #7b8798; font-size: 11px; }
+.copilot-citations p { flex-basis: 100%; margin: 0; color: #243044; font-family: Georgia, Cambria, serif; font-size: 13.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.copilot-kind { padding: 2px 7px; border-radius: 999px; background: #eef2f7; color: #526178; font-size: 10px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+.copilot-kind-metric { color: #0f6e6e; background: #e7f6f6; }
+.copilot-kind-compliance { color: #3d53b8; background: #eef1fc; }
+.copilot-kind-document, .copilot-kind-knowledge { color: #5b3d91; background: #f3eefb; }
+.copilot-kind-incident { color: #9a5b12; background: #fff3df; }
 .copilot-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
 .copilot-query { display: flex; align-items: center; flex: 1 1 240px; min-width: min(240px, 100%); height: 36px; background: #fff; border: 1px solid #e5eaf1; border-radius: 7px; }
 .copilot-query svg { margin-left: 10px; color: #8b97a8; }
@@ -523,6 +575,13 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .login-local { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 2px 0 16px; font-size: 13px; }
 .login-card .login-local input { width: 16px; height: 16px; margin: 0; padding: 0; }
 .signed-in { display: inline-flex; align-items: center; gap: 8px; color: #536176; font-size: 12px; font-weight: 700; }
+.signed-in-face {
+  display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0;
+  border-radius: 50%; color: #fff; background: linear-gradient(145deg, #667ef0, #4258cf);
+}
+.signed-in-identity { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.signed-in-identity strong { color: #1d2736; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.signed-in-identity small { color: #5c6b82; font-size: 10px; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
 .text-button { padding: 0; color: #536bdc; background: none; border: 0; font-size: inherit; font-weight: 650; text-align: left; }
 .text-button:hover { text-decoration: underline; }
 .ingestion-badge { display: inline-flex; align-items: center; padding: 5px 8px; border-radius: 20px; font-size: 10px; font-weight: 650; text-transform: capitalize; }

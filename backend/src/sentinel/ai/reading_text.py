@@ -75,6 +75,22 @@ def _errors(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     return f"{len(lines)} critical alert lines in the last 24 hours.", lines
 
 
+def _alert_log(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    entries = _source(rows, "v$diag_alert_ext") or rows
+    lines = [
+        "Newest lines from this database alert log for the last 7 days. Listener and client traces are excluded.",
+    ]
+    lines.extend(
+        f"{row.get('occurred_at') or ''} {row.get('message_text') or ''}".strip()
+        for row in entries
+        if (row.get("message_text") or "").strip()
+    )
+    if len(lines) == 1:
+        lines.append("No alert log line was returned for the last 7 days.")
+        return "No alert log line was returned for the last 7 days.", lines
+    return f"{len(lines) - 1} latest alert log lines.", lines
+
+
 def _tablespace(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     spaces = _source(rows, "tablespace")
     lines = []
@@ -319,6 +335,19 @@ def _dataguard(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     return f"Database role is {role or 'unknown'}.", lines
 
 
+def _database_users(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    accounts = _source(rows, "dba_users")
+    lines = [
+        f"{row.get('username') or 'unknown'} {row.get('account_status') or ''}".strip()
+        for row in accounts
+    ]
+    if not lines:
+        return "No database users were returned.", ["No database users were returned."]
+    if len(lines) >= 80:
+        lines.append("The list stops at 80 users.")
+    return f"{len(accounts)} database users.", lines
+
+
 def _security(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     lines = [(
         "Locked or expired accounts and invalid objects are current state. "
@@ -501,6 +530,7 @@ def _seconds(value: str | None) -> str:
 _HANDLERS = {
     "availability": _availability,
     "errors": _errors,
+    "alert_log": _alert_log,
     "tablespace": _tablespace,
     "performance": _performance,
     "blocking": _blocking,
@@ -508,6 +538,7 @@ _HANDLERS = {
     "memory_config": _memory_config,
     "recovery": _recovery,
     "dataguard": _dataguard,
+    "database_users": _database_users,
     "security": _security,
     "failed_jobs": _failed_jobs,
     "growth": _growth,

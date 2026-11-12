@@ -64,6 +64,37 @@ def test_catalog_question_selects_one_named_reading(question: str, kind: str) ->
     assert match_activity(question) == kind
 
 
+def test_alert_queries_stay_on_the_selected_database_alert() -> None:
+    from sentinel.adapters.oracle.readings import CRITICAL_SQL, DEADLOCK_SQL, LATEST_ALERT_SQL, OUTAGE_SQL
+
+    for sql in (CRITICAL_SQL, LATEST_ALERT_SQL, OUTAGE_SQL, DEADLOCK_SQL):
+        folded = sql.lower()
+        assert "%rdbms%alert%log.xml" in folded
+        assert "%tnslsnr%" in folded
+        assert "%clients%" in folded
+    assert "%fatal ni%" in CRITICAL_SQL.lower()
+
+
+def test_latest_alert_log_is_separate_from_critical_errors() -> None:
+    assert match_activity("What are the latest alert log entries?") == "alert_log"
+    assert match_activity("Has the database logged any critical ORA errors in the last 24 hours?") == "errors"
+    outcome = reading_outcome(
+        ActivityReading("alert_log", "get_alert_log", "ok", [dict(row) for row in SYNTHETIC["alert_log"]]),
+        "db",
+    )
+    assert any("Thread 1 advanced" in line for line in outcome.payload["lines"])
+
+
+def test_listing_database_users_is_its_own_reading() -> None:
+    assert match_activity("List the database users") == "database_users"
+    assert match_activity("Which database users or application services have the highest session counts?") == "blocking"
+    outcome = reading_outcome(
+        ActivityReading("database_users", "list_database_users", "ok", [dict(row) for row in SYNTHETIC["database_users"]]),
+        "db",
+    )
+    assert "APPUSER OPEN" in outcome.payload["lines"]
+
+
 def test_fast_recovery_area_stays_on_the_existing_fra_reading() -> None:
     assert match_activity("Is the Fast Recovery Area nearing its capacity limit?") is None
     assert match_activity("Which compliance policies are failing?") is None

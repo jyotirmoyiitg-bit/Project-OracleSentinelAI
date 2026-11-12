@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
+from sentinel.ai.activity import ActivityReading
 from sentinel.ai.gateway import build_gateway
 from sentinel.ai.orchestrator import Orchestrator
 from sentinel.knowledge.acl import Caller
@@ -219,3 +220,67 @@ async def test_local_answer_cites_collected_fra_evidence(settings, sessions) -> 
     assert answer.provider == "local"
     assert "nearly full" in answer.content
     assert any(item["source"] == "storage.fra.used_pct" for item in answer.citations)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["operator", "dba", "auditor"])
+async def test_non_admin_operator_cannot_list_database_users(settings, sessions, monkeypatch: pytest.MonkeyPatch, role: str) -> None:
+    async def fail(*args: object, **kwargs: object) -> ActivityReading:
+        raise AssertionError("a non-admin operator must not read database users")
+
+    monkeypatch.setattr("sentinel.ai.orchestrator.prepare_reading", fail)
+    with sessions.begin() as session:
+        target = DatabaseTarget(engine="oracle", display_name="Users", tns_alias="PDBORCL", environment="test")
+        session.add(target)
+        session.flush()
+        thread = ChatThread(
+            principal=role, role=role, scope_type="database", scope_id=str(target.id),
+            provider="disabled", model="",
+        )
+        session.add(thread)
+        session.flush()
+        thread_id = thread.id
+    gateway = build_gateway(settings.model_copy(update={"ai_enabled": False, "ai_provider": "disabled"}))
+    orchestrator = Orchestrator(settings, gateway)
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(session, stored, Caller(role, role), "List the database users")
+    assert answer.provider_status == "denied"
+    assert answer.llm_used is False
+    assert answer.content == "Authorization failed. Listing database users is limited to an admin operator."
+    assert answer.tools == [{
+        "tool": "list_database_users", "decision": "denied",
+        "summary": answer.content, "reason": "authorization", "duration_ms": 0,
+    }]
+
+
+@pytest.mark.asyncio
+async def test_admin_operator_receives_the_database_user_list(settings, sessions, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def reading(*args: object, **kwargs: object) -> ActivityReading:
+        del args, kwargs
+        return ActivityReading(
+            "database_users", "list_database_users", "ok",
+            [{"source": "dba_users", "username": "APPUSER", "account_status": "OPEN"}],
+        )
+
+    monkeypatch.setattr("sentinel.ai.orchestrator.prepare_reading", reading)
+    with sessions.begin() as session:
+        target = DatabaseTarget(engine="oracle", display_name="Users", tns_alias="PDBORCL", environment="test")
+        session.add(target)
+        session.flush()
+        thread = ChatThread(
+            principal="admin", role="admin", scope_type="database", scope_id=str(target.id),
+            provider="disabled", model="",
+        )
+        session.add(thread)
+        session.flush()
+        thread_id = thread.id
+    quiet = settings.model_copy(update={"ai_enabled": False, "ai_provider": "disabled"})
+    orchestrator = Orchestrator(quiet, build_gateway(quiet))
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(session, stored, Caller("admin", "sentinel"), "List the database users")
+    assert answer.tools[0]["decision"] == "allowed"
+    assert "APPUSER OPEN" in answer.content

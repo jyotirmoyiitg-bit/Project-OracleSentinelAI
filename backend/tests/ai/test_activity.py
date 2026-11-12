@@ -16,6 +16,7 @@ def test_operator_questions_select_one_fixed_reading() -> None:
     assert match_activity("Are any backups running?") == "backups"
     assert match_activity("Is a scheduler job running?") == "jobs"
     assert match_activity("What is the fast recovery area status?") is None
+    assert match_activity("What is the FRA status?") is None
 
 
 def test_question_text_is_not_copied_into_sql() -> None:

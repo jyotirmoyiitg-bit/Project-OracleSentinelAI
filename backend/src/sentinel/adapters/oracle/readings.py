@@ -23,13 +23,21 @@ SERVICE_SQL = """
     FROM (SELECT name FROM v$services ORDER BY name)
     WHERE ROWNUM <= 30
 """
-OUTAGE_SQL = """
+# V$DIAG_ALERT_EXT also exposes listener and client traces. Those traces can name
+# another database, such as a failed connection to FREEPDB1. Keep the database alert only.
+_DATABASE_ALERT_FILE = """
+    LOWER(filename) LIKE '%rdbms%alert%log.xml'
+    AND LOWER(filename) NOT LIKE '%tnslsnr%'
+    AND LOWER(filename) NOT LIKE '%clients%'
+"""
+OUTAGE_SQL = f"""
     SELECT occurred_at, message_text
     FROM (
         SELECT TO_CHAR(originating_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at,
                SUBSTR(message_text, 1, 160) AS message_text
         FROM v$diag_alert_ext
         WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '7' DAY
+          AND {_DATABASE_ALERT_FILE}
           AND (
               UPPER(message_text) LIKE '%SHUTDOWN%'
               OR UPPER(message_text) LIKE '%INSTANCE TERMINATED%'
@@ -39,13 +47,27 @@ OUTAGE_SQL = """
     )
     WHERE ROWNUM <= 10
 """
-CRITICAL_SQL = """
+LATEST_ALERT_SQL = f"""
+    SELECT occurred_at, message_text
+    FROM (
+        SELECT TO_CHAR(originating_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at,
+               SUBSTR(message_text, 1, 180) AS message_text
+        FROM v$diag_alert_ext
+        WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '7' DAY
+          AND message_text IS NOT NULL
+          AND {_DATABASE_ALERT_FILE}
+        ORDER BY originating_timestamp DESC
+    )
+    WHERE ROWNUM <= 30
+"""
+CRITICAL_SQL = f"""
     SELECT occurred_at, message_text
     FROM (
         SELECT TO_CHAR(originating_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at,
                SUBSTR(message_text, 1, 180) AS message_text
         FROM v$diag_alert_ext
         WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '1' DAY
+          AND {_DATABASE_ALERT_FILE}
           AND (
               message_text LIKE '%ORA-00600%' OR message_text LIKE '%ORA-07445%'
               OR message_text LIKE '%ORA-04031%' OR message_text LIKE '%ORA-04030%'
@@ -53,8 +75,11 @@ CRITICAL_SQL = """
               OR message_text LIKE '%ORA-01654%' OR message_text LIKE '%ORA-01578%'
               OR message_text LIKE '%ORA-19809%' OR message_text LIKE '%ORA-19815%'
               OR message_text LIKE '%ORA-00255%' OR message_text LIKE '%ORA-16038%'
-              OR message_text LIKE '%ORA-16014%' OR message_text LIKE '%ORA-00060%'
-              OR UPPER(message_text) LIKE '%FATAL%'
+              OR message_text LIKE '%ORA-16014%'               OR message_text LIKE '%ORA-00060%'
+              OR (
+                  UPPER(message_text) LIKE '%FATAL%'
+                  AND UPPER(message_text) NOT LIKE '%FATAL NI%'
+              )
           )
         ORDER BY originating_timestamp DESC
     )
@@ -166,13 +191,14 @@ LIMIT_SQL = """
     FROM v$resource_limit
     WHERE resource_name IN ('processes', 'sessions', 'transactions')
 """
-DEADLOCK_SQL = """
+DEADLOCK_SQL = f"""
     SELECT occurred_at, message_text
     FROM (
         SELECT TO_CHAR(originating_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at,
                SUBSTR(message_text, 1, 160) AS message_text
         FROM v$diag_alert_ext
         WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '1' DAY
+          AND {_DATABASE_ALERT_FILE}
           AND message_text LIKE '%ORA-00060%'
         ORDER BY originating_timestamp DESC
     )
@@ -309,6 +335,15 @@ GUARD_STATS_SQL = """
     SELECT name, value
     FROM v$dataguard_stats
 """
+USER_LIST_SQL = """
+    SELECT username, account_status
+    FROM (
+        SELECT username, account_status
+        FROM dba_users
+        ORDER BY username
+    )
+    WHERE ROWNUM <= 80
+"""
 ACCOUNT_SQL = """
     SELECT username, account_status, lock_date, expiry_date
     FROM (
@@ -373,6 +408,7 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         FixedQuery("alert_outage", OUTAGE_SQL, "SYS.V_$DIAG_ALERT_EXT", required=False),
     )
     errors = (FixedQuery("v$diag_alert_ext", CRITICAL_SQL, "SYS.V_$DIAG_ALERT_EXT"),)
+    alert_log = (FixedQuery("v$diag_alert_ext", LATEST_ALERT_SQL, "SYS.V_$DIAG_ALERT_EXT"),)
     tablespace = (
         FixedQuery("tablespace", TABLESPACE_SQL, "SYS.DBA_DATA_FILES"),
         FixedQuery("datafile_limit", DATAFILE_LIMIT_SQL, "SYS.DBA_DATA_FILES"),
@@ -415,6 +451,7 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         FixedQuery("v$archive_dest_status", DEST_SQL, "SYS.V_$ARCHIVE_DEST_STATUS"),
         FixedQuery("v$dataguard_stats", GUARD_STATS_SQL, "SYS.V_$DATAGUARD_STATS", required=False),
     )
+    database_users = (FixedQuery("dba_users", USER_LIST_SQL, "SYS.DBA_USERS"),)
     security = (
         FixedQuery("dba_users", ACCOUNT_SQL, "SYS.DBA_USERS"),
         FixedQuery("dba_objects", INVALID_SQL, "SYS.DBA_OBJECTS"),
@@ -434,6 +471,7 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
     return {
         "availability": availability,
         "errors": errors,
+        "alert_log": alert_log,
         "tablespace": tablespace,
         "performance": performance,
         "blocking": blocking,
@@ -441,6 +479,7 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         "memory_config": memory_config,
         "recovery": recovery,
         "dataguard": dataguard,
+        "database_users": database_users,
         "security": security,
         "failed_jobs": failed_jobs,
         "issues": issues,

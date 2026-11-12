@@ -100,7 +100,7 @@
     <figure>
       <svg viewBox="0 0 1080 620" role="img" aria-labelledby="archTitle archDesc">
         <title id="archTitle">High-level architecture</title>
-        <desc id="archDesc">Browser talks to the portal, which proxies to the API. The API stores data in PostgreSQL, optionally asks Ollama to explain evidence, and starts a short-lived readings process that queries Oracle.</desc>
+        <desc id="archDesc">Browser talks to the portal, which proxies to the API. The API stores data in PostgreSQL, optionally asks Ollama or an approved OpenAI or Anthropic model to explain evidence, and starts a short-lived readings process that queries Oracle.</desc>
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#64748b"></path>
@@ -160,7 +160,7 @@
         <text x="300" y="360" class="label">metrics, chat, knowledge</text>
         <text x="548" y="556" class="label">growth history</text>
       </svg>
-      <figcaption>Solid boxes stay up with the portal. The dashed readings process exists only while a database question is being answered. Growth uses retained samples in PostgreSQL. Every other live reading uses Oracle.</figcaption>
+      <figcaption>Solid boxes stay up with the portal. The dashed readings process exists only while a database question is being answered. Growth uses retained samples in PostgreSQL. Every other live reading uses Oracle. Switching AI_PROVIDER to hosted sends the same explanation to the approved OpenAI or Anthropic endpoint instead of Ollama. A local failure does not make that switch.</figcaption>
     </figure>
   </section>
 

@@ -91,4 +91,4 @@ def build_gateway(
 
 def hosted_is_configured(settings: Settings) -> bool:
     ref = settings.ai_hosted_api_key_secret_ref or ""
-    return bool(settings.ai_hosted_approved and settings.ai_hosted_api_base.strip() and ref.startswith("secret://"))
+    return bool(settings.ai_hosted_approved and settings.ai_hosted_model.strip() and ref.startswith("secret://"))

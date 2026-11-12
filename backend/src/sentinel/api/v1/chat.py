@@ -167,6 +167,7 @@ async def provider_status(
     gateway = build_gateway(settings, SecretResolver(settings.secret_key))
     health = await gateway.health()
     health["hosted_approved"] = settings.ai_hosted_approved
+    health["hosted_vendor"] = settings.ai_hosted_vendor
     health["hosted_secret_configured"] = hosted_is_configured(settings)
     return health
 
