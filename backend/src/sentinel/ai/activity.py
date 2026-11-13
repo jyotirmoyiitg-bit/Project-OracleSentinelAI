@@ -16,6 +16,7 @@ TOOL_NAMES = {
     "jobs": "get_running_jobs",
     "availability": "get_database_availability",
     "errors": "get_critical_errors",
+    "ora_errors": "get_recent_ora_errors",
     "alert_log": "get_alert_log",
     "tablespace": "get_tablespace_pressure",
     "growth": "get_tablespace_growth",
@@ -43,7 +44,7 @@ class ActivityReading:
 
 
 def match_activity(content: str) -> str | None:
-    text = content.lower()
+    text = content.lower().replace("’", "'")
     if any(phrase in text for phrase in (
         "most critical", "root cause", "corrective action", "happened before", "what changed",
     )):
@@ -122,6 +123,12 @@ def match_activity(content: str) -> str | None:
         return "database_users"
     if any(phrase in text for phrase in ("locked", "expired", "privileged", "invalid object", "invalid database")):
         return "security"
+    if any(phrase in text for phrase in (
+        "is there a problem", "any problem", "problem with this database", "problem with the database",
+        "anything wrong", "something wrong", "what is wrong", "what's wrong", "whats wrong",
+        "any oracle error", "oracle errors", "any ora error",
+    )):
+        return "ora_errors"
     return None
 
 
@@ -283,7 +290,17 @@ def _label(kind: str, line: str) -> str:
         return "Backup"
     if kind == "jobs":
         return "Job"
-    return line.split(" ", 1)[0][:80] or kind
+    parts = line.split(" ")
+    if len(parts) >= 2 and _timestamp(parts[0], parts[1]):
+        return f"{parts[0]} {parts[1]}"[:80]
+    return parts[0][:80] if parts and parts[0] else kind
+
+
+def _timestamp(date: str, clock: str) -> bool:
+    return (
+        len(date) == 10 and date[4] == "-" and date[7] == "-"
+        and len(clock) >= 8 and clock[2] == ":" and clock[5] == ":"
+    )
 
 
 def _name(row: dict[str, str]) -> str:
@@ -383,6 +400,12 @@ SYNTHETIC: dict[str, tuple[dict[str, str], ...]] = {
         {
             "source": "v$diag_alert_ext", "occurred_at": "2026-11-12 01:00:00",
             "message_text": "ORA-00600: internal error code",
+        },
+    ),
+    "ora_errors": (
+        {
+            "source": "v$diag_alert_ext", "occurred_at": "2026-11-12 01:10:00",
+            "message_text": "ORA-01578: ORACLE data block corrupted",
         },
     ),
     "alert_log": (

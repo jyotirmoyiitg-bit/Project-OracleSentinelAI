@@ -67,7 +67,7 @@
     .tag.ask { background: #fff4e8; color: var(--mcp); }
     ul.clean { margin: 8px 0 0; padding-left: 18px; }
     ul.clean li { margin: 4px 0; }
-    .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 14px; }
+    .principles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
     .principles article {
       background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
     }
@@ -90,7 +90,8 @@
       <span class="chip"><i class="swatch" style="background:#b45309"></i> Readings process, one question</span>
       <span class="chip"><i class="swatch" style="background:#9a3412"></i> Oracle, read-only GSYSTEM</span>
       <span class="chip"><i class="swatch" style="background:#1e4d3a"></i> PostgreSQL</span>
-      <span class="chip"><i class="swatch" style="background:#4c1d95"></i> Local model, optional</span>
+      <span class="chip"><i class="swatch" style="background:#4c1d95"></i> Local, Claude, or OpenAI</span>
+      <span class="chip"><i class="swatch" style="background:#9f1239"></i> Proposals, execution off</span>
     </div>
   </header>
 
@@ -108,7 +109,7 @@
         </defs>
         <rect x="36" y="28" width="230" height="78" rx="12" class="box" stroke="#1d4e89"></rect>
         <text x="56" y="58" class="title">Operator browser</text>
-        <text x="56" y="80" class="sub">Sign in, fleet, Ask copilot</text>
+        <text x="56" y="80" class="sub">Sign in, fleet, proposals, copilot</text>
 
         <rect x="36" y="168" width="250" height="96" rx="12" class="box" stroke="#1d4e89"></rect>
         <text x="56" y="200" class="title">Portal</text>
@@ -118,19 +119,19 @@
         <rect x="390" y="150" width="300" height="150" rx="12" class="box" stroke="#0f6e6e"></rect>
         <text x="410" y="182" class="title">Sentinel API</text>
         <text x="410" y="206" class="sub">Uvicorn on 127.0.0.1:8000</text>
-        <text x="410" y="228" class="sub">Sign-in, collection, copilot</text>
+        <text x="410" y="228" class="sub">Sign-in, collection, proposals</text>
         <text x="410" y="250" class="sub">Chooses the reading. Never writes SQL.</text>
         <text x="410" y="278" class="small">Stays running while the portal is in use</text>
 
         <rect x="790" y="168" width="250" height="96" rx="12" class="box" stroke="#4c1d95"></rect>
-        <text x="810" y="200" class="title">Ollama</text>
-        <text x="810" y="222" class="sub">127.0.0.1:11434, optional</text>
+        <text x="810" y="200" class="title">Language model</text>
+        <text x="810" y="222" class="sub">Local, Claude, or OpenAI</text>
         <text x="810" y="242" class="sub">Explains rows. Does not pick tools.</text>
 
         <rect x="36" y="390" width="250" height="120" rx="12" class="box" stroke="#1e4d3a"></rect>
         <text x="56" y="422" class="title">PostgreSQL</text>
         <text x="56" y="446" class="sub">Targets, metrics, incidents</text>
-        <text x="56" y="466" class="sub">Sessions, chat, documents</text>
+        <text x="56" y="466" class="sub">Proposals, audit, chat</text>
         <text x="56" y="486" class="sub">pgvector for approved knowledge</text>
 
         <rect x="390" y="400" width="300" height="130" rx="12" class="box" stroke="#b45309" stroke-dasharray="7 5"></rect>
@@ -160,7 +161,7 @@
         <text x="300" y="360" class="label">metrics, chat, knowledge</text>
         <text x="548" y="556" class="label">growth history</text>
       </svg>
-      <figcaption>Solid boxes stay up with the portal. The dashed readings process exists only while a database question is being answered. Growth uses retained samples in PostgreSQL. Every other live reading uses Oracle. Switching AI_PROVIDER to hosted sends the same explanation to the approved OpenAI or Anthropic endpoint instead of Ollama. A local failure does not make that switch.</figcaption>
+      <figcaption>Solid boxes stay up with the portal. The dashed readings process exists only while a database question is being answered. Growth uses retained samples in PostgreSQL. Every other live reading uses Oracle. In dev or test, the local admin sentinel can choose the local model, Claude, or OpenAI for one answer. Each choice has its own base URL, key reference, and privacy sentence. A local failure does not call a hosted model. Proposals are stored only. Privileged execution stays off.</figcaption>
     </figure>
   </section>
 
@@ -232,7 +233,7 @@
         <g>
           <rect x="312" y="190" width="250" height="92" rx="12" class="box" stroke="#4c1d95"></rect>
           <text x="328" y="222" class="title">6. Explain, if enabled</text>
-          <text x="328" y="246" class="sub">Ollama may narrate the rows.</text>
+          <text x="328" y="246" class="sub">The selected model may narrate.</text>
           <text x="328" y="266" class="sub">If it is off, the rows still show.</text>
         </g>
         <path d="M608 236 H562" stroke="#64748b" stroke-width="1.6" marker-end="url(#flowArrow)"></path>
@@ -267,13 +268,13 @@
         <text x="64" y="120" class="sub">Local checkbox, session cookie</text>
         <rect x="292" y="70" width="230" height="78" rx="10" class="box" stroke="#1d4e89"></rect>
         <text x="308" y="98" class="title">CopilotPage</text>
-        <text x="308" y="120" class="sub">Database scope, guided prompts</text>
+        <text x="308" y="120" class="sub">New chat, tabs, model list</text>
         <rect x="546" y="70" width="220" height="78" rx="10" class="box" stroke="#1d4e89"></rect>
         <text x="562" y="98" class="title">api.ts</text>
         <text x="562" y="120" class="sub">/api with credentials</text>
         <rect x="790" y="70" width="230" height="78" rx="10" class="box" stroke="#1d4e89"></rect>
         <text x="806" y="98" class="title">Hash routes</text>
-        <text x="806" y="120" class="sub">#/copilot/databases/:id</text>
+        <text x="806" y="120" class="sub">#/copilot and #/operations</text>
 
         <rect x="28" y="198" width="640" height="230" rx="14" fill="#f3faf9" stroke="#0f6e6e"></rect>
         <text x="48" y="226" class="title">API process — uvicorn sentinel.main:app</text>
@@ -304,9 +305,49 @@
 
         <rect x="28" y="452" width="1024" height="80" rx="14" fill="#f4faf6" stroke="#1e4d3a"></rect>
         <text x="48" y="484" class="title">PostgreSQL tables used by both processes</text>
-        <text x="48" y="508" class="sub">database_targets, observations, operator_accounts, chat_threads, chat_messages, tool_executions, knowledge chunks</text>
+        <text x="48" y="508" class="sub">targets, observations, accounts, chat, tool_executions, proposals, audit_events, privileged_operations</text>
       </svg>
       <figcaption>The child is a new interpreter. It loads the same settings file, decrypts the monitoring secret, opens one Oracle connection, and closes. The API does not keep a readings connection pool of its own for these questions.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>4. Proposals and privileged operations</h2>
+    <p class="lead">An operator can store and approve a fixed tablespace change. Release 1 does not run it. The privileged path answers 501, writes an audit row, and does not open Oracle.</p>
+    <figure>
+      <svg viewBox="0 0 1080 250" role="img" aria-labelledby="privTitle privDesc">
+        <title id="privTitle">Proposal and privileged-operation flow</title>
+        <desc id="privDesc">The portal stores a proposal in PostgreSQL. Approval does not execute it. A privileged execute call returns HTTP 501, records an audit event, and has no arrow to Oracle.</desc>
+        <defs>
+          <marker id="privArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#64748b"></path>
+          </marker>
+        </defs>
+        <rect x="36" y="36" width="230" height="110" rx="12" class="box" stroke="#1d4e89"></rect>
+        <text x="52" y="68" class="title">Proposals page</text>
+        <text x="52" y="92" class="sub">#/operations</text>
+        <text x="52" y="114" class="sub">No execution control</text>
+        <text x="52" y="134" class="sub">Disabled message is shown</text>
+
+        <rect x="320" y="36" width="250" height="110" rx="12" class="box" stroke="#0f6e6e"></rect>
+        <text x="336" y="68" class="title">Proposal API</text>
+        <text x="336" y="92" class="sub">Store, approve, or reject</text>
+        <text x="336" y="114" class="sub">Fixed statement only</text>
+        <text x="336" y="134" class="sub">Execute route returns 403</text>
+
+        <rect x="624" y="36" width="420" height="110" rx="12" class="box" stroke="#9f1239" stroke-dasharray="7 5"></rect>
+        <text x="644" y="68" class="title">Privileged operations</text>
+        <text x="644" y="92" class="sub">GET and POST execute return 501</text>
+        <text x="644" y="114" class="sub">Flag defaults to off</text>
+        <text x="644" y="134" class="sub">No DDL, shell, SQL*Plus, or RMAN</text>
+
+        <path d="M266 91 H320" stroke="#64748b" stroke-width="1.6" marker-end="url(#privArrow)"></path>
+        <path d="M570 91 H624" stroke="#9f1239" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#privArrow)"></path>
+
+        <rect x="36" y="176" width="1008" height="48" rx="12" fill="#f8fafc" stroke="#d5deea"></rect>
+        <text x="56" y="206" class="sub">The attempt is stored in audit_events. privileged_operations is empty. There is no connection from this path to the Oracle PDB.</text>
+      </svg>
+      <figcaption>Schema revision 0009 adds the reserved table. Turning execution on without the separate approval flag prevents startup. Turning both on still does not send a statement. The review template is docs/privileged-operations-security-review.md.</figcaption>
     </figure>
   </section>
 
@@ -324,6 +365,10 @@
       <article>
         <h3>Evidence stays visible</h3>
         <p>The answer lists the reading under the narration. Tool calls are stored. A wrong or vague model sentence does not replace the rows.</p>
+      </article>
+      <article>
+        <h3>Execution stays off</h3>
+        <p>Proposals can be approved. Privileged execution returns 501, is audited, and does not open Oracle.</p>
       </article>
     </div>
   </section>

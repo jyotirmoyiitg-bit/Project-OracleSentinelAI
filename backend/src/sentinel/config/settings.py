@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "Oracle Sentinel AI"
     app_version: str = "0.1.0"
+    app_env: str = Field(default="dev", description="dev, test, or production. Model switching is off in production.")
     debug: bool = False
     secret_key: str = Field(default="change-me-in-production", description="Secret key for signing tokens")
 
@@ -79,6 +80,41 @@ class Settings(BaseSettings):
         description="Hosted chat stays disabled until this is set with a model, secret reference, and disclosure",
     )
     ai_hosted_privacy_disclosure: str = Field(default="")
+    ai_openai_model: str = Field(default="gpt-4o", description="OpenAI model used when the dev admin selects OpenAI")
+    ai_openai_api_base: str = Field(default="", description="OpenAI base URL. Empty uses https://api.openai.com/v1.")
+    ai_openai_api_key_secret_ref: str = Field(
+        default="secret://OPENAI_API_KEY",
+        description="Secret reference for the OpenAI key. The value stays in OPENAI_API_KEY.",
+    )
+    ai_openai_privacy_disclosure: str = Field(
+        default="",
+        description="Shown when the dev admin selects OpenAI. Empty uses the OpenAI sentence.",
+    )
+    ai_openai_timeout_seconds: int = Field(default=0, ge=0, le=120, description="OpenAI timeout. 0 uses ai_timeout_seconds.")
+    ai_openai_max_output_tokens: int = Field(default=0, ge=0, le=4000, description="OpenAI output limit. 0 uses ai_max_output_tokens.")
+    ai_anthropic_model: str = Field(default="", description="Claude model used when the dev admin selects Anthropic.")
+    ai_anthropic_api_base: str = Field(default="", description="Anthropic base URL. Empty uses the configured hosted base or https://api.anthropic.com.")
+    ai_anthropic_api_key_secret_ref: str = Field(
+        default="",
+        description="Secret reference for the Anthropic key. The value stays in ANTHROPIC_API_KEY.",
+    )
+    ai_anthropic_privacy_disclosure: str = Field(
+        default="",
+        description="Shown when the dev admin selects Claude. Empty uses the configured hosted disclosure.",
+    )
+    ai_anthropic_timeout_seconds: int = Field(default=0, ge=0, le=120, description="Anthropic timeout. 0 uses ai_timeout_seconds.")
+    ai_anthropic_max_output_tokens: int = Field(default=0, ge=0, le=4000, description="Anthropic output limit. 0 uses ai_max_output_tokens.")
+    ai_local_model: str = Field(default="", description="Local model used when the dev admin selects local. Empty uses ai_model_name.")
+    ai_local_api_key_secret_ref: str = Field(
+        default="",
+        description="Optional secret reference for the local endpoint. Empty sends no API key.",
+    )
+    ai_local_privacy_disclosure: str = Field(
+        default="",
+        description="Shown when the dev admin selects the local model. Empty uses the local-endpoint sentence.",
+    )
+    ai_local_timeout_seconds: int = Field(default=0, ge=0, le=120, description="Local timeout. 0 uses ai_timeout_seconds.")
+    ai_local_max_output_tokens: int = Field(default=0, ge=0, le=4000, description="Local output limit. 0 uses ai_max_output_tokens.")
 
     # SMTP Notifications
     smtp_enabled: bool = Field(default=False, description="Opt in to SMTP email delivery; portal alerts remain enabled")
@@ -135,7 +171,7 @@ class Settings(BaseSettings):
     knowledge_enabled: bool = Field(default=False, description="Schedule scans of the knowledge intake folders")
     knowledge_scan_interval_seconds: int = Field(default=300, ge=30, le=86400)
     knowledge_max_file_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
-    knowledge_max_pages: int = Field(default=500, ge=1)
+    knowledge_max_pages: int = Field(default=800, ge=1)
     knowledge_parser_timeout_seconds: float = Field(default=30.0, ge=0.01, le=120)
     knowledge_min_extracted_chars: int = Field(default=20, ge=1)
     knowledge_chunk_size: int = Field(default=800, ge=40)
@@ -198,6 +234,25 @@ class Settings(BaseSettings):
     auth_ad_operator_group: str = Field(default="")
     auth_ad_dba_group: str = Field(default="")
     auth_ad_admin_group: str = Field(default="")
+    auth_oidc_issuer: str = Field(default="", description="Enterprise IdP issuer, or empty when OIDC is off")
+    auth_oidc_client_id: str = Field(default="")
+    auth_oidc_client_secret_ref: str = Field(default="", description="secret:// reference; never the client secret")
+    auth_oidc_redirect_uri: str = Field(default="http://127.0.0.1:8000/api/v1/auth/oidc/callback")
+    auth_oidc_success_url: str = Field(default="http://127.0.0.1:5173/")
+    proposal_expiry_hours: int = Field(default=24)
+    operations_execution_enabled: bool = Field(
+        default=False,
+        description="Privileged execution stays off in Release 1. Turning this on also requires operations_execution_approved.",
+    )
+    operations_execution_approved: bool = Field(
+        default=False,
+        description="Explicit review acknowledgement. Release 1 still does not execute a statement.",
+    )
+    operations_require_dual_approval: bool = Field(
+        default=True,
+        description="Future approval rule. Release 1 does not execute even when this is set.",
+    )
+    log_json: bool = Field(default=False, description="Emit one JSON object per log line")
 
     @model_validator(mode="after")
     def validate_ai(self) -> Settings:
@@ -205,18 +260,39 @@ class Settings(BaseSettings):
             raise ValueError("ai_provider must be local, hosted, or disabled")
         if self.ai_hosted_vendor not in {"openai", "anthropic"}:
             raise ValueError("ai_hosted_vendor must be openai or anthropic")
+        if self.app_env.strip().lower() not in {"dev", "test", "production"}:
+            raise ValueError("app_env must be dev, test, or production")
+        self.app_env = self.app_env.strip().lower()
         if self.ai_fallback_provider != "disabled":
             raise ValueError("ai_fallback_provider must stay disabled")
         if self.ai_timeout_seconds < 1 or self.ai_timeout_seconds > 120:
             raise ValueError("ai_timeout_seconds must be between 1 and 120")
+        for name in (
+            "ai_openai_max_output_tokens",
+            "ai_anthropic_max_output_tokens",
+            "ai_local_max_output_tokens",
+        ):
+            limit = getattr(self, name)
+            if limit != 0 and limit < 64:
+                raise ValueError(f"{name} must be 0 or at least 64")
         return self
 
     @model_validator(mode="after")
     def validate_auth(self) -> Settings:
         if self.auth_ad_url.strip() and not self.auth_ad_url.lower().startswith(("ldap://", "ldaps://")):
             raise ValueError("auth_ad_url must start with ldap:// or ldaps://")
-        if self.auth_bootstrap_role not in {"operator", "dba", "admin", "auditor"}:
+        if self.auth_bootstrap_role not in {
+            "viewer", "operator", "dba", "admin", "auditor", "platform_admin", "security_auditor",
+        }:
             raise ValueError("auth_bootstrap_role is not a known role")
+        if self.auth_oidc_issuer.strip() and not self.auth_oidc_issuer.lower().startswith("https://"):
+            raise ValueError("auth_oidc_issuer must start with https://")
+        if self.proposal_expiry_hours < 1 or self.proposal_expiry_hours > 168:
+            raise ValueError("proposal_expiry_hours must be between 1 and 168")
+        if self.operations_execution_enabled and not self.operations_execution_approved:
+            raise ValueError(
+                "OPERATIONS_EXECUTION_ENABLED requires OPERATIONS_EXECUTION_APPROVED after a security review",
+            )
         if self.auth_required and not self.auth_ad_url.strip() and not self.auth_bootstrap_username.strip():
             raise ValueError("Sign-in requires AUTH_AD_URL or AUTH_BOOTSTRAP_USERNAME")
         if self.auth_required and self.auth_bootstrap_username.strip() and len(self.auth_bootstrap_password) < 8:

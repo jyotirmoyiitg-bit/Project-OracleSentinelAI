@@ -20,7 +20,9 @@ def test_fresh_migration_downgrade_and_existing_registry_upgrade(migration_confi
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT display_name FROM database_targets")) == "existing"
         assert "poll_runs" in inspect(connection).get_table_names()
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0010"
+        assert "app_config" in inspect(connection).get_table_names()
+        assert "audit_events" in inspect(connection).get_table_names()
         assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
     command.downgrade(migration_config, "0001")
     command.upgrade(migration_config, "head")
@@ -44,3 +46,6 @@ def test_postgresql_migration_sql_contains_jsonb_and_indexes(migration_config):
     assert "CREATE TABLE chat_threads" in sql
     assert "CREATE TABLE chat_messages" in sql
     assert "CREATE TABLE tool_executions" in sql
+    assert "CREATE TABLE operation_proposals" in sql
+    assert "CREATE TABLE app_config" in sql
+    assert "audit events are immutable" in sql

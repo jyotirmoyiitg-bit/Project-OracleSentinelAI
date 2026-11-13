@@ -11,8 +11,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from sentinel.ai.gateway import build_gateway, hosted_is_configured
+from sentinel.ai.gateway import build_gateway, hosted_is_configured, model_choice_payload, resolve_gateway
 from sentinel.ai.orchestrator import Orchestrator, disclosure_for, public_guided_commands
+from sentinel.auth.rbac import has_permission
 from sentinel.config.secrets import SecretResolver
 from sentinel.config.settings import Settings
 from sentinel.knowledge.acl import Caller, caller_from_headers
@@ -28,6 +29,7 @@ class ChatThreadRequest(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
+    model_choice: Literal["local", "anthropic", "openai"] | None = None
 
 
 def _settings(request: Request) -> Settings:
@@ -54,7 +56,9 @@ def _caller(request: Request) -> Caller:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _thread_payload(thread: ChatThread, settings: Settings, gateway_disclosure: str) -> dict[str, object]:
+def _thread_payload(
+    thread: ChatThread, settings: Settings, gateway_disclosure: str, caller: Caller,
+) -> dict[str, object]:
     return {
         "id": str(thread.id),
         "scope_type": thread.scope_type,
@@ -64,6 +68,7 @@ def _thread_payload(thread: ChatThread, settings: Settings, gateway_disclosure: 
         "llm_enabled": settings.ai_enabled and settings.ai_provider != "disabled",
         "disclosure": gateway_disclosure,
         "guided_commands": public_guided_commands(),
+        "model_choices": model_choice_payload(settings, caller),
     }
 
 
@@ -103,7 +108,7 @@ def create_thread(
         )
         session.add(thread)
         session.flush()
-        return _thread_payload(thread, settings, disclosure_for(gateway))
+        return _thread_payload(thread, settings, disclosure_for(gateway), caller)
 
 
 @router.get("/chat/threads/{thread_id}/messages")
@@ -132,7 +137,9 @@ async def create_message(
     caller: Annotated[Caller, Depends(_caller)],
     settings: Annotated[Settings, Depends(_settings)],
 ) -> StreamingResponse:
-    gateway = build_gateway(settings, SecretResolver(settings.secret_key))
+    gateway = resolve_gateway(
+        settings, caller, body.model_choice, SecretResolver(settings.secret_key),
+    )
     orchestrator = Orchestrator(settings, gateway)
     with _factory(request).begin() as session:
         thread = _existing(session, thread_id)
@@ -162,7 +169,7 @@ async def provider_status(
     caller: Annotated[Caller, Depends(_caller)],
     settings: Annotated[Settings, Depends(_settings)],
 ) -> dict[str, object]:
-    if caller.role != "admin":
+    if not has_permission(caller.role, "provider.read"):
         raise HTTPException(status_code=403, detail="Administrator role is required")
     gateway = build_gateway(settings, SecretResolver(settings.secret_key))
     health = await gateway.health()

@@ -58,12 +58,29 @@ function Invoke-Checked {
     if ($LASTEXITCODE -ne 0) { throw "Command failed (exit $LASTEXITCODE): $Executable" }
 }
 
-function Assert-PortFree {
+function Stop-PortListener {
     param([int]$Port)
-    $Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
-    try { $Listener.Start() }
-    catch { throw "Port $Port is occupied. Stop the existing service first; this script will not kill it." }
-    finally { $Listener.Stop() }
+    $Owners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique)
+    foreach ($ProcessId in $Owners) {
+        if ($ProcessId -and $ProcessId -ne $PID) {
+            Write-Host "Stopping process $ProcessId on port $Port"
+            Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    }
+    $Deadline = (Get-Date).AddSeconds(15)
+    do {
+        $Listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, $Port)
+        try {
+            $Listener.Start()
+            return
+        } catch {
+            Start-Sleep -Milliseconds 300
+        } finally {
+            if ($Listener.Server.IsBound) { $Listener.Stop() }
+        }
+    } while ((Get-Date) -lt $Deadline)
+    throw "Port $Port is still occupied after stopping the previous listener."
 }
 
 function Stop-OwnedProcess {
@@ -165,8 +182,8 @@ try {
         Write-Host 'Prerequisites passed. No .env contents loaded, services started, migrations applied or Oracle connections made.'
         return
     }
-    Assert-PortFree 8000
-    Assert-PortFree $FrontendPort
+    Stop-PortListener 8000
+    Stop-PortListener $FrontendPort
     if ($InstallDependencies) {
         Invoke-Checked $Python @('-m', 'pip', 'install', '-e', '.\backend[dev]')
         Push-Location $Frontend

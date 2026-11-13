@@ -1,4 +1,4 @@
-"""Scheduled and on-demand ingestion of the Knowledge and Policy folders."""
+"""Scheduled and on-demand ingestion of the ora-19c-manual and Policy folders."""
 
 import logging
 import threading
@@ -62,7 +62,7 @@ class KnowledgeIndexer:
             for relative in paths:
                 item = available.get(relative)
                 if item is None:
-                    report.errors.append(f"{relative}: not an allowlisted file under Knowledge or Policy")
+                    report.errors.append(f"{relative}: not an allowlisted file under ora-19c-manual or Policy")
                 else:
                     selected.append(item)
         report.scanned = len(selected)

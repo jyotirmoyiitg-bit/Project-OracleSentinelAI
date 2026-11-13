@@ -4,7 +4,7 @@
 **Phase specification:** [Phase 6 — AI Copilot](../Phase_6_AI_Copilot.md)<br>
 **Illustrated architecture:** [docs/architecture.html](../docs/architecture.html)<br>
 **Previous phase:** [Phase 5 — Knowledge and RAG](../Phase_5_Knowledge_RAG.md) · [Phase 5 handoff](./Progress_Summary_Phase5.md)<br>
-**Next phase:** [Phase 7 — Operations, Auth, and Audit](../Phase_7_Operations_Auth_Audit.md) remains **Pending**. A sign-in gate, a visible signed-in identity, and an admin-only database-user reading were added ahead of that phase. OIDC, operation proposals, and full RBAC are not built.
+**Next phase:** [Phase 7 — Operations, Auth, and Audit](../Phase_7_Operations_Auth_Audit.md) is recorded in [the Phase 7 handoff](./Progress_Summary_Phase7.md). This file remains the Phase 6 record.
 
 This handoff records the Phase 6 copilot and the follow-on readings work that landed with it. It does not replace the Phase 5 live-harness notes. `test_real_phase5\Verify_Phase5_Real.ps1` is still a separate step. The committed baseline is `89bd6d1`. Hosted OpenAI and Anthropic, the sectioned copilot answer, the role-gated user list, the signed-in header, and the database-alert filter are in the working tree and are not committed.
 
@@ -63,7 +63,7 @@ This is a slice in front of Phase 7, not Phase 7 itself.
 
 - When `AUTH_REQUIRED=true`, routes other than health and the auth endpoints require the `sentinel_session` cookie. The role comes from that session. `X-Sentinel-Role` is ignored while sign-in is required.
 - The sign-in form has a **Local** checkbox. Unchecked uses Active Directory. Checked uses only the local operator account. A wrong directory password does not fall through to the local account. If the directory is not configured, the operator must check **Local**.
-- The running portal has sign-in required and the directory unset, so local sign-in is the path in use. The bootstrap username is `sentinel` and the bootstrap role is admin. Phase 7 still owes OIDC, proposals, and the full role model. The admin-only user list uses this existing role. It does not add a new role table.
+- The running portal has sign-in required and the directory unset, so local sign-in is the path in use. The bootstrap username is `sentinel` and the bootstrap role is admin. OIDC, proposals, and the role model are in the Phase 7 handoff. The admin-only user list still uses the existing `admin` role.
 
 ## Verification
 
@@ -98,13 +98,13 @@ Latest results on 12 Nov 2026:
    .\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head
    ```
 
-   Head is `0007`.
+   Phase 6 added revision `0007`. The current head is `0008`; see the [Phase 7 handoff](./Progress_Summary_Phase7.md).
 
 2. Leave the code defaults AI-off unless a reviewer chooses a provider. The current portal `.env` selects hosted Anthropic (`claude-sonnet-4-5`) with `AI_FALLBACK_PROVIDER=disabled`. The key belongs on `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`, referenced by `secret://`. Do not add a fallback from local to hosted. Do not put the key in a setting field, a log, or this note.
 3. The readings process starts inside the API for one question and then exits. Do not add a Windows service for it. Do not give it a tool that accepts SQL. Alert readings stay on the selected database's `rdbms` alert file. Do not read listener or client traces back in, and do not open the alert file on disk.
 4. Rerun `test_real_phase6\Verify_Phase6_Real.ps1 -Interactive` when convenient. Expect AI to be disabled by that harness. If sign-in rejects the harness, the live `.env` has to allow the harness to authenticate; do not print secrets while doing that. `test_real_phase5\Verify_Phase5_Real.ps1 -Interactive` is still unre-run after its fixture-path and collection-wait fixes.
 5. On a PDB that has not been re-granted, run `scripts\oracle\02_grant_readonly_monitoring.sql` as SYSDBA in that PDB, then `03_verify_gsystem.sql` as GSYSTEM.
-6. Phase 7 stays pending. Do not treat the sign-in gate, the header identity, or the admin-only user list as OIDC or full RBAC, and do not add privileged DDL or operation proposals in a Phase 6 change.
+6. Phase 7 is recorded separately. Do not add proposal execution or privileged DDL in a Phase 6 change. Phase 8 stays disabled.
 7. The hosted-provider, copilot-layout, user-list, header, and alert-scope edits are uncommitted, together with this progress file. Commit only when requested.
 
 ## Known Limitations

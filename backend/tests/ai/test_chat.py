@@ -13,7 +13,8 @@ from sqlalchemy import select
 
 from sentinel.ai.activity import ActivityReading
 from sentinel.ai.gateway import build_gateway
-from sentinel.ai.orchestrator import Orchestrator
+from sentinel.ai.orchestrator import POLICY_GAP, Orchestrator, _knowledge_query
+from sentinel.ai.types import ModelReply
 from sentinel.knowledge.acl import Caller
 from sentinel.persistence.models import ChatThread, CurrentObservation, DatabaseTarget, DiagnosticEvent, ToolExecution
 from sentinel.persistence.session import get_session
@@ -284,3 +285,233 @@ async def test_admin_operator_receives_the_database_user_list(settings, sessions
         answer = await orchestrator.answer(session, stored, Caller("admin", "sentinel"), "List the database users")
     assert answer.tools[0]["decision"] == "allowed"
     assert "APPUSER OPEN" in answer.content
+
+
+class _NoModel:
+    name = "hosted"
+    model = "test"
+    disclosure = "test"
+    available = True
+
+    async def generate(self, *args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise AssertionError("the model must not rewrite the ORA list")
+
+
+@pytest.mark.asyncio
+async def test_database_problem_lists_only_recent_ora_errors(settings, sessions) -> None:
+    with sessions.begin() as session:
+        target = DatabaseTarget(engine="oracle", display_name="PDB", tns_alias="PDBORCL", environment="test")
+        session.add(target)
+        session.flush()
+        thread = ChatThread(
+            principal="sentinel", role="admin", scope_type="database", scope_id=str(target.id),
+            provider="hosted", model="test",
+        )
+        session.add(thread)
+        session.flush()
+        thread_id = thread.id
+    orchestrator = Orchestrator(settings, _NoModel())  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(session, stored, Caller("admin", "sentinel"), "Is there a problem with this database?")
+    assert answer.llm_used is False
+    assert answer.content == "2026-11-12 01:10:00 ORA-01578: ORACLE data block corrupted"
+    assert "Limitations" not in answer.content
+
+
+class _ScriptedModel:
+    def __init__(self, content: str) -> None:
+        self.name = "local"
+        self.model = "test-local"
+        self.disclosure = "local"
+        self.available = True
+        self.calls = 0
+        self.messages: list[dict[str, str]] = []
+        self._content = content
+
+    async def generate(self, messages: list[dict[str, str]], *, tools: object, correlation_id: str) -> ModelReply:
+        del tools, correlation_id
+        self.calls += 1
+        self.messages = messages
+        return ModelReply(self._content, 3, 5, self.name, self.model)
+
+
+def _thread(session, role: str) -> ChatThread:
+    target = DatabaseTarget(engine="oracle", display_name="PDB", tns_alias="PDBORCL", environment="test")
+    session.add(target)
+    session.flush()
+    thread = ChatThread(
+        principal="sentinel", role=role, scope_type="database", scope_id=str(target.id),
+        provider="local", model="test-local",
+    )
+    session.add(thread)
+    session.flush()
+    return thread
+
+
+@pytest.mark.asyncio
+async def test_oracle_guidance_uses_model_knowledge(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "An Oracle instance has a system global area and background processes.",
+        "confidence": "medium",
+        "limitations": "",
+        "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "operator").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(session, stored, Caller("operator", "reader"), "What is the Oracle architecture?")
+    assert model.calls == 1
+    assert "general Oracle knowledge" in model.messages[0]["content"]
+    assert "system global area" in answer.content
+    assert "was not queried" in answer.content
+    assert answer.llm_used is True
+    assert any(item["tool"] == "search_knowledge" for item in answer.tools)
+
+
+@pytest.mark.asyncio
+async def test_admin_receives_a_select_example_that_is_not_executed(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "SELECT sid, username FROM v$session ORDER BY sid. DROP TABLE users.",
+        "confidence": "medium",
+        "limitations": "",
+        "next_steps": ["Review the statement before using it."],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "admin").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(
+            session, stored, Caller("admin", "sentinel"), "give me a sql query to find top sessions",
+        )
+    assert "SELECT sid, username FROM v$session" in answer.content
+    assert "DROP TABLE" not in answer.content
+    assert "not executed" in answer.content
+    assert "was not queried" in answer.content
+    assert not any(item["decision"] == "allowed" and item["tool"] == "execute_sql" for item in answer.tools)
+    assert not any(item["tool"] == "get_sessions" for item in answer.tools)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["operator", "dba", "auditor"])
+async def test_operator_receives_a_sql_draft_that_is_not_executed(settings, sessions, role: str) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "SELECT sid FROM v$session",
+        "confidence": "medium",
+        "limitations": "",
+        "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, role).id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(
+            session, stored, Caller(role, role), "give me a sql query to find top sessions",
+        )
+    assert model.calls == 1
+    assert "SELECT sid FROM v$session" in answer.content
+    assert "not executed" in answer.content
+    assert not any(item["decision"] == "allowed" and item["tool"] == "execute_sql" for item in answer.tools)
+    assert not any(item["tool"] == "get_sessions" for item in answer.tools)
+
+
+@pytest.mark.asyncio
+async def test_chain_block_is_explained_from_oracle_knowledge(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "A chained row stores pieces of one row in more than one data block.",
+        "confidence": "medium",
+        "limitations": "",
+        "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "operator").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(session, stored, Caller("operator", "reader"), "what is a chain block?")
+    assert model.calls == 1
+    assert "general Oracle knowledge" in model.messages[0]["content"]
+    assert "more than one data block" in answer.content
+    assert "was not queried" in answer.content
+    assert "row chaining" in _knowledge_query("what is a chain block?")
+    assert "row migration" in _knowledge_query("what is a chain block?")
+    assert any(item["tool"] == "search_knowledge" for item in answer.tools)
+
+
+@pytest.mark.asyncio
+async def test_company_policy_uses_documents_not_training(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "No approved document states the requirement.",
+        "confidence": "low",
+        "limitations": "",
+        "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "admin").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(
+            session, stored, Caller("admin", "sentinel"),
+            "Does company policy require every database to run in ARCHIVELOG?",
+        )
+    assert model.calls == 0
+    assert answer.content == POLICY_GAP
+    assert any(item["tool"] == "search_knowledge" for item in answer.tools)
+    assert any(item["tool"] == "get_compliance" for item in answer.tools)
+
+
+@pytest.mark.asyncio
+async def test_mixed_question_explains_the_concept_when_the_check_is_unavailable(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "Row chaining stores one row across more than one block.",
+        "confidence": "medium",
+        "limitations": "",
+        "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "operator").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(
+            session, stored, Caller("operator", "reader"),
+            "What is row chaining, and does FINDB have it?",
+        )
+    assert "more than one block" in answer.content
+    assert "No approved reading" in answer.content
+    assert model.calls == 1
+
+
+@pytest.mark.asyncio
+async def test_database_change_is_explained_and_not_executed(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "The runbook uses ALTER DATABASE ARCHIVELOG after a backup.",
+        "confidence": "medium",
+        "limitations": "",
+        "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "admin").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(
+            session, stored, Caller("admin", "sentinel"), "Enable ARCHIVELOG",
+        )
+    assert "ALTER DATABASE ARCHIVELOG" in answer.content
+    assert "No statement was sent to Oracle." in answer.content
+    assert any(item["tool"] == "execute_sql" and item["decision"] == "denied" for item in answer.tools)

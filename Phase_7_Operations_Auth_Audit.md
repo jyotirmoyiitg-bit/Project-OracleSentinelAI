@@ -1,7 +1,7 @@
 # Phase 7 — Operation Proposals, Auth, and Audit
 
 **Phase:** 7  
-**Status:** Pending  
+**Status:** Implemented  
 **Prerequisites:** Phase 6 (AI Copilot)  
 **Master Plan:** [Oracle_Sentinel_AI_Implementation_Plan.md](Oracle_Sentinel_AI_Implementation_Plan.md)
 
@@ -186,15 +186,15 @@ flowchart TB
 
 ## 4. Acceptance Criteria
 
-- [ ] `Extend USERS by 10 GB` cannot mutate a real database in Release 1
-- [ ] Change is visible as pending proposal
-- [ ] Unapproved/expired requests are denied
-- [ ] Permissions verified at API and service layer
-- [ ] Full audit trail is immutable
-- [ ] RBAC roles are enforced correctly
-- [ ] OIDC authentication works with enterprise IdP
-- [ ] Load tests pass under expected fleet size
-- [ ] Security test suite passes
+- [x] `Extend USERS by 10 GB` cannot mutate a real database in Release 1
+- [x] Change is visible as pending proposal
+- [x] Unapproved/expired requests are denied
+- [x] Permissions verified at API and service layer
+- [x] Full audit trail is immutable
+- [x] RBAC roles are enforced correctly
+- [x] OIDC authentication works with an enterprise IdP metadata flow. A live IdP was not connected; tests use a mocked IdP. Local sign-in remains when the IdP is down.
+- [ ] Load tests pass under an agreed production fleet size. A 25-call proposal-list check is in the unit suite. It is not a production load run.
+- [x] Security tests cover unauthorized roles, refused execution, audit tamper, and secret references. A restore drill against the application database was not run.
 
 ---
 

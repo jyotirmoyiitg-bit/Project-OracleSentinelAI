@@ -497,11 +497,31 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .knowledge-table td { white-space: normal; }
 
 .provider-badge { display: inline-flex; align-items: center; flex-shrink: 0; height: 28px; padding: 0 10px; color: #3e4b60; background: #f4f7fb; border: 1px solid #e5eaf1; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
-.copilot-panel { padding: 16px 20px 18px; }
+.copilot-model-choice { display: inline-flex; align-items: center; gap: 6px; color: #5c6b82; font-size: 11px; font-weight: 700; }
+.copilot-model-choice select { height: 28px; max-width: 240px; padding: 0 8px; color: #243049; background: #fff; border: 1px solid #e1e7f0; border-radius: 999px; font-size: 11px; }
+.copilot-page.page-shell { display: flex; flex-direction: column; height: calc(100vh - 68px); padding: 18px 0 12px; overflow: hidden; }
+.copilot-page .page-heading { flex: 0 0 auto; margin-bottom: 12px; }
+.copilot-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; padding: 16px 20px 12px; overflow: hidden; }
 .copilot-disclosure { margin: 0 0 12px; color: #536176; font-size: 12px; line-height: 1.5; }
-.copilot-commands { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.copilot-commands .button { margin-top: 0; }
-.copilot-transcript { display: flex; flex-direction: column; gap: 16px; min-height: 72px; }
+.copilot-questions { margin-bottom: 14px; }
+.copilot-question-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.copilot-question-tabs button {
+  display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 5px 10px;
+  color: #44526a; background: #fff; border: 1px solid #e1e7f0; border-radius: 999px;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.copilot-question-tabs button span {
+  min-width: 16px; padding: 0 5px; color: #6d7c93; background: #f1f4f9; border-radius: 999px;
+  font-size: 10px; line-height: 16px; text-align: center;
+}
+.copilot-question-tabs button[aria-selected='true'] { color: #fff; background: #566fe7; border-color: #566fe7; }
+.copilot-question-tabs button[aria-selected='true'] span { color: #566fe7; background: #fff; }
+.copilot-question-strip {
+  display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding: 10px;
+  background: #f7f9fc; border: 1px solid #e6ebf3; border-radius: 10px;
+}
+.copilot-question-strip .button { margin-top: 0; }
+.copilot-transcript { display: flex; flex: 1 1 auto; flex-direction: column; gap: 16px; min-height: 0; overflow-y: auto; padding-right: 4px; }
 .copilot-turn { padding-top: 14px; border-top: 1px solid #f0f2f6; }
 .copilot-question {
   display: flex; flex-direction: column; gap: 4px; margin: 0 0 10px; color: #1d2736;
@@ -560,7 +580,8 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .copilot-kind-compliance { color: #3d53b8; background: #eef1fc; }
 .copilot-kind-document, .copilot-kind-knowledge { color: #5b3d91; background: #f3eefb; }
 .copilot-kind-incident { color: #9a5b12; background: #fff3df; }
-.copilot-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 16px; }
+.copilot-composer { flex: 0 0 auto; margin-top: 10px; padding-top: 12px; background: #fff; border-top: 1px solid #e8edf4; }
+.copilot-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 0; }
 .copilot-query { display: flex; align-items: center; flex: 1 1 240px; min-width: min(240px, 100%); height: 36px; background: #fff; border: 1px solid #e5eaf1; border-radius: 7px; }
 .copilot-query svg { margin-left: 10px; color: #8b97a8; }
 .copilot-query input { width: 100%; height: 100%; padding: 0 10px; border: 0; background: transparent; color: #1d2736; font: inherit; font-size: 13px; outline: none; }
@@ -574,6 +595,34 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .login-card input { height: 36px; padding: 0 10px; border: 1px solid #e5eaf1; border-radius: 7px; color: #1d2736; font: inherit; font-size: 13px; font-weight: 500; }
 .login-local { display: flex; flex-direction: row; align-items: center; gap: 8px; margin: 2px 0 16px; font-size: 13px; }
 .login-card .login-local input { width: 16px; height: 16px; margin: 0; padding: 0; }
+.proposal-banner { margin: 0 0 16px; padding: 12px 14px; border-radius: 8px; background: #eef6ff; color: #1d4e89; }
+.proposal-form, .proposal-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 18px; }
+.proposal-form label, .proposal-actions label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; }
+.proposal-form input, .proposal-form select, .proposal-actions input { height: 36px; min-width: 220px; padding: 0 10px; border: 1px solid #e5eaf1; border-radius: 7px; }
+.proposal-list { display: grid; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.proposal-card { padding: 14px; border: 1px solid #e5eaf1; border-radius: 10px; background: #fff; }
+.proposal-card pre { overflow: auto; padding: 10px; border-radius: 8px; background: #f6f8fb; font-family: Consolas, monospace; }
+.proposal-card-head { display: flex; justify-content: space-between; gap: 12px; }
+.proposal-status { padding: 2px 8px; border-radius: 999px; font-size: 12px; text-transform: uppercase; }
+.proposal-status-pending { background: #fff4d6; color: #8a5a00; }
+.proposal-status-approved { background: #e5f6ea; color: #146c36; }
+.proposal-status-rejected, .proposal-status-expired { background: #fde8e8; color: #9b1c1c; }
+.proposal-meta { color: #536176; font-size: 13px; }
+.admin-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.admin-grid section { padding: 14px; border: 1px solid #e5eaf1; border-radius: 10px; background: #fff; }
+.config-editor { margin-top: 18px; }
+.config-section { margin-top: 10px; border: 1px solid #e5eaf1; border-radius: 10px; background: #fff; }
+.config-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; }
+.config-section-head h3 { margin: 0; font-size: 16px; }
+.config-section-body { padding: 0 14px 14px; }
+.config-actions { display: flex; gap: 8px; }
+.config-actions .button { margin-top: 0; }
+.config-table td:first-child { width: 34%; }
+.config-fixed { color: #5c6b80; }
+.config-table input, .config-table select, .config-table textarea { width: 100%; font: 13px Consolas, "Cascadia Mono", monospace; }
+.config-table textarea { min-height: 64px; }
+.audit-table { width: 100%; border-collapse: collapse; background: #fff; }
+.audit-table th, .audit-table td { padding: 8px 10px; border-bottom: 1px solid #e5eaf1; text-align: left; font-size: 13px; }
 .signed-in { display: inline-flex; align-items: center; gap: 8px; color: #536176; font-size: 12px; font-weight: 700; }
 .signed-in-face {
   display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0;

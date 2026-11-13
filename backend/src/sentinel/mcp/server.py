@@ -28,6 +28,7 @@ _SCHEMA: dict[str, Any] = {
 _DESCRIPTIONS = {
     "get_database_availability": "Live instance, open mode, startup, PDBs, services, and recent startup or shutdown lines.",
     "get_critical_errors": "Critical ORA and fatal alert-log lines from the last 24 hours.",
+    "get_recent_ora_errors": "ORA- errors from this database alert log for the last 24 hours.",
     "get_alert_log": "Newest alert log lines from V$DIAG_ALERT_EXT for the last 7 days.",
     "get_tablespace_pressure": "Tablespace percent used, 80/90/95 bands, autoextend headroom, and temporary space.",
     "get_tablespace_growth": "When a tablespace may fill, from retained samples rather than AWR.",

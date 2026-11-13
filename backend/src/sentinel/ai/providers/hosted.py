@@ -74,18 +74,7 @@ class HostedChatProvider:
         return {"status": "reachable"}
 
     def _api_key(self) -> str:
-        if not self._secret_ref.startswith("secret://"):
-            raise ProviderError("hosted_secret_ref_required")
-        name = self._secret_ref.removeprefix("secret://").rstrip("/").split("/")[-1]
-        if not name.isidentifier():
-            raise ProviderError("hosted_secret_ref_invalid")
-        raw = os.environ.get(name) or _env_file_value(name)
-        if not raw:
-            raise ProviderError("hosted_secret_unavailable")
-        resolved = self._resolver.resolve(raw)
-        if not resolved:
-            raise ProviderError("hosted_secret_unavailable")
-        return resolved
+        return resolve_secret(self._secret_ref, self._resolver)
 
     async def _send(
         self,
@@ -202,6 +191,33 @@ def _anthropic_text(content: object) -> str:
         if isinstance(block, dict) and isinstance(block.get("text"), str):
             parts.append(block["text"])
     return "".join(parts)
+
+
+def resolve_secret(secret_ref: str, resolver: SecretResolver) -> str:
+    """Return one named secret. Callers must not log the result."""
+    if not secret_ref.startswith("secret://"):
+        raise ProviderError("hosted_secret_ref_required")
+    name = secret_ref.removeprefix("secret://").rstrip("/").split("/")[-1]
+    if not name.isidentifier():
+        raise ProviderError("hosted_secret_ref_invalid")
+    raw = os.environ.get(name) or _env_file_value(name)
+    if not raw.strip():
+        raise ProviderError("hosted_secret_unavailable")
+    resolved = resolver.resolve(raw)
+    if not resolved:
+        raise ProviderError("hosted_secret_unavailable")
+    return resolved
+
+
+def secret_is_present(secret_ref: str) -> bool:
+    """True when the named secret has a value. The value is never returned."""
+    if not secret_ref.startswith("secret://"):
+        return False
+    name = secret_ref.removeprefix("secret://").rstrip("/").split("/")[-1]
+    if not name.isidentifier():
+        return False
+    raw = os.environ.get(name) or _env_file_value(name)
+    return bool(raw.strip())
 
 
 def _env_file_value(name: str) -> str:

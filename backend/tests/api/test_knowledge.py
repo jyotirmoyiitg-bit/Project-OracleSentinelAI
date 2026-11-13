@@ -14,9 +14,9 @@ from sentinel.persistence.session import get_session
 @pytest.fixture
 def settings(tmp_path: Path):
     intake = tmp_path / "intake"
-    for name in ("Knowledge", "Policy", "Quarantine"):
+    for name in ("ora-19c-manual", "Policy", "Quarantine"):
         (intake / name).mkdir(parents=True)
-    (intake / "Knowledge" / "runbook.md").write_text(
+    (intake / "ora-19c-manual" / "runbook.md").write_text(
         "# ORA-00257\n\nThe fast recovery area is full and the archiver is waiting.\n",
         encoding="utf-8",
     )
@@ -69,7 +69,7 @@ def test_search_lists_citations_without_a_language_model(client: TestClient) -> 
     payload = found.json()
     assert payload["llm_used"] is False
     assert payload["retrieval"] == "hybrid"
-    assert payload["items"][0]["citation"]["relative_path"] == "Knowledge/runbook.md"
+    assert payload["items"][0]["citation"]["relative_path"] == "ora-19c-manual/runbook.md"
     assert payload["items"][0]["citation"]["heading"] == "ORA-00257"
     assert "fast recovery area" in payload["items"][0]["excerpt"]
     escaped = client.post("/api/v1/knowledge/reindex", json={"paths": ["../.env"]}, headers={"X-Sentinel-Role": "admin"})

@@ -16,7 +16,7 @@ from sentinel.persistence.models import Document, DocumentChunk
 @pytest.fixture
 def settings(tmp_path: Path):
     intake = tmp_path / "intake"
-    for name in ("Knowledge", "Policy", "Quarantine"):
+    for name in ("ora-19c-manual", "Policy", "Quarantine"):
         (intake / name).mkdir(parents=True)
     return Settings(
         _env_file=None,
@@ -34,10 +34,10 @@ def intake(settings: Settings) -> Path:
 
 
 def test_requested_paths_cannot_escape_the_intake() -> None:
-    assert validate_requested_path("Knowledge/internal-runbooks/ora-00257.md") == (
-        "Knowledge/internal-runbooks/ora-00257.md"
+    assert validate_requested_path("ora-19c-manual/internal-runbooks/ora-00257.md") == (
+        "ora-19c-manual/internal-runbooks/ora-00257.md"
     )
-    for relative in ("../.env", "Knowledge/../../.env", "/etc/passwd", "notes/secret.md", "Knowledge/../Policy/a.md"):
+    for relative in ("../.env", "ora-19c-manual/../../.env", "/etc/passwd", "notes/secret.md", "ora-19c-manual/../Policy/a.md", "Knowledge/runbook.md"):
         with pytest.raises(ValueError):
             validate_requested_path(relative)
 
@@ -45,8 +45,8 @@ def test_requested_paths_cannot_escape_the_intake() -> None:
 def test_corrupt_oversized_and_malware_files_are_quarantined(
     settings, intake, sessions, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    (intake / "Knowledge" / "broken.pdf").write_bytes(b"not a pdf")
-    (intake / "Knowledge" / "huge.md").write_text("ARCHIVELOG " * 20, encoding="utf-8")
+    (intake / "ora-19c-manual" / "broken.pdf").write_bytes(b"not a pdf")
+    (intake / "ora-19c-manual" / "huge.md").write_text("ARCHIVELOG " * 20, encoding="utf-8")
     scanner = intake / "scanner.exe"
     scanner.write_bytes(b"")
 
@@ -57,20 +57,20 @@ def test_corrupt_oversized_and_malware_files_are_quarantined(
     monkeypatch.setattr("sentinel.knowledge.quarantine.subprocess.run", scanner_result)
     settings.knowledge_max_file_bytes = 32
     settings.knowledge_malware_scanner = str(scanner)
-    (intake / "Knowledge" / "unsafe.md").write_text("Unsafe scanner note.", encoding="utf-8")
+    (intake / "ora-19c-manual" / "unsafe.md").write_text("Unsafe scanner note.", encoding="utf-8")
     report = KnowledgeIndexer(sessions, settings).scan()
     reasons = _reasons(intake)
     assert report.quarantined >= 2
     assert "corrupt" in reasons
     assert "too_large" in reasons
     assert "malware" in reasons
-    assert not (intake / "Knowledge" / "broken.pdf").exists()
+    assert not (intake / "ora-19c-manual" / "broken.pdf").exists()
     with sessions() as session:
         assert session.scalar(select(func.count()).select_from(DocumentChunk)) == 0
 
 
 def test_new_changed_and_deleted_documents_update_the_index(settings, intake, sessions) -> None:
-    path = intake / "Knowledge" / "runbook.md"
+    path = intake / "ora-19c-manual" / "runbook.md"
     path.write_text("# ORA-00257\n\nThe fast recovery area is full and the archiver is waiting.\n", encoding="utf-8")
     indexer = KnowledgeIndexer(sessions, settings)
     first = indexer.scan()
@@ -99,7 +99,7 @@ def test_new_changed_and_deleted_documents_update_the_index(settings, intake, se
 def test_symlink_outside_the_intake_is_not_indexed(settings, intake, sessions, tmp_path: Path) -> None:
     secret = tmp_path / "secret.md"
     secret.write_text("secret credential material that must stay outside the index.", encoding="utf-8")
-    link = intake / "Knowledge" / "secret.md"
+    link = intake / "ora-19c-manual" / "secret.md"
     try:
         link.symlink_to(secret)
     except OSError:
@@ -114,7 +114,7 @@ def test_symlink_outside_the_intake_is_not_indexed(settings, intake, sessions, t
 
 def test_document_text_is_stored_and_not_executed(settings, intake, sessions, tmp_path: Path) -> None:
     marker = tmp_path / "executed.txt"
-    (intake / "Knowledge" / "trap.md").write_text(
+    (intake / "ora-19c-manual" / "trap.md").write_text(
         "'); DROP TABLE documents; --\n"
         "import os; os.system('echo executed')\n"
         "ARCHIVELOG remains the required production log mode.\n",

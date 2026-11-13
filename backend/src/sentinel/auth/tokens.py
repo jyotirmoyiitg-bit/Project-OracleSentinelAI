@@ -8,6 +8,7 @@ import time
 from dataclasses import dataclass
 
 from sentinel.config.settings import Settings
+from sentinel.knowledge.constants import ALLOWED_ROLES
 
 
 @dataclass(frozen=True)
@@ -47,9 +48,9 @@ def read_token(settings: Settings, token: str) -> SessionIdentity | None:
         expires = int(payload["exp"])
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None
-    if expires < int(time.time()) or not principal or role not in {"operator", "dba", "admin", "auditor"}:
+    if expires < int(time.time()) or not principal or role not in ALLOWED_ROLES:
         return None
-    if method not in {"ad", "local"}:
+    if method not in {"ad", "local", "oidc"}:
         return None
     return SessionIdentity(principal[:200], role, method)
 

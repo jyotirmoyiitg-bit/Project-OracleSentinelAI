@@ -5,7 +5,9 @@ import json
 import re
 from typing import Any
 
-FORBIDDEN_TOOLS = frozenset({"execute_sql", "run_sql", "shell", "subprocess", "http_request", "send_to_hosted"})
+FORBIDDEN_TOOLS = frozenset({
+    "execute_sql", "sql_query", "run_sql", "execute_shell", "shell", "subprocess", "http_request", "send_to_hosted",
+})
 ALLOWED_TOOLS = frozenset({
     "get_database_health",
     "get_tablespace_status",
@@ -21,6 +23,7 @@ ALLOWED_TOOLS = frozenset({
     "get_running_jobs",
     "get_database_availability",
     "get_critical_errors",
+    "get_recent_ora_errors",
     "get_alert_log",
     "get_tablespace_pressure",
     "get_tablespace_growth",
@@ -35,7 +38,10 @@ ALLOWED_TOOLS = frozenset({
     "get_failed_jobs",
     "get_current_issues",
 })
-_FORBIDDEN = re.compile(r"\b(execute_sql|run_sql|shell|subprocess|http_request|send_to_hosted)\b", re.IGNORECASE)
+_FORBIDDEN = re.compile(
+    r"\b(execute_sql|sql_query|run_sql|execute_shell|shell|subprocess|http_request|send_to_hosted)\b",
+    re.IGNORECASE,
+)
 _SECRET = re.compile(
     r"(gAAAAA[A-Za-z0-9_\-]{10,}=*)|(sk-[A-Za-z0-9]{8,})|((?i:password|api[_-]?key)\s*[:=]\s*\S+)",
 )
@@ -62,6 +68,14 @@ class PolicyDenied(Exception):
         super().__init__(reason)
         self.tool_name = tool_name
         self.reason = reason
+
+
+def omit_unexecuted_sql(value: str, *, keep_select: bool) -> str:
+    """Remove a statement the model offered. A SELECT example is kept only when requested."""
+    cleaned = _SQL_SHAPE.sub("A changing statement is not shown.", value)
+    if not keep_select:
+        cleaned = _SQL_SELECT.sub("A SQL example is limited to an admin operator.", cleaned)
+    return cleaned
 
 
 def sql_in_prompt(value: str) -> bool:

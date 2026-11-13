@@ -18,7 +18,7 @@ from sentinel.api.v1.schemas import (
     KnowledgeSearchResponse,
 )
 from sentinel.config.settings import Settings
-from sentinel.knowledge.acl import Caller, caller_from_headers, copy_acl, normalize_acl
+from sentinel.knowledge.acl import Caller, caller_from_headers, copy_acl, is_admin_operator, normalize_acl
 from sentinel.knowledge.constants import CATEGORIES, PRIORITIZATION
 from sentinel.knowledge.retrieval import search
 from sentinel.knowledge.service import KnowledgeIndexer
@@ -61,7 +61,7 @@ def _caller(request: Request) -> Caller:
 
 def _admin(request: Request) -> Caller:
     caller = _caller(request)
-    if caller.role != "admin":
+    if not is_admin_operator(caller.role):
         raise HTTPException(status_code=403, detail="Administrator role is required")
     return caller
 

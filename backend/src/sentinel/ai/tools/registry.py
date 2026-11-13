@@ -27,6 +27,7 @@ HANDLERS: dict[str, Handler] = {
     "get_running_jobs": database_activity,
     "get_database_availability": database_activity,
     "get_critical_errors": database_activity,
+    "get_recent_ora_errors": database_activity,
     "get_alert_log": database_activity,
     "get_tablespace_pressure": database_activity,
     "get_tablespace_growth": database_activity,

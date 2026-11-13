@@ -33,6 +33,7 @@ class DatabaseTarget(Base):
     last_health_status: Mapped[str] = mapped_column(String(50), default="unknown", nullable=True)
     health_valid_until: Mapped[datetime | None] = mapped_column(DateTime)
     last_seen: Mapped[datetime | None] = mapped_column(DateTime)
+    maintenance_restricted: Mapped[bool] = mapped_column(default=False, server_default="0")
     configuration_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(default=utcnow, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(default=utcnow, onupdate=utcnow, nullable=True)
@@ -443,3 +444,92 @@ class ToolExecution(Base):
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
 
     thread: Mapped[ChatThread | None] = relationship("ChatThread", back_populates="tool_executions")
+
+
+class DatabaseEntitlement(Base):
+    """A principal may propose changes only for an entitled database or environment."""
+
+    __tablename__ = "database_entitlements"
+    __table_args__ = (
+        Index("ix_database_entitlements_principal", "principal"),
+        Index("ix_database_entitlements_target", "target_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    principal: Mapped[str] = mapped_column(String(200))
+    target_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    environment: Mapped[str] = mapped_column(String(50), default="")
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class OperationProposal(Base):
+    """A constrained change request. Release 1 stores it and does not execute it."""
+
+    __tablename__ = "operation_proposals"
+    __table_args__ = (
+        Index("ix_operation_proposals_target_status", "target_id", "status"),
+        Index("ix_operation_proposals_requester_key", "requester", "idempotency_key", unique=True),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    requester: Mapped[str] = mapped_column(String(200))
+    requester_role: Mapped[str] = mapped_column(String(32))
+    action: Mapped[str] = mapped_column(String(64))
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    preview_sql: Mapped[str] = mapped_column(Text, default="")
+    impact: Mapped[str] = mapped_column(Text, default="")
+    risk: Mapped[str] = mapped_column(String(20), default="medium")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    approver: Mapped[str] = mapped_column(String(200), default="")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    decision_reason: Mapped[str] = mapped_column(String(500), default="")
+    correlation_id: Mapped[str] = mapped_column(String(36), default="")
+    idempotency_key: Mapped[str | None] = mapped_column(String(80))
+    execution_log: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class PrivilegedOperation(Base):
+    """Reserved for a future reviewed executor. Release 1 does not insert rows."""
+
+    __tablename__ = "privileged_operations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    proposal_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("operation_proposals.id", ondelete="CASCADE"))
+    status: Mapped[str] = mapped_column(String(20), default="disabled")
+    approver: Mapped[str] = mapped_column(String(200), default="")
+    execution_log: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+
+class AppConfig(Base):
+    """Non-secret application settings. Passwords and secret values are never stored here."""
+
+    __tablename__ = "app_config"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class AuditEvent(Base):
+    """Append-only audit record. Updates and deletes are rejected."""
+
+    __tablename__ = "audit_events"
+    __table_args__ = (
+        Index("ix_audit_events_occurred", "occurred_at"),
+        Index("ix_audit_events_correlation", "correlation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    principal: Mapped[str] = mapped_column(String(200), default="")
+    service: Mapped[str] = mapped_column(String(40), default="api")
+    action: Mapped[str] = mapped_column(String(80))
+    target: Mapped[str] = mapped_column(String(80), default="")
+    correlation_id: Mapped[str] = mapped_column(String(36), default="")
+    outcome: Mapped[str] = mapped_column(String(20))
+    evidence_digest: Mapped[str] = mapped_column(String(64))
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

@@ -3,7 +3,7 @@
 from pathlib import Path
 
 from sentinel.config.settings import Settings
-from sentinel.knowledge.constants import CATEGORIES
+from sentinel.knowledge.constants import INTAKE_FOLDERS
 
 _MAX_RELATIVE_LENGTH = 700
 
@@ -20,7 +20,7 @@ def intake_root(settings: Settings) -> Path:
 
 
 def ensure_layout(root: Path) -> None:
-    for name in (*sorted(CATEGORIES), "Quarantine"):
+    for name in (*sorted(INTAKE_FOLDERS), "Quarantine"):
         (root / name).mkdir(parents=True, exist_ok=True)
 
 
@@ -39,14 +39,14 @@ def is_within(root: Path, path: Path) -> bool:
 
 
 def validate_requested_path(relative: str) -> str:
-    """Accept only a Knowledge/ or Policy/ file path with no traversal."""
+    """Accept only an ora-19c-manual/ or Policy/ file path with no traversal."""
     if not relative or relative.startswith(("/", "\\")) or ":" in relative:
-        raise ValueError("Knowledge paths must stay inside Knowledge/ or Policy/")
+        raise ValueError("Knowledge paths must stay inside ora-19c-manual/ or Policy/")
     parts = Path(relative).parts
     if any(part in {"", ".", ".."} for part in parts):
-        raise ValueError("Knowledge paths must stay inside Knowledge/ or Policy/")
-    if parts[0] not in CATEGORIES:
-        raise ValueError("Knowledge paths must stay inside Knowledge/ or Policy/")
+        raise ValueError("Knowledge paths must stay inside ora-19c-manual/ or Policy/")
+    if parts[0] not in INTAKE_FOLDERS:
+        raise ValueError("Knowledge paths must stay inside ora-19c-manual/ or Policy/")
     normalized = Path(*parts).as_posix()
     if len(normalized) > _MAX_RELATIVE_LENGTH:
         raise ValueError("Knowledge path is too long")

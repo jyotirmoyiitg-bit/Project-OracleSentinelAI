@@ -13,7 +13,7 @@ class Caller:
 
 def is_admin_operator(role: str) -> bool:
     """An admin operator may list database users. operator, dba, and auditor may not."""
-    return role == ADMIN_OPERATOR_ROLE
+    return role in {ADMIN_OPERATOR_ROLE, "platform_admin"}
 
 
 def caller_from_headers(role: str | None, principal: str | None) -> Caller:
@@ -63,7 +63,7 @@ def normalize_acl(roles: list[str], principals: list[str]) -> dict[str, list[str
 
 def allows(acl: object, caller: Caller) -> bool:
     """Grant access when the caller is an administrator or is listed on the document."""
-    if caller.role == "admin":
+    if is_admin_operator(caller.role):
         return True
     if not isinstance(acl, dict):
         return False

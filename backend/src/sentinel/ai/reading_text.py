@@ -75,6 +75,19 @@ def _errors(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     return f"{len(lines)} critical alert lines in the last 24 hours.", lines
 
 
+def _ora_errors(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    lines = [
+        f"{row.get('occurred_at') or ''} {row.get('message_text') or ''}".strip()
+        for row in rows
+        if "ORA-" in (row.get("message_text") or "").upper()
+    ]
+    if not lines:
+        empty = "There are no Oracle errors reported in the last 24 hours."
+        return empty, [empty]
+    noun = "error" if len(lines) == 1 else "errors"
+    return f"{len(lines)} Oracle {noun} in the last 24 hours.", lines
+
+
 def _alert_log(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     entries = _source(rows, "v$diag_alert_ext") or rows
     lines = [
@@ -530,6 +543,7 @@ def _seconds(value: str | None) -> str:
 _HANDLERS = {
     "availability": _availability,
     "errors": _errors,
+    "ora_errors": _ora_errors,
     "alert_log": _alert_log,
     "tablespace": _tablespace,
     "performance": _performance,

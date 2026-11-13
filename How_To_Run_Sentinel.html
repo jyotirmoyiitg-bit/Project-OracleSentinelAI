@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oracle Sentinel AI — How to run</title>
+  <style>
+    :root {
+      --ink: #1c2838;
+      --muted: #5c6b80;
+      --line: #d5deea;
+      --paper: #f3f6fb;
+      --card: #ffffff;
+      --portal: #1d4e89;
+      --api: #0f6e6e;
+      --warn: #9a3412;
+      --shadow: 0 10px 30px rgba(28, 40, 56, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 400px at 10% -10%, #e7eef8 0%, transparent 50%),
+        var(--paper);
+      font: 16px/1.55 "Segoe UI", Calibri, sans-serif;
+    }
+    main { max-width: 1080px; margin: 0 auto; padding: 40px 24px 80px; }
+    header h1 { margin: 0 0 8px; font-size: 34px; letter-spacing: -0.03em; }
+    header p { margin: 0; max-width: 760px; color: var(--muted); }
+    nav.toc {
+      display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0 4px;
+    }
+    nav.toc a {
+      background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+      color: var(--portal); text-decoration: none; padding: 6px 12px; font-size: 13px; font-weight: 650;
+    }
+    section { margin-top: 36px; }
+    h2 { margin: 0 0 8px; font-size: 22px; letter-spacing: -0.02em; }
+    h3 { margin: 22px 0 8px; font-size: 17px; }
+    p { margin: 0 0 12px; }
+    .lead { color: var(--muted); max-width: 820px; }
+    .card, pre, table {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+    .card { padding: 16px 18px; margin: 12px 0; }
+    .card strong { color: var(--ink); }
+    .warn { border-color: #f0c9b8; background: #fff8f4; }
+    pre {
+      padding: 14px 16px; overflow: auto; font: 13.5px/1.5 Consolas, "Cascadia Mono", monospace;
+      color: #16324f;
+    }
+    ol.steps { margin: 8px 0 0; padding-left: 22px; }
+    ol.steps li { margin: 6px 0; }
+    table { width: 100%; border-collapse: collapse; overflow: hidden; margin: 10px 0 18px; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); background: #f7fafc; }
+    td:first-child { font-family: Consolas, "Cascadia Mono", monospace; font-size: 13px; white-space: nowrap; }
+    code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.92em; background: #eef3f8; padding: 1px 5px; border-radius: 4px; }
+    a { color: var(--portal); }
+    @media (max-width: 800px) {
+      header h1 { font-size: 28px; }
+      td:first-child { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>How to run Oracle Sentinel AI</h1>
+    <p>Start the portal, the API, and PostgreSQL from this repository. Settings live in the root <code>.env</code> file. This page lists the parameters and what they do. It does not contain passwords or API keys.</p>
+    <nav class="toc">
+      <a href="#start">Start</a>
+      <a href="#portal">Portal</a>
+      <a href="#knowledge">Knowledge and RAG</a>
+      <a href="#env">.env parameters</a>
+      <a href="#checks">Checks</a>
+    </nav>
+  </header>
+
+  <section id="start">
+    <h2>Start a local deployment</h2>
+    <p class="lead">Use PowerShell from the repository root and the project virtual environment at <code>.venv</code>. Python 3.14 is the intended runtime. Commands are separate lines. PowerShell 5.1 does not accept <code>&amp;&amp;</code>.</p>
+    <ol class="steps">
+      <li>Copy <code>.env.example</code> to <code>.env</code> when the file is missing. Fill PostgreSQL, <code>TNS_ADMIN</code>, and the read-only Oracle account. Leave secrets out of source control. <code>.env</code> is git-ignored.</li>
+      <li>Start PostgreSQL with pgvector, and Redis:</li>
+    </ol>
+    <pre>docker compose up -d postgres redis</pre>
+    <ol class="steps" start="3">
+      <li>Install the backend and apply migrations. The schema head includes the knowledge and privileged-operations tables.</li>
+    </ol>
+    <pre>.\.venv\Scripts\python.exe -m pip install -e ".\backend[dev]"
+.\.venv\Scripts\python.exe -m alembic -c backend\alembic.ini upgrade head</pre>
+    <ol class="steps" start="4">
+      <li>Set <code>SCHEDULER_ENABLED=true</code> when this process should poll Oracle. Collection does not need a language model.</li>
+      <li>Start the API on port 8000. Settings are read from the root <code>.env</code> no matter which folder the command starts in. Restart this process after a <code>.env</code> change.</li>
+    </ol>
+    <pre>.\.venv\Scripts\python.exe -m uvicorn sentinel.main:app --host 127.0.0.1 --port 8000</pre>
+    <ol class="steps" start="6">
+      <li>In a second terminal, start the portal. Vite serves it on port 5173 and proxies <code>/api</code> and <code>/health</code> to <code>http://localhost:8000</code>.</li>
+    </ol>
+    <pre>Set-Location frontend
+npm ci
+npm run dev</pre>
+    <div class="card">
+      <strong>Ports.</strong> API <code>127.0.0.1:8000</code>. Portal <code>http://127.0.0.1:5173/</code>. PostgreSQL <code>5432</code>. Redis <code>6379</code>. Docker Compose uses image <code>pgvector/pgvector:pg16</code>, database <code>sentinel</code>, user <code>postgres</code>, and password <code>postgres</code> for that local container only.
+    </div>
+    <div class="card">
+      <strong>Configuration table.</strong> On startup the API inserts any missing non-secret setting from <code>.env</code> into the PostgreSQL table <code>app_config</code>. A value already stored stays there. An administrator opens a section on the Administration page, chooses Edit, and saves that section. Deployment identity, sign-in, execution, filesystem paths, and the embedding width stay fixed. Passwords, API keys, <code>secret://</code> references, <code>DATABASE_URL</code>, and <code>REDIS_URL</code> are not written there. Apply migration <code>0010</code> with the Alembic command above before starting the API.
+    </div>
+    <div class="card warn">
+      <strong>Keep execution off.</strong> <code>OPERATIONS_EXECUTION_ENABLED</code> and <code>OPERATIONS_EXECUTION_APPROVED</code> stay <code>false</code>. Release 1 stores proposals and does not send a change to Oracle. <code>AI_FALLBACK_PROVIDER</code> stays <code>disabled</code>. A local model failure must not call a hosted model.
+    </div>
+  </section>
+
+  <section id="portal">
+    <h2>Open the portal</h2>
+    <p>Open <a href="http://127.0.0.1:5173/">http://127.0.0.1:5173/</a>. The API document page is <a href="http://127.0.0.1:8000/docs">http://127.0.0.1:8000/docs</a>.</p>
+    <p>With <code>AUTH_REQUIRED=true</code>, sign in through the portal. A local account is created from <code>AUTH_BOOTSTRAP_USERNAME</code> and <code>AUTH_BOOTSTRAP_PASSWORD</code> when Active Directory is not configured. The session cookie is <code>sentinel_session</code>. <code>APP_ENV=dev</code> or <code>test</code> lets the local admin principal <code>sentinel</code> choose the local model, Claude, or OpenAI on a Copilot thread. A new Copilot thread starts on the local model when that choice is ready. Production hides the choice and keeps the configured provider.</p>
+    <p>Copilot explains Oracle concepts and can draft a read-only SQL example. It does not run SQL, PL/SQL, a shell command, or a database change. Measurements come from approved readings. Company requirements come from an approved policy document or a compliance result. The policy is <a href="docs/assistant-policy.md">docs/assistant-policy.md</a>.</p>
+  </section>
+
+  <section id="knowledge">
+    <h2>Knowledge and RAG</h2>
+    <p class="lead">Document search already uses PostgreSQL and pgvector. A separate vector database is not required. The scan reads <code>knowledge-intake/ora-19c-manual</code> and <code>knowledge-intake/Policy</code>, splits each file into passages, and stores a local embedding on <code>document_chunks.embedding</code>. Search combines that vector with full-text ranking and returns a citation. The language model is not required for search.</p>
+    <p>Files under <code>ora-19c-manual</code> are stored with the Knowledge category. Policy files stay the Policy category. Allowed types are <code>.pdf</code>, <code>.docx</code>, <code>.txt</code>, and <code>.md</code>. Other files are left in place. Encrypted, corrupt, scanned, oversized, and over-page files are moved to <code>knowledge-intake/Quarantine</code>. OCR is off, so a scanned PDF is quarantined.</p>
+    <h3>Three ways to run the same scan</h3>
+    <div class="card">
+      <strong>On its own.</strong> On the Knowledge page, choose Reindex, or send <code>POST /api/v1/knowledge/reindex</code> as an administrator. This works while <code>KNOWLEDGE_ENABLED=false</code>.
+    </div>
+    <div class="card">
+      <strong>From a live PowerShell check.</strong> The Phase 5 and Phase 6 launchers call that same reindex API. They keep <code>KNOWLEDGE_ENABLED=false</code> so the timer cannot scan at the same time as the test. A later launcher should call this reindex, not a second indexer.
+    </div>
+    <div class="card">
+      <strong>While the API is running.</strong> Set <code>KNOWLEDGE_ENABLED=true</code>. Startup starts a scan every <code>KNOWLEDGE_SCAN_INTERVAL_SECONDS</code> (300 by default). The first scan waits for that interval. A scheduler failure is logged and does not stop Oracle collection.
+    </div>
+    <div class="card warn">
+      <strong>Page limit is 800.</strong> Concepts, Performance Tuning, Data Guard, and Licensing fit. The Administrator's Guide, PL/SQL Reference, ASM, Backup and Recovery, Security, SQL Reference, Database Reference, and Error Messages are larger. A reindex would quarantine those files and move them out of <code>ora-19c-manual</code>. The parser timeout is 30 seconds, which is short for a multi-thousand-page PDF. Raise <code>KNOWLEDGE_MAX_PAGES</code> and <code>KNOWLEDGE_PARSER_TIMEOUT_SECONDS</code> only after you decide those books should be indexed.
+    </div>
+    <p>The default embedding is the local hasher <code>local-hashing-v1</code>, 128 dimensions. Document text stays on this machine. Remote embeddings run only when <code>EMBEDDING_PROVIDER=remote</code>, <code>EMBEDDING_REMOTE_APPROVED=true</code>, a URL, and a privacy disclosure are all set. The vector width stays 128 until a migration changes the column.</p>
+  </section>
+
+  <section id="env">
+    <h2>.env parameters</h2>
+    <p class="lead">Names match <code>.env.example</code>. Put secret values only in <code>.env</code> or in the variable named by a <code>secret://</code> reference. A reference such as <code>secret://ANTHROPIC_API_KEY</code> is the name of the variable. It is not the key. An environment variable set in the shell overrides the file.</p>
+
+    <h3>Application</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>APP_NAME</td><td>Oracle Sentinel AI</td><td>Display name.</td></tr>
+        <tr><td>APP_VERSION</td><td>0.1.0</td><td>Reported version.</td></tr>
+        <tr><td>APP_ENV</td><td>dev</td><td><code>dev</code>, <code>test</code>, or <code>production</code>. The Copilot model list is available only in <code>dev</code> and <code>test</code>, and only for the admin principal <code>sentinel</code>.</td></tr>
+        <tr><td>DEBUG</td><td>false</td><td>Debug mode.</td></tr>
+        <tr><td>SECRET_KEY</td><td>change-me-in-production</td><td>Fernet key used to decrypt an encrypted <code>ORACLE_PASSWORD</code>. Generate one with <code>python scripts/encrypt-secret.py key</code>.</td></tr>
+        <tr><td>LOG_LEVEL</td><td>INFO</td><td><code>DEBUG</code>, <code>INFO</code>, <code>WARNING</code>, or <code>ERROR</code>.</td></tr>
+        <tr><td>LOG_JSON</td><td>false</td><td>One JSON object per log line when true.</td></tr>
+        <tr><td>CORS_ORIGINS</td><td>["http://localhost:5173","http://localhost:3000"]</td><td>Browser origins allowed to call the API.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>PostgreSQL and Redis</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>DATABASE_URL</td><td>postgresql+psycopg2://postgres:postgres@localhost:5432/sentinel</td><td>Application database. The local Docker value matches Compose. Use a dedicated database for live checks. Do not point this at a production database during tests.</td></tr>
+        <tr><td>DATABASE_POOL_SIZE</td><td>5</td><td>Connection pool size.</td></tr>
+        <tr><td>DATABASE_MAX_OVERFLOW</td><td>10</td><td>Extra connections above the pool size.</td></tr>
+        <tr><td>REDIS_URL</td><td>redis://localhost:6379/0</td><td>Redis. Collection does not require it for the basic portal.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Oracle</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>TNS_ADMIN</td><td>D:\oracle\network\admin</td><td>Folder that contains <code>tnsnames.ora</code>. Prefer an absolute path. A relative path is resolved from the repository root.</td></tr>
+        <tr><td>ORACLE_USERNAME</td><td>GSYSTEM</td><td>Read-only monitoring account. Create it with <code>scripts/oracle/01_create_gsystem.sql</code> and grant it with <code>scripts/oracle/02_grant_readonly_monitoring.sql</code>.</td></tr>
+        <tr><td>ORACLE_PASSWORD</td><td></td><td>Plain text during development, or a Fernet value that starts with <code>gAAAAA</code>. Encrypt with <code>python scripts/encrypt-secret.py encrypt "the-password"</code>.</td></tr>
+        <tr><td>ORACLE_PASSWORD_SECRET_REF</td><td></td><td>Optional pointer such as <code>env:SENTINEL_ORACLE_PASSWORD</code>. The password itself stays in that variable.</td></tr>
+        <tr><td>ORACLE_CONNECTION_TIMEOUT</td><td>30</td><td>Connect timeout in seconds.</td></tr>
+        <tr><td>ORACLE_STATEMENT_TIMEOUT</td><td>60</td><td>Statement deadline in seconds.</td></tr>
+        <tr><td>SYNTHETIC_MODE</td><td>false</td><td><code>true</code> never connects to Oracle. Keep it <code>false</code> for a live database. Do not mix synthetic and live targets in one application database.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Collection and alerts</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>SCHEDULER_ENABLED</td><td>true</td><td>Starts Oracle collection and alert evaluation. Leave <code>false</code> until PostgreSQL and the Oracle account are ready.</td></tr>
+        <tr><td>SCHEDULER_DEFAULT_INTERVAL_SECONDS</td><td>300</td><td>Default poll interval.</td></tr>
+        <tr><td>SCHEDULER_WORKERS</td><td>4</td><td>Collector workers, from 1 to 32.</td></tr>
+        <tr><td>SCHEDULER_RECONCILE_SECONDS</td><td>30</td><td>How often the scheduler reconciles jobs.</td></tr>
+        <tr><td>COLLECTOR_LEASE_SECONDS</td><td>1800</td><td>Lease that stops two workers from collecting the same target.</td></tr>
+        <tr><td>OBSERVATION_RETENTION_DAYS</td><td>30</td><td>How long observations are kept.</td></tr>
+        <tr><td>POLL_INTERVALS</td><td>JSON map</td><td>Seconds for <code>connectivity</code>, <code>instance</code>, <code>storage</code>, <code>fra_archive</code>, <code>resources</code>, and <code>configuration</code>. All six names are required.</td></tr>
+        <tr><td>STALE_AFTER_SECONDS</td><td>JSON map</td><td>When each of those six probes is treated as stale. All six names are required.</td></tr>
+        <tr><td>RULES_PATH</td><td>./rules</td><td>YAML rule files. Optional in <code>.env</code>. The code default is <code>./rules</code>.</td></tr>
+        <tr><td>ALERT_POLL_INTERVAL_SECONDS</td><td>120</td><td>Alert-log poll and rule evaluation interval. Minimum 10.</td></tr>
+        <tr><td>ALERT_MAX_LOOKBACK_HOURS</td><td>24</td><td>Maximum alert-log backfill. The Copilot “problem with this database” reading uses the last 24 hours.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Language model</h3>
+    <p>Monitoring, rules, and knowledge search keep running when <code>AI_ENABLED=false</code>. The configured default is <code>AI_HOSTED_*</code>. In <code>dev</code> or <code>test</code>, the portal choice uses only its own block: <code>AI_LOCAL_*</code>, <code>AI_ANTHROPIC_*</code>, or <code>AI_OPENAI_*</code>. A timeout or output limit of <code>0</code> inherits <code>AI_TIMEOUT_SECONDS</code> or <code>AI_MAX_OUTPUT_TOKENS</code>.</p>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>AI_ENABLED</td><td>false</td><td>Turns Copilot model answers on. Readings still work when this is false.</td></tr>
+        <tr><td>AI_PROVIDER</td><td>disabled</td><td><code>local</code>, <code>hosted</code>, or <code>disabled</code>. This is the configured default, used when the portal stays on Configured default.</td></tr>
+        <tr><td>AI_FALLBACK_PROVIDER</td><td>disabled</td><td>Must stay <code>disabled</code>. Any other value stops startup.</td></tr>
+        <tr><td>AI_LOCAL_URL</td><td>http://localhost:11434</td><td>Local model base URL, such as Ollama.</td></tr>
+        <tr><td>AI_MODEL_NAME</td><td>llama3</td><td>Local model name when <code>AI_LOCAL_MODEL</code> is empty.</td></tr>
+        <tr><td>AI_TIMEOUT_SECONDS</td><td>30</td><td>Shared timeout, from 1 to 120. A 14B local model can exceed 30 seconds on a long answer.</td></tr>
+        <tr><td>AI_MAX_TOOL_CALLS</td><td>5</td><td>Tool-call ceiling, from 1 to 8. The model does not choose tools.</td></tr>
+        <tr><td>AI_MAX_OUTPUT_TOKENS</td><td>600</td><td>Shared output limit, from 64 to 4000.</td></tr>
+        <tr><td>AI_MAX_CONTEXT_TOKENS</td><td>12000</td><td>Context budget, from 500 to 32000.</td></tr>
+        <tr><td>AI_REQUIRE_CITATIONS</td><td>true</td><td>Evidence answers must cite the reading or document that supports them.</td></tr>
+        <tr><td>AI_REDACT_SENSITIVE_TELEMETRY</td><td>true</td><td>Redact sensitive telemetry before it is sent to a model.</td></tr>
+        <tr><td>AI_HOSTED_APPROVED</td><td>false</td><td>Hosted chat stays off until this is true and the model, secret reference, and disclosure are set.</td></tr>
+        <tr><td>AI_HOSTED_VENDOR</td><td>anthropic</td><td><code>openai</code> or <code>anthropic</code>.</td></tr>
+        <tr><td>AI_HOSTED_API_BASE</td><td></td><td>Empty uses <code>https://api.openai.com/v1</code> or <code>https://api.anthropic.com</code>.</td></tr>
+        <tr><td>AI_HOSTED_MODEL</td><td>claude-sonnet-4-5</td><td>Configured hosted model name.</td></tr>
+        <tr><td>AI_HOSTED_API_KEY_SECRET_REF</td><td>secret://ANTHROPIC_API_KEY</td><td>Name of the variable that holds the key. Never put the key in this field.</td></tr>
+        <tr><td>AI_HOSTED_PRIVACY_DISCLOSURE</td><td>Questions and redacted evidence are sent to Anthropic.</td><td>Sentence shown for the configured hosted provider.</td></tr>
+        <tr><td>AI_LOCAL_MODEL</td><td>qwen2.5-coder:14b</td><td>Model used when the portal selects Local. Empty uses <code>AI_MODEL_NAME</code>.</td></tr>
+        <tr><td>AI_LOCAL_API_KEY_SECRET_REF</td><td></td><td>Empty sends no Authorization header, which is what Ollama expects.</td></tr>
+        <tr><td>AI_LOCAL_PRIVACY_DISCLOSURE</td><td></td><td>Empty uses the local-endpoint sentence.</td></tr>
+        <tr><td>AI_LOCAL_TIMEOUT_SECONDS</td><td>0</td><td><code>0</code> uses <code>AI_TIMEOUT_SECONDS</code>.</td></tr>
+        <tr><td>AI_LOCAL_MAX_OUTPUT_TOKENS</td><td>0</td><td><code>0</code> uses <code>AI_MAX_OUTPUT_TOKENS</code>. A non-zero value must be at least 64.</td></tr>
+        <tr><td>AI_ANTHROPIC_MODEL</td><td></td><td>Empty keeps the configured Claude model.</td></tr>
+        <tr><td>AI_ANTHROPIC_API_BASE</td><td></td><td>Empty keeps the configured Anthropic base.</td></tr>
+        <tr><td>AI_ANTHROPIC_API_KEY_SECRET_REF</td><td>secret://ANTHROPIC_API_KEY</td><td>Points at <code>ANTHROPIC_API_KEY</code>.</td></tr>
+        <tr><td>AI_ANTHROPIC_PRIVACY_DISCLOSURE</td><td>Questions and redacted evidence are sent to Anthropic.</td><td>Shown when Claude is selected.</td></tr>
+        <tr><td>AI_ANTHROPIC_TIMEOUT_SECONDS</td><td>0</td><td><code>0</code> uses the shared timeout.</td></tr>
+        <tr><td>AI_ANTHROPIC_MAX_OUTPUT_TOKENS</td><td>0</td><td><code>0</code> uses the shared output limit.</td></tr>
+        <tr><td>AI_OPENAI_MODEL</td><td>gpt-4o</td><td>Model used when the portal selects OpenAI.</td></tr>
+        <tr><td>AI_OPENAI_API_BASE</td><td></td><td>Empty uses <code>https://api.openai.com/v1</code>.</td></tr>
+        <tr><td>AI_OPENAI_API_KEY_SECRET_REF</td><td>secret://OPENAI_API_KEY</td><td>Points at <code>OPENAI_API_KEY</code>.</td></tr>
+        <tr><td>AI_OPENAI_PRIVACY_DISCLOSURE</td><td>Questions and redacted evidence are sent to OpenAI.</td><td>Shown when OpenAI is selected.</td></tr>
+        <tr><td>AI_OPENAI_TIMEOUT_SECONDS</td><td>0</td><td><code>0</code> uses the shared timeout.</td></tr>
+        <tr><td>AI_OPENAI_MAX_OUTPUT_TOKENS</td><td>0</td><td><code>0</code> uses the shared output limit.</td></tr>
+        <tr><td>OPENAI_API_KEY</td><td></td><td>The OpenAI key. Leave blank until you add one.</td></tr>
+        <tr><td>ANTHROPIC_API_KEY</td><td></td><td>The Anthropic key.</td></tr>
+        <tr><td>LOCAL_AI_API_KEY</td><td></td><td>Optional local endpoint key. Leave blank for Ollama.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Knowledge embeddings</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>KNOWLEDGE_INTAKE_PATH</td><td>./knowledge-intake</td><td>Intake root. The scanner uses <code>ora-19c-manual</code> and <code>Policy</code> inside it.</td></tr>
+        <tr><td>KNOWLEDGE_ENABLED</td><td>false</td><td>Starts the repeating scan. Manual reindex and search work when this is false.</td></tr>
+        <tr><td>KNOWLEDGE_SCAN_INTERVAL_SECONDS</td><td>300</td><td>Repeat interval, from 30 to 86400. The first scheduled scan waits for this interval.</td></tr>
+        <tr><td>KNOWLEDGE_MAX_FILE_BYTES</td><td>20971520</td><td>20 MB. A larger file is quarantined.</td></tr>
+        <tr><td>KNOWLEDGE_MAX_PAGES</td><td>800</td><td>A PDF with more pages is quarantined and moved out of the intake folder.</td></tr>
+        <tr><td>KNOWLEDGE_PARSER_TIMEOUT_SECONDS</td><td>30</td><td>Parser deadline, from 0.01 to 120.</td></tr>
+        <tr><td>KNOWLEDGE_MIN_EXTRACTED_CHARS</td><td>20</td><td>Rejects a file with too little text.</td></tr>
+        <tr><td>KNOWLEDGE_CHUNK_SIZE</td><td>800</td><td>Passage size. Must be greater than the overlap.</td></tr>
+        <tr><td>KNOWLEDGE_CHUNK_OVERLAP</td><td>120</td><td>Shared characters between passages.</td></tr>
+        <tr><td>KNOWLEDGE_MALWARE_SCANNER</td><td></td><td>Optional program. It receives the file path. Exit code 1 quarantines the file. An empty value does not block ingestion.</td></tr>
+        <tr><td>EMBEDDING_PROVIDER</td><td>local</td><td><code>local</code> or <code>remote</code>.</td></tr>
+        <tr><td>EMBEDDING_MODEL</td><td>local-hashing-v1</td><td>Name stored with each document.</td></tr>
+        <tr><td>EMBEDDING_DIMENSIONS</td><td>128</td><td>Fixed. Another width is rejected until the pgvector column is migrated.</td></tr>
+        <tr><td>EMBEDDING_REMOTE_URL</td><td></td><td>Required only for remote embeddings.</td></tr>
+        <tr><td>EMBEDDING_REMOTE_APPROVED</td><td>false</td><td>Must be true before remote embeddings run.</td></tr>
+        <tr><td>EMBEDDING_REMOTE_PRIVACY_DISCLOSURE</td><td></td><td>Required with the URL and the approval flag.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Sign-in</h3>
+    <p>Leave <code>AUTH_REQUIRED=false</code> for a private development API. When it is true, set <code>AUTH_AD_URL</code> or both bootstrap fields. The bootstrap password must be at least 8 characters. The bootstrap role must be one of <code>viewer</code>, <code>operator</code>, <code>dba</code>, <code>admin</code>, <code>auditor</code>, <code>platform_admin</code>, or <code>security_auditor</code>.</p>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>AUTH_REQUIRED</td><td>false</td><td>Requires the session cookie on API routes other than health and the auth endpoints.</td></tr>
+        <tr><td>AUTH_SESSION_HOURS</td><td>8</td><td>Session length, from 1 to 24.</td></tr>
+        <tr><td>AUTH_COOKIE_SECURE</td><td>false</td><td>Set true only behind HTTPS.</td></tr>
+        <tr><td>AUTH_BOOTSTRAP_USERNAME</td><td></td><td>Local account created once when sign-in is on and Active Directory is not used.</td></tr>
+        <tr><td>AUTH_BOOTSTRAP_PASSWORD</td><td></td><td>At least 8 characters. Keep it only in <code>.env</code>.</td></tr>
+        <tr><td>AUTH_BOOTSTRAP_ROLE</td><td>admin</td><td>Role of that local account.</td></tr>
+        <tr><td>AUTH_AD_URL</td><td></td><td><code>ldap://</code> or <code>ldaps://</code> domain controller. Empty keeps local sign-in.</td></tr>
+        <tr><td>AUTH_AD_DOMAIN</td><td></td><td>Active Directory DNS name.</td></tr>
+        <tr><td>AUTH_AD_BASE_DN</td><td></td><td>Search base. Derived from the domain when empty.</td></tr>
+        <tr><td>AUTH_AD_OPERATOR_GROUP</td><td></td><td>Group mapped to the operator role.</td></tr>
+        <tr><td>AUTH_AD_DBA_GROUP</td><td></td><td>Group mapped to the dba role.</td></tr>
+        <tr><td>AUTH_AD_ADMIN_GROUP</td><td></td><td>Group mapped to the admin role.</td></tr>
+        <tr><td>AUTH_OIDC_ISSUER</td><td></td><td>Empty keeps local and Active Directory sign-in only. A value must start with <code>https://</code>.</td></tr>
+        <tr><td>AUTH_OIDC_CLIENT_ID</td><td></td><td>OIDC client id.</td></tr>
+        <tr><td>AUTH_OIDC_CLIENT_SECRET_REF</td><td>secret://OIDC_CLIENT_SECRET</td><td>Points at <code>OIDC_CLIENT_SECRET</code>. Never put the secret in this field.</td></tr>
+        <tr><td>AUTH_OIDC_REDIRECT_URI</td><td>http://127.0.0.1:8000/api/v1/auth/oidc/callback</td><td>Callback registered at the identity provider.</td></tr>
+        <tr><td>AUTH_OIDC_SUCCESS_URL</td><td>http://127.0.0.1:5173/</td><td>Portal page after a successful directory sign-in.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Mail and proposals</h3>
+    <table>
+      <thead><tr><th>Parameter</th><th>Example</th><th>Purpose</th></tr></thead>
+      <tbody>
+        <tr><td>SMTP_ENABLED</td><td>false</td><td>Email is opt-in. Portal alerts stay on either way.</td></tr>
+        <tr><td>SMTP_HOST</td><td></td><td>SMTP server.</td></tr>
+        <tr><td>SMTP_PORT</td><td>587</td><td>SMTP port.</td></tr>
+        <tr><td>SMTP_USERNAME</td><td></td><td>SMTP account.</td></tr>
+        <tr><td>SMTP_PASSWORD_SECRET_REF</td><td></td><td>Reference to the SMTP password, not the password.</td></tr>
+        <tr><td>SMTP_USE_TLS</td><td>true</td><td>TLS for SMTP.</td></tr>
+        <tr><td>SMTP_FROM_ADDRESS</td><td></td><td>From address.</td></tr>
+        <tr><td>NOTIFICATION_RECIPIENTS</td><td>[]</td><td>JSON list of default recipient addresses.</td></tr>
+        <tr><td>NOTIFICATION_MAX_RETRIES</td><td>3</td><td>SMTP retries.</td></tr>
+        <tr><td>NOTIFICATION_RETRY_BACKOFF_SECONDS</td><td>5</td><td>Base delay between retries.</td></tr>
+        <tr><td>PROPOSAL_EXPIRY_HOURS</td><td>24</td><td>How long a stored proposal remains actionable, from 1 to 168.</td></tr>
+        <tr><td>OPERATIONS_EXECUTION_ENABLED</td><td>false</td><td>Leave false. Turning it on also requires the approval flag, and Release 1 still does not send a statement.</td></tr>
+        <tr><td>OPERATIONS_EXECUTION_APPROVED</td><td>false</td><td>Leave false until a security review exists. Enabling the first flag without this one stops startup.</td></tr>
+        <tr><td>OPERATIONS_REQUIRE_DUAL_APPROVAL</td><td>true</td><td>Future approval rule. Release 1 does not execute when this is set.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="checks">
+    <h2>Checks</h2>
+    <p>Automated tests use temporary databases and do not need Oracle:</p>
+    <pre>.\.venv\Scripts\python.exe -m pytest -c backend\pyproject.toml backend\tests
+Set-Location frontend
+npm test</pre>
+    <p>Live Oracle checks are separate PowerShell launchers, such as <code>test_real_phase2\Verify_Phase2_Real.ps1</code> and later phase folders. Run <code>-CheckPrerequisites</code> before a full launch. A full launch stops listeners on ports 8000 and 5173. Do not run two launchers at once. Those scripts keep the language model and privileged execution off for the duration of the check.</p>
+    <p>Related pages: <a href="docs/architecture.html">architecture</a>, <a href="docs/operations-runbook.md">operations runbook</a>, <a href="docs/api-contracts.md">API contracts</a>, <a href="knowledge-intake/README.md">knowledge intake</a>.</p>
+  </section>
+</main>
+</body>
+</html>

@@ -59,7 +59,7 @@ def check_directories() -> bool:
         "backend",
         "backend/src/sentinel",
         "knowledge-intake",
-        "knowledge-intake/Knowledge",
+        "knowledge-intake/ora-19c-manual",
         "knowledge-intake/Policy",
         "knowledge-intake/Quarantine",
         "scripts/oracle",

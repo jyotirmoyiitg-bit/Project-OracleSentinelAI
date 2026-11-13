@@ -2,14 +2,18 @@
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from sentinel.api.v1.admin import router as admin_router
+from sentinel.api.v1.audit import router as audit_router
 from sentinel.api.v1.auth import router as auth_router
 from sentinel.api.v1.chat import router as chat_router
 from sentinel.api.v1.compliance import router as compliance_router
@@ -17,6 +21,8 @@ from sentinel.api.v1.databases import router
 from sentinel.api.v1.events import router as events_router
 from sentinel.api.v1.incidents import router as incidents_router
 from sentinel.api.v1.knowledge import router as knowledge_router
+from sentinel.api.v1.operations import router as operations_router
+from sentinel.api.v1.privileged import router as privileged_router
 from sentinel.auth.middleware import RequireSignIn
 from sentinel.auth.service import ensure_bootstrap_operator
 from sentinel.collectors.adapters import adapter_for
@@ -25,11 +31,42 @@ from sentinel.collectors.jobs import CollectionRunner
 from sentinel.collectors.scheduler import CollectorScheduler
 from sentinel.config.secrets import init_resolver
 from sentinel.config.settings import Settings, get_settings
+from sentinel.config.store import sync_public_config
 from sentinel.notifications.smtp import SMTPNotifier
+from sentinel.observability.metrics import observe_request, render_metrics
 from sentinel.persistence import session as persistence
 from sentinel.rules.compliance_store import sync_policy_definitions
 
 logger = logging.getLogger(__name__)
+ASGIApp = Callable[..., Awaitable[None]]
+
+
+class MetricsMiddleware:
+    """Record route-template latency. Raw database identifiers are not labels."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, object], receive: ASGIApp, send: ASGIApp) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        started = time.perf_counter()
+        status = 500
+
+        async def send_wrapper(message: dict[str, object]) -> None:
+            nonlocal status
+            if message.get("type") == "http.response.start":
+                raw_status = message.get("status")
+                status = raw_status if isinstance(raw_status, int) else 500
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            route = scope.get("route")
+            path = getattr(route, "path", None) or "unmatched"
+            observe_request(str(scope.get("method") or "GET"), str(path), status, time.perf_counter() - started)
 
 
 @asynccontextmanager
@@ -53,9 +90,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("Phase 5 schema missing; run alembic upgrade head before starting")
             if not inspect(conn).has_table("chat_threads"):
                 raise RuntimeError("Phase 6 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("audit_events"):
+                raise RuntimeError("Phase 7 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("privileged_operations"):
+                raise RuntimeError("Phase 8 schema missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("app_config"):
+                raise RuntimeError("Configuration table missing; run alembic upgrade head before starting")
             if settings.auth_required and not inspect(conn).has_table("operator_accounts"):
                 raise RuntimeError("Sign-in schema missing; run alembic upgrade head before starting")
         with sessions.begin() as session:
+            sync_public_config(session, settings)
             sync_policy_definitions(session)
             if settings.auth_required:
                 ensure_bootstrap_operator(session, settings)
@@ -112,6 +156,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(compliance_router)
     app.include_router(knowledge_router)
     app.include_router(chat_router)
+    app.include_router(operations_router)
+    app.include_router(privileged_router)
+    app.include_router(audit_router)
+    app.include_router(admin_router)
+    app.add_middleware(MetricsMiddleware)
 
     @app.get("/health/live")
     def health_live() -> dict[str, str]:
@@ -128,6 +177,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             logger.error("Readiness failed: %s", type(exc).__name__)
             raise HTTPException(503, "Database not ready") from exc
         return {"status": "ready", "database": "connected"}
+
+    @app.get("/metrics")
+    def metrics() -> Response:
+        return Response(render_metrics(), media_type="text/plain; version=0.0.4")
 
     return app
 

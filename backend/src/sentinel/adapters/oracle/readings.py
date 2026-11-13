@@ -85,6 +85,19 @@ CRITICAL_SQL = f"""
     )
     WHERE ROWNUM <= 20
 """
+ORA_ERROR_SQL = f"""
+    SELECT occurred_at, message_text
+    FROM (
+        SELECT TO_CHAR(originating_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at,
+               SUBSTR(message_text, 1, 180) AS message_text
+        FROM v$diag_alert_ext
+        WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '1' DAY
+          AND {_DATABASE_ALERT_FILE}
+          AND message_text LIKE '%ORA-%'
+        ORDER BY originating_timestamp DESC
+    )
+    WHERE ROWNUM <= 30
+"""
 TABLESPACE_SQL = """
     SELECT tablespace_name, bytes_total, bytes_used, used_pct, autoextend
     FROM (
@@ -408,6 +421,7 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         FixedQuery("alert_outage", OUTAGE_SQL, "SYS.V_$DIAG_ALERT_EXT", required=False),
     )
     errors = (FixedQuery("v$diag_alert_ext", CRITICAL_SQL, "SYS.V_$DIAG_ALERT_EXT"),)
+    ora_errors = (FixedQuery("v$diag_alert_ext", ORA_ERROR_SQL, "SYS.V_$DIAG_ALERT_EXT"),)
     alert_log = (FixedQuery("v$diag_alert_ext", LATEST_ALERT_SQL, "SYS.V_$DIAG_ALERT_EXT"),)
     tablespace = (
         FixedQuery("tablespace", TABLESPACE_SQL, "SYS.DBA_DATA_FILES"),
@@ -471,6 +485,7 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
     return {
         "availability": availability,
         "errors": errors,
+        "ora_errors": ora_errors,
         "alert_log": alert_log,
         "tablespace": tablespace,
         "performance": performance,

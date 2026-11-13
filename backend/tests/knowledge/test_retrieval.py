@@ -19,20 +19,20 @@ from sentinel.persistence.models import DocumentChunk
 @pytest.fixture
 def settings(tmp_path: Path):
     intake = tmp_path / "intake"
-    for name in ("Knowledge", "Policy", "Quarantine"):
+    for name in ("ora-19c-manual", "Policy", "Quarantine"):
         (intake / name).mkdir(parents=True)
     (intake / "Policy" / "archivelog-standard.md").write_text(
         "# ARCHIVELOG standard\n\nEvery production Oracle database must run in ARCHIVELOG mode. "
         "NOARCHIVELOG is non-compliant for production.\n",
         encoding="utf-8",
     )
-    (intake / "Knowledge").joinpath("internal-runbooks").mkdir()
-    (intake / "Knowledge" / "internal-runbooks" / "ora-00257.md").write_text(
+    (intake / "ora-19c-manual").joinpath("internal-runbooks").mkdir()
+    (intake / "ora-19c-manual" / "internal-runbooks" / "ora-00257.md").write_text(
         "# ORA-00257\n\nORA-00257 means the archiver cannot archive a redo log because the fast "
         "recovery area is full.\n",
         encoding="utf-8",
     )
-    (intake / "Knowledge" / "omf-guide.md").write_text(
+    (intake / "ora-19c-manual" / "omf-guide.md").write_text(
         "# Oracle Managed Files\n\nOracle Managed Files use DB_CREATE_FILE_DEST to place datafiles.\n",
         encoding="utf-8",
     )
@@ -57,8 +57,8 @@ def test_retrieval_meets_recall_and_citation_thresholds(settings, sessions) -> N
     KnowledgeIndexer(sessions, settings).scan()
     cases = (
         ("What is the ARCHIVELOG standard for production databases?", "Policy/archivelog-standard.md"),
-        ("ORA-00257 fast recovery area is full", "Knowledge/internal-runbooks/ora-00257.md"),
-        ("DB_CREATE_FILE_DEST Oracle Managed Files", "Knowledge/omf-guide.md"),
+        ("ORA-00257 fast recovery area is full", "ora-19c-manual/internal-runbooks/ora-00257.md"),
+        ("DB_CREATE_FILE_DEST Oracle Managed Files", "ora-19c-manual/omf-guide.md"),
     )
     recalls: list[float] = []
     rankings: list[float] = []

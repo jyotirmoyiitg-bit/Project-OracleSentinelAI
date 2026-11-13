@@ -2,11 +2,11 @@ import { useState, type FormEvent } from 'react'
 import { CircleAlert } from 'lucide-react'
 import { ApiError, login, type AuthSession } from './api'
 
-export function LoginPage({ onSuccess }: { onSuccess: (session: AuthSession) => void }) {
+export function LoginPage({ onSuccess, oidcEnabled = false }: { onSuccess: (session: AuthSession) => void; oidcEnabled?: boolean }) {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [localAccount, setLocalAccount] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => new URLSearchParams(window.location.search).has('sign_in_error') ? 'The organization sign-in could not be completed. Use a local account.' : '')
   const [submitting, setSubmitting] = useState(false)
 
   async function onSubmit(event: FormEvent) {
@@ -52,6 +52,7 @@ export function LoginPage({ onSuccess }: { onSuccess: (session: AuthSession) => 
         <button className="button button-primary" type="submit" disabled={submitting}>
           {submitting ? 'Signing in…' : 'Sign in'}
         </button>
+        {oidcEnabled && <a className="button" href="/api/v1/auth/oidc/start">Sign in with organization</a>}
       </form>
     </main>
   )

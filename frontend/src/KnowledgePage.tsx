@@ -193,7 +193,7 @@ export function KnowledgePage({
         ) : loading && !documents ? (
           <div className="loading-state" role="status"><span className="spinner" /> Loading documents…</div>
         ) : visible.length === 0 ? (
-          <StatePanel title="No documents indexed" message="Add PDF, DOCX, text, or Markdown files to the Knowledge or Policy folders, then reindex." icon={<BookOpen size={24} />} />
+          <StatePanel title="No documents indexed" message="Add PDF, DOCX, text, or Markdown files to the ora-19c-manual or Policy folders, then reindex." icon={<BookOpen size={24} />} />
         ) : (
           <div className="table-scroll">
             <table className="data-table knowledge-table">

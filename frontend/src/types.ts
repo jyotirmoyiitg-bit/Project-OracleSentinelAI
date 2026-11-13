@@ -322,6 +322,15 @@ export interface KnowledgeReindexResponse {
 export interface GuidedCommand {
   label: string
   prompt: string
+  group?: string
+}
+
+export interface ModelChoiceOption {
+  id: 'local' | 'anthropic' | 'openai'
+  label: string
+  detail: string
+  ready: boolean
+  disclosure?: string
 }
 
 export interface ChatThread {
@@ -333,6 +342,7 @@ export interface ChatThread {
   llm_enabled: boolean
   disclosure: string
   guided_commands: GuidedCommand[]
+  model_choices?: { allowed: boolean; choices: ModelChoiceOption[] }
 }
 
 export interface ChatCitation {

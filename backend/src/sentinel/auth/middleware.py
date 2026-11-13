@@ -9,9 +9,12 @@ from sentinel.knowledge.acl import Caller
 PUBLIC_PATHS = frozenset({
     "/health/live",
     "/health/ready",
+    "/metrics",
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
     "/api/v1/auth/session",
+    "/api/v1/auth/oidc/start",
+    "/api/v1/auth/oidc/callback",
 })
 ASGIApp = Callable[..., Awaitable[None]]
 

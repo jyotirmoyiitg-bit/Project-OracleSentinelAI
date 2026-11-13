@@ -65,14 +65,37 @@ def test_catalog_question_selects_one_named_reading(question: str, kind: str) ->
 
 
 def test_alert_queries_stay_on_the_selected_database_alert() -> None:
-    from sentinel.adapters.oracle.readings import CRITICAL_SQL, DEADLOCK_SQL, LATEST_ALERT_SQL, OUTAGE_SQL
+    from sentinel.adapters.oracle.readings import (
+        CRITICAL_SQL,
+        DEADLOCK_SQL,
+        LATEST_ALERT_SQL,
+        ORA_ERROR_SQL,
+        OUTAGE_SQL,
+    )
 
-    for sql in (CRITICAL_SQL, LATEST_ALERT_SQL, OUTAGE_SQL, DEADLOCK_SQL):
+    for sql in (CRITICAL_SQL, LATEST_ALERT_SQL, OUTAGE_SQL, DEADLOCK_SQL, ORA_ERROR_SQL):
         folded = sql.lower()
         assert "%rdbms%alert%log.xml" in folded
         assert "%tnslsnr%" in folded
         assert "%clients%" in folded
     assert "%fatal ni%" in CRITICAL_SQL.lower()
+    assert "%ora-%" in ORA_ERROR_SQL.lower()
+
+
+def test_a_database_problem_lists_recent_ora_errors_only() -> None:
+    assert match_activity("Is there a problem with this database?") == "ora_errors"
+    assert match_activity("Are there any Oracle errors?") == "ora_errors"
+    assert match_activity("Is the database experiencing unusual I/O latency or throughput problems?") == "performance"
+    assert match_activity("Are there any deadlocks or lock contention problems?") == "blocking"
+    found = reading_outcome(
+        ActivityReading("ora_errors", "get_recent_ora_errors", "ok", [dict(row) for row in SYNTHETIC["ora_errors"]]),
+        "db",
+    )
+    assert found.payload["lines"] == ["2026-11-12 01:10:00 ORA-01578: ORACLE data block corrupted"]
+    assert found.summary == "1 Oracle error in the last 24 hours."
+    assert found.citations[0].label == "2026-11-12 01:10:00"
+    empty = reading_outcome(ActivityReading("ora_errors", "get_recent_ora_errors", "ok", []), "db")
+    assert empty.payload["lines"] == ["There are no Oracle errors reported in the last 24 hours."]
 
 
 def test_latest_alert_log_is_separate_from_critical_errors() -> None:

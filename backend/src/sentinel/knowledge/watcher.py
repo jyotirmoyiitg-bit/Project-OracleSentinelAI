@@ -1,4 +1,4 @@
-"""Scan Knowledge/ and Policy/ for added, changed, and unsafe files."""
+"""Scan ora-19c-manual/ and Policy/ for added, changed, and unsafe files."""
 
 import hashlib
 import logging
@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from sentinel.config.settings import Settings
-from sentinel.knowledge.constants import ALLOWED_EXTENSIONS, CATEGORIES
+from sentinel.knowledge.constants import ALLOWED_EXTENSIONS, INTAKE_FOLDERS
 from sentinel.knowledge.paths import display_relative, ensure_layout, intake_root, is_within
 from sentinel.knowledge.quarantine import quarantine_file, scan_malware
 from sentinel.knowledge.types import DiscoveredFile, Discovery
@@ -19,12 +19,14 @@ def discover(settings: Settings) -> Discovery:
     root = intake_root(settings)
     ensure_layout(root)
     found = Discovery()
-    for category in sorted(CATEGORIES):
-        _walk_category(root, root / category, category, settings, found)
+    for folder, category in sorted(INTAKE_FOLDERS.items()):
+        _walk_category(root, root / folder, folder, category, settings, found)
     return found
 
 
-def _walk_category(root: Path, base: Path, category: str, settings: Settings, found: Discovery) -> None:
+def _walk_category(
+    root: Path, base: Path, folder: str, category: str, settings: Settings, found: Discovery,
+) -> None:
     for dirpath, dirnames, filenames in os.walk(base, followlinks=False):
         current = Path(dirpath)
         kept: list[str] = []
@@ -37,17 +39,17 @@ def _walk_category(root: Path, base: Path, category: str, settings: Settings, fo
                 kept.append(name)
         dirnames[:] = kept
         for name in filenames:
-            _consider_file(root, base, category, current / name, settings, found)
+            _consider_file(root, base, folder, category, current / name, settings, found)
 
 
 def _consider_file(
-    root: Path, base: Path, category: str, path: Path, settings: Settings, found: Discovery,
+    root: Path, base: Path, folder: str, category: str, path: Path, settings: Settings, found: Discovery,
 ) -> None:
     if path.suffix.lower() not in ALLOWED_EXTENSIONS:
         found.skipped += 1
         return
     relative = display_relative(root, path)
-    if path.is_symlink() or not is_within(base, path) or not relative.startswith(f"{category}/"):
+    if path.is_symlink() or not is_within(base, path) or not relative.startswith(f"{folder}/"):
         _quarantine(root, path, "symlink" if path.is_symlink() else "path_escape",
                     "file is linked or resolves outside its category folder", found)
         return

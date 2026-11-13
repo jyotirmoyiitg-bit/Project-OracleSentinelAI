@@ -30,6 +30,7 @@ export interface AuthSession {
   principal: string
   role: string
   method: string
+  oidc_enabled?: boolean
 }
 
 export class ApiError extends Error {
@@ -288,14 +289,14 @@ export function createChatThread(scopeType: ChatThread['scope_type'], scopeId: s
   })
 }
 
-export async function sendChatMessage(threadId: string, content: string): Promise<ChatMessage> {
+export async function sendChatMessage(threadId: string, content: string, modelChoice?: string): Promise<ChatMessage> {
   let response: Response
   try {
     response = await fetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`, {
       method: 'POST',
       credentials: 'include',
       headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify(modelChoice ? { content, model_choice: modelChoice } : { content }),
     })
   } catch {
     throw new ApiError('Could not reach the Oracle Sentinel API. Check the connection and try again.')
@@ -335,4 +336,90 @@ function parseServerEvents(body: string): { name: string; data: unknown }[] {
 
 function isChatMessage(value: unknown): value is ChatMessage {
   return typeof value === 'object' && value !== null && 'content' in value && 'llm_used' in value
+}
+
+export interface OperationProposal {
+  id: string
+  requester: string
+  requester_role: string
+  action: string
+  target_id: string
+  parameters: { tablespace?: string; size_mb?: number; request_text?: string }
+  preview_sql: string
+  impact: string
+  risk: string
+  status: string
+  expires_at: string
+  approver: string
+  decision_reason: string
+  execution_allowed: boolean
+  execution_log: unknown[]
+}
+
+export interface AuditEventItem {
+  id: string
+  occurred_at: string
+  principal: string
+  action: string
+  target: string
+  outcome: string
+  evidence_digest: string
+}
+
+export interface PlatformSummary {
+  scheduler_enabled: boolean
+  knowledge_enabled: boolean
+  llm: { provider: string; model: string; hosted_vendor: string; secret_configured: boolean }
+  notifications: { smtp_enabled: boolean; smtp_host_configured: boolean; smtp_from: string; smtp_secret_configured: boolean }
+  roles: string[]
+  legacy_roles: Record<string, string>
+  retention_days: Record<string, number | null>
+  proposal_expiry_hours: number
+  rules: { id: string; expression: string; severity: string; enabled: boolean }[]
+  execution_allowed: boolean
+}
+
+export function listProposals(signal?: AbortSignal) {
+  return request<{ items: OperationProposal[] }>('/api/v1/operations/proposals', signal)
+}
+
+export function createProposal(targetId: string, requestText: string) {
+  return request<OperationProposal>('/api/v1/operations/proposals', undefined, {
+    method: 'POST',
+    body: JSON.stringify({ target_id: targetId, request_text: requestText }),
+  })
+}
+
+export function decideProposal(id: string, approved: boolean, reason: string) {
+  return request<OperationProposal>(`/api/v1/operations/proposals/${id}/${approved ? 'approve' : 'reject'}`, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  })
+}
+
+export function listAuditEvents(signal?: AbortSignal) {
+  return request<{ items: AuditEventItem[] }>('/api/v1/audit/events', signal)
+}
+
+export interface AppConfigItem {
+  key: string
+  value: unknown
+  updated_at: string
+  section: string
+  editable: boolean
+}
+
+export function listAppConfig(signal?: AbortSignal): Promise<{ items: AppConfigItem[] }> {
+  return request('/api/v1/admin/config', signal)
+}
+
+export function updateAppConfig(key: string, value: unknown): Promise<AppConfigItem> {
+  return request(`/api/v1/admin/config/${encodeURIComponent(key)}`, undefined, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+  })
+}
+
+export function getPlatform(signal?: AbortSignal) {
+  return request<PlatformSummary>('/api/v1/admin/platform', signal)
 }

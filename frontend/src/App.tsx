@@ -20,6 +20,9 @@ import {
   Server,
   ShieldCheck,
   UserRound,
+  ClipboardList,
+  ScrollText,
+  Settings,
   X,
 } from 'lucide-react'
 import { ApiError, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
@@ -39,6 +42,9 @@ import { DatabaseRegistrationPage } from './DatabaseRegistrationPage'
 import { KnowledgePage } from './KnowledgePage'
 import { CopilotPage } from './CopilotPage'
 import { LoginPage } from './LoginPage'
+import { OperationsPage } from './OperationsPage'
+import { AdminPage } from './AdminPage'
+import { AuditPage } from './AuditPage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
 const PAGE_SIZE = 25
@@ -62,6 +68,9 @@ type Route =
   | { page: 'copilot' }
   | { page: 'copilot-database'; id: string }
   | { page: 'copilot-incident'; id: string }
+  | { page: 'operations' }
+  | { page: 'admin' }
+  | { page: 'audit' }
 
 function parseHash(hash: string): Route {
   if (hash === '#/register') return { page: 'register' }
@@ -78,6 +87,9 @@ function parseHash(hash: string): Route {
   match = hash.match(/^#\/copilot\/incidents\/([^/]+)$/)
   if (match) return { page: 'copilot-incident', id: decodeURIComponent(match[1]) }
   if (hash.match(/^#\/copilot\/?$/)) return { page: 'copilot' }
+  if (hash.match(/^#\/operations\/?$/)) return { page: 'operations' }
+  if (hash.match(/^#\/admin\/?$/)) return { page: 'admin' }
+  if (hash.match(/^#\/audit\/?$/)) return { page: 'audit' }
   return { page: 'fleet' }
 }
 
@@ -105,6 +117,9 @@ function usePageNavigation() {
     navigateToCopilot: () => navigate('#/copilot'),
     navigateToDatabaseCopilot: (id: string) => navigate(`#/copilot/databases/${encodeURIComponent(id)}`),
     navigateToIncidentCopilot: (id: string) => navigate(`#/copilot/incidents/${encodeURIComponent(id)}`),
+    navigateToOperations: () => navigate('#/operations'),
+    navigateToAdmin: () => navigate('#/admin'),
+    navigateToAudit: () => navigate('#/audit'),
   }
 }
 
@@ -121,11 +136,24 @@ function useRefreshPreference() {
 }
 
 function roleLabel(role: string | undefined): string {
-  if (role === 'admin') return 'Admin'
+  if (role === 'admin' || role === 'platform_admin') return role === 'platform_admin' ? 'Platform admin' : 'Admin'
   if (role === 'dba') return 'DBA'
-  if (role === 'auditor') return 'Auditor'
+  if (role === 'auditor' || role === 'security_auditor') return role === 'security_auditor' ? 'Security auditor' : 'Auditor'
+  if (role === 'viewer') return 'Viewer'
   if (role === 'operator') return 'Operator'
   return role ?? ''
+}
+
+function canReadProposals(role: string | undefined): boolean {
+  return role === 'operator' || role === 'dba' || role === 'admin' || role === 'platform_admin' || role === 'auditor' || role === 'security_auditor'
+}
+
+function canReadAudit(role: string | undefined): boolean {
+  return role === 'admin' || role === 'platform_admin' || role === 'auditor' || role === 'security_auditor'
+}
+
+function canAdminister(role: string | undefined): boolean {
+  return role === 'admin' || role === 'platform_admin'
 }
 
 function AppHeader({
@@ -134,6 +162,12 @@ function AppHeader({
   onOpenIncidents,
   onOpenKnowledge,
   onOpenCopilot,
+  onOpenOperations,
+  onOpenAdmin,
+  onOpenAudit,
+  showOperations,
+  showAdmin,
+  showAudit,
   onOpenIncident,
   notificationRefreshKey,
   refreshSeconds,
@@ -150,6 +184,12 @@ function AppHeader({
   onOpenIncidents: () => void
   onOpenKnowledge: () => void
   onOpenCopilot: () => void
+  onOpenOperations: () => void
+  onOpenAdmin: () => void
+  onOpenAudit: () => void
+  showOperations: boolean
+  showAdmin: boolean
+  showAudit: boolean
   onOpenIncident: (id: string) => void
   notificationRefreshKey: number
   refreshSeconds: number
@@ -173,6 +213,9 @@ function AppHeader({
         <button className="nav-link" aria-current={currentPage === 'incidents' || currentPage === 'incident' ? 'page' : undefined} onClick={onOpenIncidents}><ShieldCheck size={15} /> Incidents</button>
         <button className="nav-link" aria-current={currentPage === 'knowledge' ? 'page' : undefined} onClick={onOpenKnowledge}><BookOpen size={15} /> Knowledge</button>
         <button className="nav-link" aria-current={currentPage === 'copilot' || currentPage === 'copilot-database' || currentPage === 'copilot-incident' ? 'page' : undefined} onClick={onOpenCopilot}><MessageSquare size={15} /> Copilot</button>
+        {showOperations && <button className="nav-link" aria-current={currentPage === 'operations' ? 'page' : undefined} onClick={onOpenOperations}><ClipboardList size={15} /> Proposals</button>}
+        {showAudit && <button className="nav-link" aria-current={currentPage === 'audit' ? 'page' : undefined} onClick={onOpenAudit}><ScrollText size={15} /> Audit</button>}
+        {showAdmin && <button className="nav-link" aria-current={currentPage === 'admin' ? 'page' : undefined} onClick={onOpenAdmin}><Settings size={15} /> Admin</button>}
       </nav>
       <div className="topbar-actions">
         <NotificationBell onOpenIncident={onOpenIncident} refreshSeconds={refreshSeconds} refreshKey={notificationRefreshKey} />
@@ -685,6 +728,9 @@ export default function App() {
     navigateToCopilot,
     navigateToDatabaseCopilot,
     navigateToIncidentCopilot,
+    navigateToOperations,
+    navigateToAdmin,
+    navigateToAudit,
   } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
@@ -717,7 +763,7 @@ export default function App() {
     return <main className="page-shell detail-loading"><div className="loading-state" role="status"><span className="spinner" /> Checking sign-in…</div></main>
   }
   if (session.required && !session.authenticated) {
-    return <LoginPage onSuccess={setSession} />
+    return <LoginPage oidcEnabled={session.oidc_enabled === true} onSuccess={setSession} />
   }
 
   return (
@@ -728,6 +774,12 @@ export default function App() {
         onOpenIncidents={navigateToIncidents}
         onOpenKnowledge={navigateToKnowledge}
         onOpenCopilot={navigateToCopilot}
+        onOpenOperations={navigateToOperations}
+        onOpenAdmin={navigateToAdmin}
+        onOpenAudit={navigateToAudit}
+        showOperations={canReadProposals(session.role)}
+        showAdmin={canAdminister(session.role)}
+        showAudit={canReadAudit(session.role)}
         onOpenIncident={navigateToIncident}
         notificationRefreshKey={notificationRefreshKey}
         refreshSeconds={refreshSeconds}
@@ -787,6 +839,12 @@ export default function App() {
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
         />
+      ) : route.page === 'operations' ? (
+        <OperationsPage role={session.role} principal={session.principal} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'admin' ? (
+        <AdminPage onOpenRegistry={navigateToRegistration} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'audit' ? (
+        <AuditPage onRefreshStatus={registerRefresh} />
       ) : route.page === 'knowledge' ? (
         <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} />
       ) : route.page === 'copilot' || route.page === 'copilot-database' || route.page === 'copilot-incident' ? (

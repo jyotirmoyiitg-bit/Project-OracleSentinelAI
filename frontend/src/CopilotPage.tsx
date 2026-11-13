@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { CircleAlert, MessageSquare, Send } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { CircleAlert, MessageSquare, Send, SquarePen } from 'lucide-react'
 import { ApiError, createChatThread, sendChatMessage } from './api'
 import { StatePanel } from './components/StatePanel'
-import type { ChatMessage, ChatThread, GuidedCommand } from './types'
+import type { ChatMessage, ChatThread, GuidedCommand, ModelChoiceOption } from './types'
 
 function sqlInPrompt(value: string): boolean {
   const text = value.trim()
@@ -13,7 +13,11 @@ function sqlInPrompt(value: string): boolean {
   return /^(?:select|with)\b/i.test(text) && /\b(?:from|where|join)\b/i.test(text)
 }
 
-function providerBadge(thread: ChatThread, latest: ChatMessage | null): string {
+function providerBadge(thread: ChatThread, latest: ChatMessage | null, selected: ModelChoiceOption | undefined): string {
+  if (!latest && selected?.ready) {
+    if (selected.id === 'local') return `Local model · ${selected.detail}`
+    return `Hosted model · ${selected.detail}`
+  }
   const provider = latest?.provider || thread.provider
   const model = latest?.model || thread.model
   const answeredByModel = latest ? latest.llm_used : thread.llm_enabled
@@ -21,6 +25,11 @@ function providerBadge(thread: ChatThread, latest: ChatMessage | null): string {
   if (provider === 'hosted') return model ? `Hosted model · ${model}` : 'Hosted model'
   if (provider === 'local') return model ? `Local model · ${model}` : 'Local model'
   return provider
+}
+
+function launchModelChoice(thread: ChatThread): string {
+  const local = thread.model_choices?.choices.find((choice) => choice.id === 'local' && choice.ready)
+  return thread.model_choices?.allowed && local ? 'local' : ''
 }
 
 type AnswerParts = {
@@ -91,6 +100,78 @@ function evidenceDetail(label: string, detail: string): string {
   return value
 }
 
+function QuestionShelf({
+  commands,
+  openGroup,
+  sending,
+  onToggle,
+  onAsk,
+}: {
+  commands: GuidedCommand[]
+  openGroup: string | null
+  sending: boolean
+  onToggle: (name: string | null) => void
+  onAsk: (prompt: string) => void
+}) {
+  const common = commands.filter((command) => !command.group)
+  const groups = groupedCommands(commands)
+  const tabs = [
+    ...(common.length > 0 ? [{ name: 'Common', commands: common }] : []),
+    ...groups,
+  ]
+  const selected = tabs.find((tab) => tab.name === openGroup) ?? null
+  return (
+    <div className="copilot-questions">
+      <div className="copilot-question-tabs" role="tablist" aria-label="Question categories">
+        {tabs.map((tab) => {
+          const open = tab.name === openGroup
+          return (
+            <button
+              key={tab.name}
+              type="button"
+              role="tab"
+              id={`question-tab-${tab.name}`}
+              aria-selected={open}
+              aria-expanded={open}
+              aria-controls="question-shelf"
+              onClick={() => { onToggle(open ? null : tab.name) }}
+            >
+              {tab.name}
+              <span aria-hidden="true">{tab.commands.length}</span>
+            </button>
+          )
+        })}
+      </div>
+      {selected && (
+        <div className="copilot-question-strip" id="question-shelf" role="tabpanel" aria-labelledby={`question-tab-${selected.name}`}>
+          {selected.commands.map((command) => (
+            <button
+              key={`${selected.name}-${command.label}`}
+              className="button button-secondary"
+              type="button"
+              disabled={sending}
+              onClick={() => { onAsk(command.prompt) }}
+            >
+              {command.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function groupedCommands(commands: GuidedCommand[]): { name: string, commands: GuidedCommand[] }[] {
+  const groups: { name: string, commands: GuidedCommand[] }[] = []
+  for (const command of commands) {
+    if (!command.group) continue
+    const existing = groups.find((group) => group.name === command.group)
+    if (existing) existing.commands.push(command)
+    else groups.push({ name: command.group, commands: [command] })
+  }
+  return groups
+}
+
 function statusLabel(status: string): string {
   if (status === 'answered') return 'Answered'
   if (status === 'unavailable') return 'Unavailable'
@@ -120,21 +201,38 @@ export function CopilotPage({
   const [formError, setFormError] = useState('')
   const [sending, setSending] = useState(false)
   const [turns, setTurns] = useState<{ question: string; answer: ChatMessage }[]>([])
+  const [openGroup, setOpenGroup] = useState<string | null>(null)
+  const [modelChoice, setModelChoice] = useState<string | null>(null)
+  const transcriptRef = useRef<HTMLDivElement>(null)
+  const threadRequest = useRef(0)
+  const modelTouched = useRef(false)
 
   const openThread = useCallback(async () => {
+    const requestId = ++threadRequest.current
     setLoading(true)
     setError('')
+    setTurns([])
+    setDraft('')
+    setFormError('')
     try {
-      setThread(await createChatThread(scopeType, scopeId))
+      const opened = await createChatThread(scopeType, scopeId)
+      if (requestId !== threadRequest.current) return
+      setThread(opened)
+      if (!modelTouched.current) setModelChoice(launchModelChoice(opened) || null)
     } catch (reason) {
+      if (requestId !== threadRequest.current) return
       setThread(null)
       setError(reason instanceof ApiError ? reason.message : 'Unexpected error while opening the copilot.')
     } finally {
-      setLoading(false)
+      if (requestId === threadRequest.current) setLoading(false)
     }
   }, [scopeId, scopeType])
 
   useEffect(() => { void openThread() }, [openThread])
+  useEffect(() => {
+    const transcript = transcriptRef.current
+    if (transcript) transcript.scrollTop = transcript.scrollHeight
+  }, [turns, sending])
   useEffect(() => {
     onRefreshStatus(loading || sending, () => {
       if (!thread) void openThread()
@@ -146,7 +244,8 @@ export function CopilotPage({
     setSending(true)
     setFormError('')
     try {
-      const answer = await sendChatMessage(thread.id, question)
+      const choice = modelChoice ?? launchModelChoice(thread)
+      const answer = await sendChatMessage(thread.id, question, choice || undefined)
       setTurns((current) => [...current, { question, answer }])
       setDraft('')
     } catch (reason) {
@@ -190,9 +289,12 @@ export function CopilotPage({
 
   const latest = turns.at(-1)?.answer ?? null
   const commands: GuidedCommand[] = latest?.guided_commands?.length ? latest.guided_commands : thread.guided_commands
+  const effectiveChoice = modelChoice ?? launchModelChoice(thread)
+  const selectedChoice = thread.model_choices?.choices.find((choice) => choice.id === effectiveChoice)
+  const disclosure = (effectiveChoice && selectedChoice?.disclosure) || thread.disclosure
 
   return (
-    <main className="page-shell">
+    <main className="page-shell copilot-page">
       <section className="page-heading">
         <div>
           <div className="eyebrow"><span className="live-dot" /> COPILOT</div>
@@ -200,29 +302,49 @@ export function CopilotPage({
           <p>Answers use collected metrics, incidents, and approved documents. The copilot does not run SQL on Oracle.</p>
         </div>
         <div className="heading-meta">
-          <span className="provider-badge" role="status">{providerBadge(thread, latest)}</span>
+          <button className="button button-secondary" type="button" onClick={() => { void openThread() }} disabled={sending || loading}>
+            <SquarePen size={14} /> New chat
+          </button>
+          {thread.model_choices?.allowed && (
+            <label className="copilot-model-choice">
+              Model
+              <select
+                aria-label="Language model"
+                autoComplete="off"
+                value={effectiveChoice}
+                disabled={sending}
+                onFocus={() => { modelTouched.current = true }}
+                onChange={(event) => {
+                  if (!modelTouched.current) return
+                  setModelChoice(event.target.value)
+                }}
+              >
+                <option value="">Configured default</option>
+                {thread.model_choices.choices.map((choice) => (
+                  <option key={choice.id} value={choice.id} disabled={!choice.ready}>
+                    {choice.ready ? `${choice.label} · ${choice.detail}` : `${choice.label} · not configured`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <span className="provider-badge" role="status">{providerBadge(thread, latest, selectedChoice)}</span>
         </div>
       </section>
 
       <section className="panel copilot-panel">
-        <p className="copilot-disclosure">{thread.disclosure}</p>
+        <p className="copilot-disclosure">{disclosure}</p>
         {commands.length > 0 && (
-          <div className="copilot-commands" aria-label="Guided commands">
-            {commands.map((command) => (
-              <button
-                key={command.label}
-                className="button button-secondary"
-                type="button"
-                disabled={sending}
-                onClick={() => { void ask(command.prompt) }}
-              >
-                {command.label}
-              </button>
-            ))}
-          </div>
+          <QuestionShelf
+            commands={commands}
+            openGroup={openGroup}
+            sending={sending}
+            onToggle={setOpenGroup}
+            onAsk={(prompt) => { void ask(prompt) }}
+          />
         )}
 
-        <div className="copilot-transcript" aria-live="polite">
+        <div className="copilot-transcript" ref={transcriptRef} role="log" aria-live="polite" aria-relevant="additions">
           {turns.length === 0 && <p className="empty-inline">Ask about files, memory, sessions, backups, jobs, storage, incidents, or runbooks.</p>}
           {turns.map((turn) => {
             const parts = parseCopilotAnswer(turn.answer.content)
@@ -316,6 +438,7 @@ export function CopilotPage({
           })}
         </div>
 
+        <div className="copilot-composer">
         <form className="copilot-form" onSubmit={onSubmit}>
           <label className="copilot-query">
             <MessageSquare size={15} aria-hidden="true" />
@@ -334,6 +457,7 @@ export function CopilotPage({
           </button>
         </form>
         {formError && <div className="inline-error" role="alert"><CircleAlert size={16} /> {formError}</div>}
+        </div>
       </section>
     </main>
   )

@@ -170,3 +170,20 @@ it does not extend historical retention. Tune maintenance throughput for large f
   Rule evaluation, incident correlation and notifications belong to later phases.
 - API detail `poll_status` exposes permission/probe failures without driver secrets.
 - The compliance card stays unknown until Phase 4 policy evaluation is implemented.
+
+## Phase 7 proposals, audit, and sign-in
+
+Apply migration `0008` before starting an API that includes proposals. Proposals are approval records only. Nothing in that workflow connects to Oracle or runs the preview SQL.
+
+Back up the application PostgreSQL database before an upgrade:
+
+```powershell
+pg_dump -Fc -f sentinel-backup.dump "<application database url>"
+```
+
+Restore into an empty database with `pg_restore`, then run `alembic upgrade head`. A restore drill was not run as part of this implementation. Do not put the database URL or a password in a ticket or log.
+
+OIDC is off until `AUTH_OIDC_ISSUER` and `AUTH_OIDC_CLIENT_ID` are set. The client secret stays in `OIDC_CLIENT_SECRET` and is referenced by `secret://OIDC_CLIENT_SECRET`. If the identity provider cannot be reached, use the local account. TLS belongs on the reverse proxy; the development API listens on `127.0.0.1`.
+
+Audit rows are append-only. The application refuses to purge them. Credential rotation stores a `secret://` reference and a timestamp, not the password. Prometheus metrics are at `/metrics`.
+

@@ -18,7 +18,7 @@
 ## Mitigations
 
 - Secret references instead of hardcoded passwords
-- OIDC/OAuth2 authentication (Phase 7)
+- OIDC/OAuth2 authentication when `AUTH_OIDC_ISSUER` is set. Local and Active Directory sign-in remain available.
 - Parameterized queries only
 - Named read-only tools, no free-form SQL
 - Document quarantine for corrupted files

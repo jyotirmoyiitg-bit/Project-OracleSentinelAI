@@ -20,8 +20,9 @@ For an existing Phase 1 database, read the migration instructions before upgradi
 See [the operations runbook](docs/operations-runbook.md) for credential-free synthetic
 validation, polling profiles, and recovery checks. Collection does not require an LLM.
 
-Authentication/entitlements are a later phase; keep this development deployment on
-localhost or a trusted isolated network.
+Authentication is the session cookie from local, Active Directory, or optional OIDC sign-in.
+Operation proposals are stored for approval and are not executed. Keep a development
+deployment on localhost or a trusted network, and put TLS in front of a shared deployment.
 
 ## Architecture
 
