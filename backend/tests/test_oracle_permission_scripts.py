@@ -37,8 +37,10 @@ def test_grants_match_collector_queries_and_capabilities_exactly():
     views.update(view.upper() for view in OracleCapabilityDetector.VIEWS_TO_CHECK)
     views.update({"V$VERSION", "DUAL"})
     granted = set(re.findall(r"GRANT SELECT ON (\S+) TO GSYSTEM;", statements("02_grant_readonly_monitoring.sql")))
-    assert granted == {grant_object(view) for view in views}
-    assert queried_views(statements("03_verify_gsystem.sql")) == views
+    graph_only = {"V$CONTROLFILE", "V$LOG", "V$LOGFILE", "DBA_SEGMENTS", "V$SGASTAT"}
+    graph = {grant_object(view) for view in graph_only}
+    assert granted == {grant_object(view) for view in views} | graph
+    assert queried_views(statements("03_verify_gsystem.sql")) == views - graph_only
 
 
 @pytest.mark.parametrize(("view", "columns"), [

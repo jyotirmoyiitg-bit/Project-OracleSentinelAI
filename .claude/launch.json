@@ -1,0 +1,21 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "backend-preview",
+      "runtimeExecutable": "powershell",
+      "runtimeArgs": [
+        "-NoProfile",
+        "-Command",
+        "$env:DATABASE_URL = ((Get-Content .env | Select-String '^DATABASE_URL=').Line.Substring(13).Trim() -replace '/sentinel$','/sentinel_graph_preview'); $env:SYNTHETIC_MODE='true'; $env:SCHEDULER_ENABLED='false'; $env:KNOWLEDGE_ENABLED='false'; $env:AI_ENABLED='false'; $env:AI_PROVIDER='disabled'; $env:APP_ENV='dev'; $env:AUTH_REQUIRED='true'; $env:AUTH_COOKIE_SECURE='false'; $env:AUTH_BOOTSTRAP_USERNAME='previewadmin'; $env:AUTH_BOOTSTRAP_ROLE='admin'; $env:AUTH_BOOTSTRAP_PASSWORD = (Get-Content .claude\\preview_admin_password.txt -Raw).Trim(); .\\.venv\\Scripts\\python.exe -m uvicorn sentinel.main:app --host 127.0.0.1 --port 8000"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 5173
+    }
+  ]
+}

@@ -41,7 +41,8 @@ def test_reachable_question_uses_the_connectivity_tool() -> None:
     )
     outcome = reading_outcome(reading, "db")
     text = present_catalog(question, [outcome])
-    assert "Q01 Reachable. Status OK." in text
+    assert "Reachable. Status OK." in text
+    assert "Q01" not in text
     assert "Instance PDBORCL status OPEN" in text
     assert outcome.name == "get_connectivity"
     assert outcome.citations
@@ -95,7 +96,8 @@ async def test_catalog_answer_does_not_call_the_model(settings, sessions) -> Non
         )
     assert answer.llm_used is False
     assert answer.tools[0]["tool"] == "get_tablespace_usage"
-    assert "Q06 Tablespaces over threshold. Status OK." in answer.content
+    assert "Tablespaces over threshold. Status OK." in answer.content
+    assert "Q06" not in answer.content
     assert "USERS" in answer.content
     assert "Limitations:" in answer.content
     assert any(item.get("group") == "Storage" for item in answer.guided_commands)

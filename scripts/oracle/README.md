@@ -92,6 +92,7 @@ to avoid synonym grant errors such as ORA-02030.
 | Readings: memory and parse | `V_$SYSSTAT`, `V_$LIBRARYCACHE` |
 | Readings: recovery and Data Guard | `V_$ARCHIVED_LOG`, `V_$DATAGUARD_STATS` |
 | Readings: accounts, objects, roles, failed jobs | `DBA_USERS`, `DBA_OBJECTS`, `DBA_ROLE_PRIVS`, `DBA_SCHEDULER_JOB_RUN_DETAILS` |
+| GraphDB physical, logical, and shared pool | `V_$CONTROLFILE`, `V_$LOG`, `V_$LOGFILE`, `DBA_SEGMENTS`, `V_$SGASTAT` |
 
 Reference: [Oracle probes](../../backend/src/sentinel/adapters/oracle/probes.py),
 [alert poller](../../backend/src/sentinel/adapters/oracle/alert_log.py),

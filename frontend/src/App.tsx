@@ -23,6 +23,7 @@ import {
   ClipboardList,
   ScrollText,
   Settings,
+  Network,
   X,
 } from 'lucide-react'
 import { ApiError, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
@@ -45,6 +46,7 @@ import { LoginPage } from './LoginPage'
 import { OperationsPage } from './OperationsPage'
 import { AdminPage } from './AdminPage'
 import { AuditPage } from './AuditPage'
+import { GraphPage } from './GraphPage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
 const PAGE_SIZE = 25
@@ -71,6 +73,8 @@ type Route =
   | { page: 'operations' }
   | { page: 'admin' }
   | { page: 'audit' }
+  | { page: 'graph' }
+  | { page: 'graph-database'; id: string }
 
 function parseHash(hash: string): Route {
   if (hash === '#/register') return { page: 'register' }
@@ -90,6 +94,9 @@ function parseHash(hash: string): Route {
   if (hash.match(/^#\/operations\/?$/)) return { page: 'operations' }
   if (hash.match(/^#\/admin\/?$/)) return { page: 'admin' }
   if (hash.match(/^#\/audit\/?$/)) return { page: 'audit' }
+  match = hash.match(/^#\/graph\/databases\/([^/]+)$/)
+  if (match) return { page: 'graph-database', id: decodeURIComponent(match[1]) }
+  if (hash.match(/^#\/graph\/?$/)) return { page: 'graph' }
   return { page: 'fleet' }
 }
 
@@ -120,6 +127,8 @@ function usePageNavigation() {
     navigateToOperations: () => navigate('#/operations'),
     navigateToAdmin: () => navigate('#/admin'),
     navigateToAudit: () => navigate('#/audit'),
+    navigateToGraph: () => navigate('#/graph'),
+    navigateToGraphDatabase: (id: string) => navigate(`#/graph/databases/${encodeURIComponent(id)}`),
   }
 }
 
@@ -165,9 +174,11 @@ function AppHeader({
   onOpenOperations,
   onOpenAdmin,
   onOpenAudit,
+  onOpenGraph,
   showOperations,
   showAdmin,
   showAudit,
+  showGraph,
   onOpenIncident,
   notificationRefreshKey,
   refreshSeconds,
@@ -187,9 +198,11 @@ function AppHeader({
   onOpenOperations: () => void
   onOpenAdmin: () => void
   onOpenAudit: () => void
+  onOpenGraph: () => void
   showOperations: boolean
   showAdmin: boolean
   showAudit: boolean
+  showGraph: boolean
   onOpenIncident: (id: string) => void
   notificationRefreshKey: number
   refreshSeconds: number
@@ -216,6 +229,7 @@ function AppHeader({
         {showOperations && <button className="nav-link" aria-current={currentPage === 'operations' ? 'page' : undefined} onClick={onOpenOperations}><ClipboardList size={15} /> Proposals</button>}
         {showAudit && <button className="nav-link" aria-current={currentPage === 'audit' ? 'page' : undefined} onClick={onOpenAudit}><ScrollText size={15} /> Audit</button>}
         {showAdmin && <button className="nav-link" aria-current={currentPage === 'admin' ? 'page' : undefined} onClick={onOpenAdmin}><Settings size={15} /> Admin</button>}
+        {showGraph && <button className="nav-link" aria-current={currentPage === 'graph' || currentPage === 'graph-database' ? 'page' : undefined} onClick={onOpenGraph}><Network size={15} /> GraphDB</button>}
       </nav>
       <div className="topbar-actions">
         <NotificationBell onOpenIncident={onOpenIncident} refreshSeconds={refreshSeconds} refreshKey={notificationRefreshKey} />
@@ -731,6 +745,8 @@ export default function App() {
     navigateToOperations,
     navigateToAdmin,
     navigateToAudit,
+    navigateToGraph,
+    navigateToGraphDatabase,
   } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
@@ -777,9 +793,11 @@ export default function App() {
         onOpenOperations={navigateToOperations}
         onOpenAdmin={navigateToAdmin}
         onOpenAudit={navigateToAudit}
+        onOpenGraph={navigateToGraph}
         showOperations={canReadProposals(session.role)}
         showAdmin={canAdminister(session.role)}
         showAudit={canReadAudit(session.role)}
+        showGraph={Boolean(session.role)}
         onOpenIncident={navigateToIncident}
         notificationRefreshKey={notificationRefreshKey}
         refreshSeconds={refreshSeconds}
@@ -794,7 +812,7 @@ export default function App() {
       />
       <div className="database-workspace">
       <DatabaseSidebar
-        selectedId={route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database' ? route.id : null}
+        selectedId={route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database' || route.page === 'graph-database' ? route.id : null}
         homeSelected={route.page === 'fleet'}
         onHome={navigateHome}
         onSelect={navigateToDatabase}
@@ -845,6 +863,16 @@ export default function App() {
         <AdminPage onOpenRegistry={navigateToRegistration} onRefreshStatus={registerRefresh} />
       ) : route.page === 'audit' ? (
         <AuditPage onRefreshStatus={registerRefresh} />
+      ) : route.page === 'graph' || route.page === 'graph-database' ? (
+        <GraphPage
+          key={route.page === 'graph-database' ? route.id : 'choose'}
+          databaseId={route.page === 'graph-database' ? route.id : null}
+          onChoose={navigateToGraphDatabase}
+          onBack={navigateToGraph}
+          onAskCopilot={navigateToDatabaseCopilot}
+          onOpenDatabase={navigateToDatabase}
+          onRefreshStatus={registerRefresh}
+        />
       ) : route.page === 'knowledge' ? (
         <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} />
       ) : route.page === 'copilot' || route.page === 'copilot-database' || route.page === 'copilot-incident' ? (
@@ -852,6 +880,7 @@ export default function App() {
           key={`${route.page}:${'id' in route ? route.id : 'fleet'}`}
           scopeType={route.page === 'copilot-database' ? 'database' : route.page === 'copilot-incident' ? 'incident' : 'fleet'}
           scopeId={'id' in route ? route.id : null}
+          onChooseScope={(id) => { if (id) navigateToDatabaseCopilot(id); else navigateToCopilot() }}
           onRefreshStatus={registerRefresh}
         />
       ) : (

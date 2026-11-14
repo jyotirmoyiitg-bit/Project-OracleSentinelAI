@@ -1,4 +1,5 @@
--- Oracle Sentinel AI: complete, rerunnable Phase 1-3 monitoring grant set.
+-- Oracle Sentinel AI: complete, rerunnable monitoring grant set.
+-- Includes the GraphDB objects for control files, redo logs, and segments.
 -- Run as SYSDBA in each target PDB (or non-CDB), after GSYSTEM exists.
 WHENEVER OSERROR EXIT FAILURE
 WHENEVER SQLERROR EXIT SQL.SQLCODE
@@ -57,4 +58,14 @@ GRANT SELECT ON SYS.DBA_ROLE_PRIVS TO GSYSTEM;
 GRANT SELECT ON SYS.DBA_SCHEDULER_JOB_RUN_DETAILS TO GSYSTEM;
 GRANT SELECT ON SYS.DUAL TO GSYSTEM;
 
+-- GraphDB disk storage and shared-pool used percent. SELECT only.
+-- These do not allow a backup, a file change, or SQL from the portal.
+GRANT SELECT ON SYS.V_$CONTROLFILE TO GSYSTEM;
+GRANT SELECT ON SYS.V_$LOG TO GSYSTEM;
+GRANT SELECT ON SYS.V_$LOGFILE TO GSYSTEM;
+GRANT SELECT ON SYS.DBA_SEGMENTS TO GSYSTEM;
+GRANT SELECT ON SYS.V_$SGASTAT TO GSYSTEM;
+
+PROMPT Phase 15 shared-pool grant is included: V_$SGASTAT.
+PROMPT Phase 13 disk storage grants are included: V_$CONTROLFILE, V_$LOG, and V_$LOGFILE.
 PROMPT Monitoring grants applied in the current container. Existing passwords and account locks were not changed.

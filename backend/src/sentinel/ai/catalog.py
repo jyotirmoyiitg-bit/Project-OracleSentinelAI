@@ -508,7 +508,8 @@ def present_catalog(
         selected = [question.empty]
     final_status = question.forced_status or status or "OK"
     health = question.forced_health or _health(final_status, selected)
-    summary = f"{question.question_id} {question.label}. Status {final_status}. Health {health}."
+    # The operator sees the label, status, and health. The question id stays in the envelope only.
+    summary = f"{question.label}. Status {final_status}. Health {health}."
     warnings = [question.limitation] if question.limitation else []
     envelope = CatalogEnvelope(
         question_id=question.question_id, tool=question.tool, status=final_status, health=health,

@@ -37,3 +37,6 @@ frontend/dist/
 # Quarantined knowledge files stay on the server and are not committed.
 knowledge-intake/Quarantine/*
 !knowledge-intake/Quarantine/.gitkeep
+
+# Local preview sign-in generated for the synthetic GraphDB preview (see .claude/launch.json)
+.claude/preview_admin_password.txt

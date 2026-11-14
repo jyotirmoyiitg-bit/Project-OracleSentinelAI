@@ -153,6 +153,80 @@ describe('Copilot page', () => {
     expect(screen.getByText('Answered')).toBeInTheDocument()
   })
 
+  it('shows the active database, offers each question once, and drops the question id from the verdict', async () => {
+    window.location.hash = '#/copilot/databases/target-1'
+    const database = {
+      id: 'target-1', display_name: 'FINANCE-PRD', tns_alias: 'finance-prd', enabled: true, environment: 'production',
+      engine: 'oracle', owner: 'DBA team', poll_profile: {}, capability_snapshot: {}, last_connection_at: null,
+      last_health_status: 'healthy', created_at: '2026-11-13T00:00:00Z', updated_at: '2026-11-13T00:00:00Z',
+      last_seen: null, monitoring_status: 'healthy', critical_incident_count: 0, trend_snapshots: [],
+    }
+    const scopedThread: ChatThread = {
+      ...thread,
+      scope_type: 'database',
+      scope_id: 'target-1',
+      guided_commands: [
+        { label: 'FRA status', prompt: 'What is the fast recovery area status?' },
+        { label: 'Blocking', prompt: 'Are any sessions currently blocking other sessions?' },
+        { group: 'Health', label: 'Identity', prompt: 'What is the database identity, Oracle version, and current container?' },
+        { group: 'Sessions', label: 'Blocking', prompt: 'Are any sessions currently blocking other sessions?' },
+        { group: 'Sessions', label: 'Blocking', prompt: 'Are any sessions blocking other sessions?' },
+      ],
+    }
+    const identity: ChatMessage = {
+      ...answer,
+      id: 'message-3',
+      content: 'Identity. Status OK. Health HEALTHY.\n\nDatabase ORCL12C open_mode READ WRITE role PRIMARY\nLimitations: Oracle version is not part of this reading.\nNext steps: Use the database name and open mode below as the identity of the selected target.',
+      provider_status: 'answered',
+      citations: [],
+      tools: [],
+      guided_commands: scopedThread.guided_commands,
+    }
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/portal-notifications')) return Promise.resolve(jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 }))
+      if (url.includes('page_size=100') && url.includes('/databases')) return Promise.resolve(jsonResponse({ items: [database], total: 1, page: 1, page_size: 100, environments: ['production'] }))
+      if (/\/api\/v1\/databases\/target-1$/.test(url)) return Promise.resolve(jsonResponse(database))
+      if (url.endsWith('/api/v1/chat/threads') && init?.method === 'POST') {
+        expect(JSON.parse(String(init.body))).toEqual({ scope_type: 'database', scope_id: 'target-1' })
+        return Promise.resolve(jsonResponse(scopedThread))
+      }
+      if (url.includes('/api/v1/chat/threads/thread-1/messages')) return Promise.resolve(eventResponse(identity))
+      return Promise.resolve(jsonResponse({ detail: 'not found' }, 404))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Copilot' })).toBeInTheDocument()
+    const active = await screen.findByLabelText('Active database')
+    expect(active).toHaveTextContent('FINANCE-PRD')
+    expect(active).toHaveTextContent('finance-prd')
+    expect(active.querySelector('.health-badge')).toBeTruthy()
+    expect(screen.getByRole('option', { name: '● FINANCE-PRD (active)' })).toBeInTheDocument()
+    // Five offered, one repeated prompt dropped: the same prompt is never shown twice.
+    expect(screen.getByText('4 available')).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Common' })).toHaveTextContent('2')
+    expect(screen.getByRole('tab', { name: 'Sessions' })).toHaveTextContent('1')
+    await user.click(screen.getByRole('tab', { name: 'Sessions' }))
+    expect(screen.getAllByRole('button', { name: 'Blocking' })).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Blocking' })).toHaveAttribute('title', 'Are any sessions blocking other sessions?')
+    await user.click(screen.getByRole('tab', { name: 'Common' }))
+    expect(screen.getAllByRole('button', { name: 'Blocking' })).toHaveLength(1)
+
+    await user.click(screen.getByRole('tab', { name: 'Health' }))
+    await user.click(screen.getByRole('button', { name: 'Identity' }))
+    const verdict = await screen.findByText('Identity', { selector: '.copilot-verdict strong' })
+    expect(verdict.parentElement).toHaveTextContent('Statusok')
+    expect(verdict.parentElement).toHaveTextContent('Healthhealthy')
+    expect(screen.queryByText(/Q02/)).not.toBeInTheDocument()
+    expect(screen.getByText('Database ORCL12C open_mode READ WRITE role PRIMARY')).toBeInTheDocument()
+    expect(screen.getByText('Oracle version is not part of this reading.')).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Database scope' }), '')
+    expect(window.location.hash).toBe('#/copilot')
+  })
+
   it('shows the disclosure for the model selected in the portal', async () => {
     const choosable: ChatThread = {
       ...thread,

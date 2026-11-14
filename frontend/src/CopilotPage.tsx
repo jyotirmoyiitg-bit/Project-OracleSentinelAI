@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { CircleAlert, MessageSquare, Send, SquarePen } from 'lucide-react'
-import { ApiError, createChatThread, sendChatMessage } from './api'
+import { CircleAlert, Database, MessageSquare, Send, Sparkles, SquarePen } from 'lucide-react'
+import { ApiError, createChatThread, getFleet, getTarget, sendChatMessage } from './api'
+import { ActiveDatabase } from './components/ActiveDatabase'
 import { StatePanel } from './components/StatePanel'
-import type { ChatMessage, ChatThread, GuidedCommand, ModelChoiceOption } from './types'
+import type { ChatMessage, ChatThread, GuidedCommand, ModelChoiceOption, Target, TargetDetails } from './types'
 
 function sqlInPrompt(value: string): boolean {
   const text = value.trim()
@@ -32,8 +33,11 @@ function launchModelChoice(thread: ChatThread): string {
   return thread.model_choices?.allowed && local ? 'local' : ''
 }
 
+type Verdict = { label: string; status: string; health: string }
+
 type AnswerParts = {
   kind: 'model' | 'fallback'
+  verdict: Verdict | null
   answer: string
   limitations: string
   steps: string[]
@@ -43,13 +47,24 @@ type AnswerParts = {
   notes: string[]
 }
 
+// "Identity. Status OK. Health HEALTHY." An older stored answer may still carry a question id in front.
+const VERDICT = /^(?:Q\d{2}\s+)?(.+?)\. Status ([A-Z_]+)\. Health ([A-Z_]+)\.$/
+
+function splitVerdict(text: string): { verdict: Verdict | null; rest: string } {
+  const lines = text.split('\n')
+  const first = (lines[0] ?? '').trim()
+  const match = VERDICT.exec(first)
+  if (!match) return { verdict: null, rest: text }
+  return { verdict: { label: match[1], status: match[2], health: match[3] }, rest: lines.slice(1).join('\n').trim() }
+}
+
 function parseCopilotAnswer(content: string): AnswerParts {
   const marker = '\n\nDatabase reading:\n'
   const readingAt = content.indexOf(marker)
   const head = readingAt >= 0 ? content.slice(0, readingAt) : content
   const reading = readingAt >= 0 ? content.slice(readingAt + marker.length).split('\n').map((line) => line.trim()).filter(Boolean) : []
   const empty: AnswerParts = {
-    kind: 'model', answer: '', limitations: '', steps: [], citationNote: '', reading, evidenceLines: [], notes: [],
+    kind: 'model', verdict: null, answer: '', limitations: '', steps: [], citationNote: '', reading, evidenceLines: [], notes: [],
   }
   if (head.startsWith('The language model is not answering')) {
     const evidenceLines: string[] = []
@@ -90,7 +105,8 @@ function parseCopilotAnswer(content: string): AnswerParts {
     limitations = answer.slice(limitsAt + limitsMarker.length).trim()
     answer = answer.slice(0, limitsAt)
   }
-  return { ...empty, answer: answer.trim(), limitations, steps, citationNote }
+  const { verdict, rest } = splitVerdict(answer.trim())
+  return { ...empty, verdict, answer: rest.trim(), limitations, steps, citationNote }
 }
 
 function evidenceDetail(label: string, detail: string): string {
@@ -98,6 +114,26 @@ function evidenceDetail(label: string, detail: string): string {
   const name = label.trim()
   if (name && value.toLowerCase().startsWith(name.toLowerCase())) return value.slice(name.length).trim()
   return value
+}
+
+function promptKey(prompt: string): string {
+  return prompt.toLowerCase().replace(/[?.!]+$/g, '').replace(/\s+/g, ' ').trim()
+}
+
+/** Offer each question once. The first occurrence keeps its group. */
+export function uniqueCommands(commands: GuidedCommand[]): GuidedCommand[] {
+  const seenPrompts = new Set<string>()
+  const seenLabels = new Set<string>()
+  const unique: GuidedCommand[] = []
+  for (const command of commands) {
+    const key = promptKey(command.prompt)
+    const labelKey = `${command.group ?? ''}::${command.label.toLowerCase().trim()}`
+    if (seenPrompts.has(key) || seenLabels.has(labelKey)) continue
+    seenPrompts.add(key)
+    seenLabels.add(labelKey)
+    unique.push(command)
+  }
+  return unique
 }
 
 function QuestionShelf({
@@ -113,8 +149,9 @@ function QuestionShelf({
   onToggle: (name: string | null) => void
   onAsk: (prompt: string) => void
 }) {
-  const common = commands.filter((command) => !command.group)
-  const groups = groupedCommands(commands)
+  const unique = uniqueCommands(commands)
+  const common = unique.filter((command) => !command.group)
+  const groups = groupedCommands(unique)
   const tabs = [
     ...(common.length > 0 ? [{ name: 'Common', commands: common }] : []),
     ...groups,
@@ -122,6 +159,10 @@ function QuestionShelf({
   const selected = tabs.find((tab) => tab.name === openGroup) ?? null
   return (
     <div className="copilot-questions">
+      <div className="copilot-questions-head">
+        <span className="copilot-section-label">Guided questions</span>
+        <span className="copilot-questions-count">{unique.length} available</span>
+      </div>
       <div className="copilot-question-tabs" role="tablist" aria-label="Question categories">
         {tabs.map((tab) => {
           const open = tab.name === openGroup
@@ -147,8 +188,9 @@ function QuestionShelf({
           {selected.commands.map((command) => (
             <button
               key={`${selected.name}-${command.label}`}
-              className="button button-secondary"
+              className="copilot-chip"
               type="button"
+              title={command.prompt}
               disabled={sending}
               onClick={() => { onAsk(command.prompt) }}
             >
@@ -180,18 +222,38 @@ function statusLabel(status: string): string {
   return status
 }
 
+function verdictTone(value: string): string {
+  const folded = value.toUpperCase()
+  if (folded === 'OK' || folded === 'HEALTHY') return 'good'
+  if (folded === 'CRITICAL' || folded === 'SOURCE_ERROR' || folded === 'PERMISSION_REQUIRED') return 'bad'
+  if (folded === 'WARNING' || folded === 'STALE' || folded === 'INSUFFICIENT_DATA') return 'warn'
+  return 'neutral'
+}
+
+function verdictText(value: string): string {
+  return value.replace(/_/g, ' ').toLowerCase()
+}
+
 function paragraphs(text: string): string[] {
   const blocks = text.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean)
   return blocks.length > 0 ? blocks : []
 }
 
+function scopeTitle(scopeType: ChatThread['scope_type']): string {
+  if (scopeType === 'database') return 'Database scope'
+  if (scopeType === 'incident') return 'Incident scope'
+  return 'Fleet scope'
+}
+
 export function CopilotPage({
   scopeType,
   scopeId,
+  onChooseScope,
   onRefreshStatus,
 }: {
   scopeType: ChatThread['scope_type']
   scopeId: string | null
+  onChooseScope: (databaseId: string | null) => void
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
 }) {
   const [thread, setThread] = useState<ChatThread | null>(null)
@@ -203,6 +265,8 @@ export function CopilotPage({
   const [turns, setTurns] = useState<{ question: string; answer: ChatMessage }[]>([])
   const [openGroup, setOpenGroup] = useState<string | null>(null)
   const [modelChoice, setModelChoice] = useState<string | null>(null)
+  const [databases, setDatabases] = useState<Target[]>([])
+  const [target, setTarget] = useState<TargetDetails | null>(null)
   const transcriptRef = useRef<HTMLDivElement>(null)
   const threadRequest = useRef(0)
   const modelTouched = useRef(false)
@@ -229,6 +293,26 @@ export function CopilotPage({
   }, [scopeId, scopeType])
 
   useEffect(() => { void openThread() }, [openThread])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let active = true
+    getFleet({ page: 1, pageSize: 100, environment: '', healthStatus: '' }, controller.signal)
+      .then((fleet) => { if (active) setDatabases(fleet.items.filter((item) => item.enabled)) })
+      .catch(() => { if (active) setDatabases([]) })
+    if (scopeType === 'database' && scopeId) {
+      getTarget(scopeId, controller.signal)
+        .then((detail) => { if (active) setTarget(detail) })
+        .catch(() => { if (active) setTarget(null) })
+    } else {
+      setTarget(null)
+    }
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [scopeId, scopeType])
+
   useEffect(() => {
     const transcript = transcriptRef.current
     if (transcript) transcript.scrollTop = transcript.scrollHeight
@@ -292,14 +376,15 @@ export function CopilotPage({
   const effectiveChoice = modelChoice ?? launchModelChoice(thread)
   const selectedChoice = thread.model_choices?.choices.find((choice) => choice.id === effectiveChoice)
   const disclosure = (effectiveChoice && selectedChoice?.disclosure) || thread.disclosure
+  const scopedDatabase = scopeType === 'database' ? scopeId ?? '' : ''
 
   return (
     <main className="page-shell copilot-page">
-      <section className="page-heading">
+      <section className="page-heading copilot-heading">
         <div>
           <div className="eyebrow"><span className="live-dot" /> COPILOT</div>
           <h1>Copilot</h1>
-          <p>Answers use collected metrics, incidents, and approved documents. The copilot does not run SQL on Oracle.</p>
+          <p>Answers use collected metrics, incidents, approved documents, and fixed read-only database readings. The copilot does not run SQL on Oracle.</p>
         </div>
         <div className="heading-meta">
           <button className="button button-secondary" type="button" onClick={() => { void openThread() }} disabled={sending || loading}>
@@ -332,8 +417,46 @@ export function CopilotPage({
         </div>
       </section>
 
+      <section className="copilot-scope" aria-label="Copilot scope">
+        {scopeType === 'database' && target ? (
+          <ActiveDatabase target={target} />
+        ) : (
+          <div className="copilot-scope-note">
+            <span className="copilot-scope-icon" aria-hidden="true"><Database size={16} /></span>
+            <span>
+              <strong>{scopeTitle(scopeType)}</strong>
+              <small>
+                {scopeType === 'incident'
+                  ? 'Answers use the stored incident and its database.'
+                  : scopeType === 'database'
+                    ? 'The selected database is being loaded.'
+                    : 'Fleet chat does not read a database. Choose one to ask about its live state.'}
+              </small>
+            </span>
+          </div>
+        )}
+        {databases.length > 0 && (
+          <label className="filter-control copilot-scope-select">
+            <span className="sr-only">Database scope</span>
+            <select
+              aria-label="Database scope"
+              value={scopedDatabase}
+              disabled={sending}
+              onChange={(event) => { onChooseScope(event.target.value || null) }}
+            >
+              <option value="">Fleet · no database</option>
+              {databases.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.id === scopedDatabase ? `● ${item.display_name} (active)` : item.display_name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </section>
+
       <section className="panel copilot-panel">
-        <p className="copilot-disclosure">{disclosure}</p>
+        <p className="copilot-disclosure"><Sparkles size={13} aria-hidden="true" /> {disclosure}</p>
         {commands.length > 0 && (
           <QuestionShelf
             commands={commands}
@@ -345,13 +468,18 @@ export function CopilotPage({
         )}
 
         <div className="copilot-transcript" ref={transcriptRef} role="log" aria-live="polite" aria-relevant="additions">
-          {turns.length === 0 && <p className="empty-inline">Ask about files, memory, sessions, backups, jobs, storage, incidents, or runbooks.</p>}
+          {turns.length === 0 && (
+            <div className="copilot-empty">
+              <span className="copilot-empty-icon" aria-hidden="true"><MessageSquare size={18} /></span>
+              <p className="empty-inline">Ask about files, memory, sessions, backups, jobs, storage, incidents, or runbooks. Pick a guided question above or type in plain language.</p>
+            </div>
+          )}
           {turns.map((turn) => {
             const parts = parseCopilotAnswer(turn.answer.content)
             const prose = paragraphs(parts.answer)
             return (
             <article key={turn.answer.id} className="copilot-turn">
-              <p className="copilot-question"><span>Question</span>{turn.question}</p>
+              <p className="copilot-question"><span>You asked</span>{turn.question}</p>
               <div className="copilot-answer-card">
                 <div className="copilot-answer-head">
                   <h2>Answer</h2>
@@ -359,6 +487,17 @@ export function CopilotPage({
                     <span className={`copilot-status copilot-status-${turn.answer.provider_status}`}>{statusLabel(turn.answer.provider_status)}</span>
                   )}
                 </div>
+                {parts.verdict && (
+                  <div className="copilot-verdict">
+                    <strong>{parts.verdict.label}</strong>
+                    <span className={`copilot-verdict-chip copilot-verdict-${verdictTone(parts.verdict.status)}`}>
+                      <small>Status</small>{verdictText(parts.verdict.status)}
+                    </span>
+                    <span className={`copilot-verdict-chip copilot-verdict-${verdictTone(parts.verdict.health)}`}>
+                      <small>Health</small>{verdictText(parts.verdict.health)}
+                    </span>
+                  </div>
+                )}
                 {parts.kind === 'fallback' ? (
                   <div className="copilot-fallback">
                     {parts.notes.map((note) => <p key={note}>{note}</p>)}
@@ -408,7 +547,7 @@ export function CopilotPage({
                           <code>{tool.tool}</code>
                           <span className={`quality-tag quality-${tool.decision === 'allowed' ? 'measured' : 'error'}`}>{tool.decision}</span>
                           {tool.duration_ms > 0 && <span className="copilot-duration">{tool.duration_ms} ms</span>}
-                          {(tool.summary || tool.reason) && <span>{tool.summary || tool.reason}</span>}
+                          {(tool.summary || tool.reason) && <span>{(tool.summary || tool.reason).replace(/^Q\d{2}\s+/, '')}</span>}
                         </li>
                       ))}
                     </ul>
@@ -447,12 +586,12 @@ export function CopilotPage({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               aria-label="Ask the copilot"
-              placeholder="Ask in plain language. SQL is not accepted."
+              placeholder={target ? `Ask about ${target.display_name} in plain language. SQL is not accepted.` : 'Ask in plain language. SQL is not accepted.'}
               maxLength={2000}
               disabled={sending}
             />
           </label>
-          <button className="button button-primary" type="submit" disabled={sending}>
+          <button className="button button-primary copilot-send" type="submit" disabled={sending}>
             <Send size={14} /> {sending ? 'Sending…' : 'Send'}
           </button>
         </form>

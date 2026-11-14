@@ -409,6 +409,199 @@ FAILED_JOB_SQL = """
     )
     WHERE ROWNUM <= 20
 """
+SGA_COMPONENTS_SQL = """
+    SELECT name, bytes
+    FROM v$sgainfo
+    ORDER BY name
+"""
+SGA_TARGET_SQL = """
+    SELECT name, value
+    FROM v$parameter
+    WHERE name IN ('sga_target', 'sga_max_size')
+    ORDER BY name
+"""
+PGA_STATUS_SQL = """
+    SELECT name, value
+    FROM v$pgastat
+    WHERE name IN (
+        'aggregate PGA target parameter', 'total PGA allocated', 'total PGA inuse'
+    )
+"""
+PGA_TARGET_SQL = """
+    SELECT name, value
+    FROM v$parameter
+    WHERE name = 'pga_aggregate_target'
+"""
+BACKGROUND_SQL = """
+    SELECT program, status, state
+    FROM (
+        SELECT SUBSTR(program, 1, 80) AS program, status, SUBSTR(state, 1, 40) AS state
+        FROM v$session
+        WHERE type = 'BACKGROUND'
+        ORDER BY program
+    )
+    WHERE ROWNUM <= 80
+"""
+DATAFILE_SUMMARY_SQL = """
+    SELECT COUNT(*) AS file_count,
+           SUM(CASE WHEN online_status IN ('ONLINE', 'SYSTEM') THEN 1 ELSE 0 END) AS online_files,
+           COUNT(DISTINCT CASE WHEN online_status IN ('ONLINE', 'SYSTEM') THEN tablespace_name END) AS online_tablespaces,
+           SUM(bytes) AS bytes_total
+    FROM dba_data_files
+"""
+DATAFILE_FREE_SQL = """
+    SELECT SUM(bytes) AS bytes_free
+    FROM dba_free_space
+"""
+DATAFILE_LIST_SQL = """
+    SELECT file_name, tablespace_name, bytes, online_status
+    FROM (
+        SELECT file_name, tablespace_name, bytes, online_status
+        FROM dba_data_files
+        ORDER BY tablespace_name, file_name
+    )
+    WHERE ROWNUM <= 80
+"""
+TEMPFILE_SUMMARY_SQL = """
+    SELECT COUNT(*) AS file_count,
+           SUM(CASE WHEN status = 'ONLINE' THEN 1 ELSE 0 END) AS online_files,
+           COUNT(DISTINCT CASE WHEN status = 'ONLINE' THEN tablespace_name END) AS online_tablespaces
+    FROM dba_temp_files
+"""
+TEMPFILE_LIST_SQL = """
+    SELECT file_name, tablespace_name, bytes, status
+    FROM (
+        SELECT file_name, tablespace_name, bytes, status
+        FROM dba_temp_files
+        ORDER BY tablespace_name, file_name
+    )
+    WHERE ROWNUM <= 40
+"""
+CONTROLFILE_SQL = """
+    SELECT name, status
+    FROM v$controlfile
+    ORDER BY name
+"""
+REDO_GROUP_SQL = """
+    SELECT group_no, thread_no, bytes, status
+    FROM (
+        SELECT group# AS group_no, thread# AS thread_no, bytes, status
+        FROM v$log
+        ORDER BY group#
+    )
+    WHERE ROWNUM <= 100
+"""
+REDO_MEMBER_SQL = """
+    SELECT group_no, member
+    FROM (
+        SELECT group# AS group_no, SUBSTR(member, 1, 200) AS member
+        FROM v$logfile
+        ORDER BY group#, member
+    )
+    WHERE ROWNUM <= 200
+"""
+GRAPH_UPTIME_SQL = """
+    SELECT TRUNC(SYSDATE - startup_time) AS up_days,
+           TRUNC(MOD((SYSDATE - startup_time) * 24, 24)) AS up_hours,
+           TRUNC(MOD((SYSDATE - startup_time) * 1440, 60)) AS up_minutes
+    FROM v$instance
+"""
+GRAPH_DATABASE_SQL = """
+    SELECT name
+    FROM v$database
+"""
+GRAPH_PDB_SQL = """
+    SELECT name
+    FROM v$pdbs
+    WHERE name = SYS_CONTEXT('USERENV', 'CON_NAME')
+"""
+GRAPH_SESSION_SQL = """
+    SELECT COUNT(*) AS total_sessions,
+           SUM(CASE WHEN type = 'USER' THEN 1 ELSE 0 END) AS total_users,
+           SUM(CASE WHEN type = 'USER' AND status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_users,
+           SUM(CASE WHEN type = 'USER' AND server = 'DEDICATED' THEN 1 ELSE 0 END) AS dedicated_sessions,
+           SUM(CASE WHEN type = 'USER' AND server = 'SHARED' THEN 1 ELSE 0 END) AS shared_sessions,
+           SUM(CASE WHEN type = 'BACKGROUND' AND program IS NOT NULL AND INSTR(program, 'D000') > 0 THEN 1 ELSE 0 END) AS dispatchers,
+           SUM(CASE WHEN type = 'BACKGROUND' AND program IS NOT NULL
+                     AND (INSTR(program, '(P0') > 0 OR INSTR(program, '(P1') > 0)
+                THEN 1 ELSE 0 END) AS parallel_query
+    FROM v$session
+"""
+GRAPH_HOST_SQL = """
+    SELECT stat_name, value
+    FROM v$osstat
+    WHERE stat_name IN ('BUSY_TIME', 'IDLE_TIME', 'LOAD', 'FREE_MEMORY_BYTES')
+"""
+GRAPH_JOB_SQL = """
+    SELECT COUNT(*) AS running_jobs
+    FROM dba_scheduler_running_jobs
+"""
+GRAPH_SEGMENT_SQL = """
+    SELECT owner, segment_name, segment_type, tablespace_name, bytes
+    FROM (
+        SELECT owner, segment_name, segment_type, tablespace_name, bytes
+        FROM dba_segments
+        WHERE bytes IS NOT NULL
+        ORDER BY bytes DESC, owner, segment_name
+    )
+    WHERE ROWNUM <= 20
+"""
+GRAPH_RATE_SQL = """
+    SELECT name, value
+    FROM v$sysstat
+    WHERE name IN ('physical reads', 'redo entries', 'parse count (total)', 'execute count')
+"""
+GRAPH_HIT_SQL = """
+    SELECT name, value
+    FROM v$sysstat
+    WHERE name IN ('consistent gets', 'db block gets', 'physical reads')
+"""
+GRAPH_SGASTAT_SQL = """
+    SELECT bytes
+    FROM v$sgastat
+    WHERE pool = 'shared pool' AND name = 'free memory'
+"""
+GRAPH_MEMORY_PARAMETER_SQL = """
+    SELECT name, value
+    FROM v$parameter
+    WHERE name IN ('sga_target', 'memory_target')
+    ORDER BY name
+"""
+GRAPH_GUARD_SQL = """
+    SELECT name, value
+    FROM v$dataguard_stats
+"""
+GRAPH_FRA_USAGE_SQL = """
+    SELECT file_type, percent_space_used, number_of_files
+    FROM (
+        SELECT file_type, percent_space_used, number_of_files
+        FROM v$flash_recovery_area_usage
+        ORDER BY file_type
+    )
+    WHERE ROWNUM <= 20
+"""
+GRAPH_LOG_MODE_SQL = """
+    SELECT log_mode
+    FROM v$database
+"""
+GRAPH_ARCHIVE_LATEST_SQL = """
+    SELECT sequence_no, completion_time
+    FROM (
+        SELECT sequence# AS sequence_no, completion_time
+        FROM v$archived_log
+        ORDER BY completion_time DESC
+    )
+    WHERE ROWNUM <= 1
+"""
+GRAPH_BACKUP_SQL = """
+    SELECT input_type, status, started, ended
+    FROM (
+        SELECT input_type, status, start_time AS started, end_time AS ended
+        FROM v$rman_backup_job_details
+        ORDER BY start_time DESC
+    )
+    WHERE ROWNUM <= 1
+"""
 
 
 def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
@@ -474,6 +667,51 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
     failed_jobs = (
         FixedQuery("dba_scheduler_job_run_details", FAILED_JOB_SQL, "SYS.DBA_SCHEDULER_JOB_RUN_DETAILS"),
     )
+    graph_sga = (
+        FixedQuery("v$sgainfo", SGA_COMPONENTS_SQL, "SYS.V_$SGAINFO"),
+        FixedQuery("v$parameter", SGA_TARGET_SQL, "SYS.V_$PARAMETER", required=False),
+    )
+    graph_pga = (
+        FixedQuery("v$pgastat", PGA_STATUS_SQL, "SYS.V_$PGASTAT"),
+        FixedQuery("v$parameter", PGA_TARGET_SQL, "SYS.V_$PARAMETER", required=False),
+    )
+    graph_background = (FixedQuery("v$session", BACKGROUND_SQL, "SYS.V_$SESSION"),)
+    graph_data_files = (
+        FixedQuery("datafile_summary", DATAFILE_SUMMARY_SQL, "SYS.DBA_DATA_FILES"),
+        FixedQuery("dba_data_files", DATAFILE_LIST_SQL, "SYS.DBA_DATA_FILES"),
+        FixedQuery("dba_free_space", DATAFILE_FREE_SQL, "SYS.DBA_FREE_SPACE", required=False),
+    )
+    graph_temp_files = (
+        FixedQuery("tempfile_summary", TEMPFILE_SUMMARY_SQL, "SYS.DBA_TEMP_FILES"),
+        FixedQuery("dba_temp_files", TEMPFILE_LIST_SQL, "SYS.DBA_TEMP_FILES"),
+    )
+    graph_control_files = (FixedQuery("v$controlfile", CONTROLFILE_SQL, "SYS.V_$CONTROLFILE"),)
+    graph_redo = (
+        FixedQuery("v$log", REDO_GROUP_SQL, "SYS.V_$LOG"),
+        FixedQuery("v$logfile", REDO_MEMBER_SQL, "SYS.V_$LOGFILE", required=False),
+    )
+    graph_uptime = (FixedQuery("v$instance", GRAPH_UPTIME_SQL, "SYS.V_$INSTANCE"),)
+    graph_database = (FixedQuery("v$database", GRAPH_DATABASE_SQL, "SYS.V_$DATABASE"),)
+    graph_pdb = (FixedQuery("v$pdbs", GRAPH_PDB_SQL, "SYS.V_$PDBS"),)
+    graph_sessions = (FixedQuery("v$session", GRAPH_SESSION_SQL, "SYS.V_$SESSION"),)
+    graph_host = (FixedQuery("v$osstat", GRAPH_HOST_SQL, "SYS.V_$OSSTAT"),)
+    graph_jobs = (FixedQuery("dba_scheduler_running_jobs", GRAPH_JOB_SQL, "SYS.DBA_SCHEDULER_RUNNING_JOBS"),)
+    graph_segments = (FixedQuery("dba_segments", GRAPH_SEGMENT_SQL, "SYS.DBA_SEGMENTS"),)
+    graph_rates = (FixedQuery("v$sysstat", GRAPH_RATE_SQL, "SYS.V_$SYSSTAT"),)
+    graph_hit_ratio = (FixedQuery("v$sysstat", GRAPH_HIT_SQL, "SYS.V_$SYSSTAT"),)
+    graph_shared_pool = (FixedQuery("v$sgastat", GRAPH_SGASTAT_SQL, "SYS.V_$SGASTAT"),)
+    graph_memory_management = (FixedQuery("v$parameter", GRAPH_MEMORY_PARAMETER_SQL, "SYS.V_$PARAMETER"),)
+    graph_data_guard = (FixedQuery("v$dataguard_stats", GRAPH_GUARD_SQL, "SYS.V_$DATAGUARD_STATS"),)
+    graph_recovery = (
+        FixedQuery("v$recovery_file_dest", FRA_SQL, "SYS.V_$RECOVERY_FILE_DEST"),
+        FixedQuery("v$flash_recovery_area_usage", GRAPH_FRA_USAGE_SQL, "SYS.V_$FLASH_RECOVERY_AREA_USAGE", required=False),
+    )
+    graph_archive = (
+        FixedQuery("v$database", GRAPH_LOG_MODE_SQL, "SYS.V_$DATABASE"),
+        FixedQuery("v$archive_dest_status", DEST_SQL, "SYS.V_$ARCHIVE_DEST_STATUS", required=False),
+        FixedQuery("v$archived_log", GRAPH_ARCHIVE_LATEST_SQL, "SYS.V_$ARCHIVED_LOG", required=False),
+    )
+    graph_backup = (FixedQuery("v$rman_backup_job_details", GRAPH_BACKUP_SQL, "SYS.V_$RMAN_BACKUP_JOB_DETAILS"),)
     issues = (
         FixedQuery("v$instance", INSTANCE_SQL, "SYS.V_$INSTANCE"),
         FixedQuery("v$database", DATABASE_SQL, "SYS.V_$DATABASE"),
@@ -497,5 +735,27 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         "database_users": database_users,
         "security": security,
         "failed_jobs": failed_jobs,
+        "get_sga_components": graph_sga,
+        "get_pga_status": graph_pga,
+        "get_background_processes": graph_background,
+        "get_data_files": graph_data_files,
+        "get_temp_files": graph_temp_files,
+        "get_control_files": graph_control_files,
+        "get_redo_logs": graph_redo,
+        "get_service_uptime": graph_uptime,
+        "get_service_database": graph_database,
+        "get_service_pdb": graph_pdb,
+        "get_server_sessions": graph_sessions,
+        "get_host_stats": graph_host,
+        "get_job_queue": graph_jobs,
+        "get_largest_segments": graph_segments,
+        "get_rate_counters": graph_rates,
+        "get_buffer_hit_ratio": graph_hit_ratio,
+        "get_shared_pool_free": graph_shared_pool,
+        "get_memory_management": graph_memory_management,
+        "get_data_guard": graph_data_guard,
+        "get_recovery_area": graph_recovery,
+        "get_archive": graph_archive,
+        "get_backup": graph_backup,
         "issues": issues,
     }

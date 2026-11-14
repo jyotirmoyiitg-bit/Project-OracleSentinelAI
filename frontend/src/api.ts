@@ -423,3 +423,137 @@ export function updateAppConfig(key: string, value: unknown): Promise<AppConfigI
 export function getPlatform(signal?: AbortSignal) {
   return request<PlatformSummary>('/api/v1/admin/platform', signal)
 }
+
+export interface GraphPanel {
+  id: string
+  title: string
+  message: string
+}
+
+export interface GraphShell {
+  panels: GraphPanel[]
+  detail: boolean
+}
+
+export function getGraphShell(signal?: AbortSignal): Promise<GraphShell> {
+  return request('/api/v1/graph', signal)
+}
+
+export interface MemoryItem {
+  name: string
+  bytes: number | null
+  display: string
+}
+
+export interface GraphMeter {
+  percent: number | null
+  caption: string
+  limitation: string | null
+}
+
+export interface GraphMemory {
+  sga: { items: MemoryItem[]; caption: string; limitation: string | null }
+  pga: { items: MemoryItem[]; high: boolean; limitation: string | null }
+  background_processes: Array<{ program: string; status: string; state: string }>
+  hit_ratio: GraphMeter
+  shared_pool_used: GraphMeter
+  in_memory: { display: string; in_use: boolean; limitation: string | null }
+  memory_management: { lines: string[]; limitation: string | null }
+  data_guard: { stats: Array<{ name: string; value: string }>; limitation: string | null }
+  result_cache: string
+  collected_at: string
+  limitations: string[]
+  snapshot: string
+}
+
+export function getGraphMemory(id: string, signal?: AbortSignal): Promise<GraphMemory> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/graph/memory`, signal)
+}
+
+export interface StorageFile {
+  name: string
+  tablespace: string
+  bytes: number | null
+  display: string
+  status: string
+  online: boolean
+}
+
+export interface GraphStorage {
+  data_files: {
+    online_files: number
+    online_tablespaces: number
+    used_bytes: number | null
+    used_display: string
+    used_percent: number | null
+    files: StorageFile[]
+    flash_cache: string
+    limitation: string | null
+  }
+  temp_files: { files: StorageFile[]; limitation: string | null }
+  control_files: { files: Array<{ name: string; status: string }>; count: number; limitation: string | null }
+  redo_logs: {
+    groups: number
+    total_bytes: number | null
+    total_display: string
+    active_percent: number | null
+    members: Array<{ group: number; thread: number; path: string; bytes: number | null; display: string; status: string; current: boolean }>
+    limitation: string | null
+  }
+  segments: {
+    rows: Array<{ owner: string; name: string; segment_type: string; tablespace: string; bytes: number | null; display: string }>
+    limitation: string | null
+  }
+  recovery_area: {
+    present: boolean
+    name: string
+    used_percent: number | null
+    used_display: string
+    limit_display: string
+    usage: Array<{ file_type: string; percent_space_used: number | null; number_of_files: number | null }>
+    limitation: string | null
+  }
+  archive: {
+    log_mode: string
+    destinations: Array<{ destination: string; status: string }>
+    latest: string
+    free_minutes: string
+    time_to_failure: string
+    limitation: string | null
+  }
+  backup: {
+    input_type: string
+    status: string
+    started: string
+    ended: string
+    failed: boolean
+    limitation: string | null
+  }
+  collected_at: string
+  limitations: string[]
+  detail: boolean
+  detail_note: string | null
+}
+
+export function getGraphStorage(id: string, signal?: AbortSignal): Promise<GraphStorage> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/graph/storage`, signal)
+}
+
+export interface GraphActivity {
+  service: Array<{ label: string; value: string }>
+  host: {
+    cpu_percent: number | null
+    cpu_caption: string
+    run_queue: string | null
+    free_memory: string | null
+    limitation: string | null
+  }
+  server_processes: Array<{ name: string; count: number | null; limitation: string | null }>
+  counters: Array<{ name: string; value: number | null }>
+  collected_at: string
+  limitations: string[]
+}
+
+export function getGraphActivity(id: string, signal?: AbortSignal): Promise<GraphActivity> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/graph/activity`, signal)
+}

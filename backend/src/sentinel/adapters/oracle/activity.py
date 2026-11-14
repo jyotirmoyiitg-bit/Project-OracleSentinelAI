@@ -2,6 +2,8 @@
 
 import logging
 import re
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 import oracledb
@@ -221,6 +223,49 @@ async def read_rows(settings: Settings, alias: str, kind: str) -> tuple[list[dic
     except Exception:  # noqa: BLE001 -- driver and path errors must not reach the operator
         logger.warning("activity read failed kind=%s", kind)
         raise ActivityUnavailable(None) from None
+
+
+Reader = Callable[[Settings, str, str], Awaitable[tuple[list[dict[str, str]], str]]]
+
+
+@asynccontextmanager
+async def shared_reader(settings: Settings, alias: str) -> AsyncIterator[Reader]:
+    """Open one Oracle session and read several fixed questions on it.
+
+    A page that draws many cards would otherwise log on once per card. A failed logon is
+    reported by every reading as unavailable, so one card does not turn into an HTTP error.
+    """
+    from sentinel.adapters.oracle.connection import OracleConnectionManager
+
+    manager = OracleConnectionManager(settings)
+    connection: oracledb.Connection | None = None
+    failure: ActivityUnavailable | None = None
+    try:
+        connection = await manager.connect(alias)
+    except oracledb.Error as exc:
+        failure = ActivityUnavailable(oracle_code(exc))
+    except Exception:  # noqa: BLE001 -- driver and path errors must not reach the operator
+        logger.warning("activity logon failed")
+        failure = ActivityUnavailable(None)
+
+    async def reader(_settings: Settings, _alias: str, kind: str) -> tuple[list[dict[str, str]], str]:
+        if connection is None or failure is not None:
+            raise failure or ActivityUnavailable(None)
+        try:
+            return collect_rows(connection, kind)
+        except (ActivityAccessError, ActivityUnavailable):
+            raise
+        except oracledb.Error as exc:
+            raise ActivityUnavailable(oracle_code(exc)) from None
+        except Exception:  # noqa: BLE001
+            logger.warning("activity read failed kind=%s", kind)
+            raise ActivityUnavailable(None) from None
+
+    try:
+        yield reader
+    finally:
+        if connection is not None:
+            await manager.close_connection(connection)
 
 
 def _cell(value: object) -> str:

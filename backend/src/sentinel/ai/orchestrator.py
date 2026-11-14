@@ -31,23 +31,19 @@ from sentinel.persistence.models import ChatMessage, ChatThread, DatabaseTarget,
 
 logger = logging.getLogger(__name__)
 
+# Common questions that have no catalog equivalent. Tablespace pressure, top SQL, running jobs,
+# health, "is there a problem", blocking, and compliance are asked from the catalog groups instead,
+# so the same question is not offered twice. Typing any of those prompts still works.
 GUIDED_COMMANDS = (
     {"label": "FRA status", "prompt": "What is the FRA status?"},
-    {"label": "Tablespaces", "prompt": "Which tablespaces are under space pressure?"},
     {"label": "Datafiles", "prompt": "List the datafiles"},
     {"label": "Memory", "prompt": "How full is the memory?"},
-    {"label": "Top SQL", "prompt": "What is the top query consuming resources?"},
     {"label": "Sessions", "prompt": "Who is logged on the database?"},
     {"label": "Backups", "prompt": "Are any backups running?"},
-    {"label": "Jobs", "prompt": "Is a scheduler job running?"},
-    {"label": "Health", "prompt": "Is the selected database running and healthy?"},
     {"label": "Errors", "prompt": "Has the database logged any critical ORA errors in the last 24 hours?"},
-    {"label": "Database problem", "prompt": "Is there a problem with this database?"},
     {"label": "Alert log", "prompt": "What are the latest alert log entries?"},
-    {"label": "Blocking", "prompt": "Are any sessions currently blocking other sessions?"},
     {"label": "Data Guard", "prompt": "Is the Data Guard configuration healthy?"},
     {"label": "Open incidents", "prompt": "Summarize open incidents"},
-    {"label": "Compliance", "prompt": "Which compliance policies are failing?"},
     {"label": "Search runbooks", "prompt": "Search knowledge for ORA-00257"},
     {"label": "Database users", "prompt": "List the database users"},
 )
@@ -664,4 +660,13 @@ def disclosure_for(gateway: ChatGateway) -> str:
 
 
 def public_guided_commands() -> list[dict[str, str]]:
-    return [*GUIDED_COMMANDS, *catalog_guided_commands()]
+    """Common commands first, then the catalog groups. A prompt is offered once."""
+    seen: set[str] = set()
+    commands: list[dict[str, str]] = []
+    for item in (*GUIDED_COMMANDS, *catalog_guided_commands()):
+        key = " ".join(item["prompt"].lower().rstrip("?.").split())
+        if key in seen:
+            continue
+        seen.add(key)
+        commands.append(dict(item))
+    return commands

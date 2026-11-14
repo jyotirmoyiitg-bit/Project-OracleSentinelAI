@@ -1,5 +1,7 @@
 # Configuration and Knowledge Intake
 
+Later work is in [Phase 11 — GraphDB shell](./Progress_Summary_Phase11.md).
+
 **Status:** Non-secret application settings are stored in PostgreSQL and an administrator can edit the safe ones from the portal. Oracle 19c manuals are on disk under `knowledge-intake/ora-19c-manual`. The indexer scans that folder and `Policy/`. A separate vector database was not added.<br>
 **Previous phase:** [Phase 9 handoff](./Progress_Summary_Phase9.md)<br>
 **How to run:** [How_To_Run_Sentinel.html](../How_To_Run_Sentinel.html)<br>

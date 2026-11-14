@@ -9,7 +9,6 @@ GSYSTEM is a local Oracle monitoring user with minimal read-only privileges. It 
 - `CREATE SESSION` — to connect
 - `SELECT` on specific `V$` and `DBA_` views for monitoring
 
-<<<<<<< HEAD
 ## Critical: ORA-02030 Gotcha
 
 Oracle `v$` views (e.g., `v$instance`, `v$database`) are **PUBLIC synonyms** that point to the actual fixed tables `SYS.V_$INSTANCE`, `SYS.V_$DATABASE`, etc. Similarly, `DBA_*` views are PUBLIC synonyms for `SYS.DBA_*` views owned by SYS.
@@ -38,8 +37,6 @@ GRANT SELECT ON SYS.DBA_TABLESPACES TO GSYSTEM;
 
 All provisioning scripts in `scripts/oracle/` use the correct `SYS.V_$` and `SYS.DBA_*` syntax.
 
-=======
->>>>>>> 52d1e42f9e9a3a1cd2443f67e95224f00e15bdac
 ## Provisioning
 
 Run `scripts/oracle/01_create_gsystem.sql` as SYSDBA on each target database.

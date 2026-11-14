@@ -19,6 +19,8 @@ from sentinel.api.v1.chat import router as chat_router
 from sentinel.api.v1.compliance import router as compliance_router
 from sentinel.api.v1.databases import router
 from sentinel.api.v1.events import router as events_router
+from sentinel.api.v1.graph import database_graph as database_graph_router
+from sentinel.api.v1.graph import router as graph_router
 from sentinel.api.v1.incidents import router as incidents_router
 from sentinel.api.v1.knowledge import router as knowledge_router
 from sentinel.api.v1.operations import router as operations_router
@@ -160,6 +162,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(privileged_router)
     app.include_router(audit_router)
     app.include_router(admin_router)
+    app.include_router(graph_router)
+    app.include_router(database_graph_router)
     app.add_middleware(MetricsMiddleware)
 
     @app.get("/health/live")
