@@ -41,6 +41,8 @@ def client(settings, sessions, tmp_path):
 
     app.dependency_overrides[get_session] = request_session
     with TestClient(app) as client:
+        # Registry changes need database.manage, so these tests act as a DBA.
+        client.headers.update({"X-Sentinel-Role": "dba", "X-Sentinel-Principal": "dana"})
         yield client
 
 
@@ -159,7 +161,7 @@ def test_summary_counts_entire_fleet_including_stale_and_disabled(client, sessio
             target.health_valid_until = until
     summary = client.get("/api/v1/databases/summary").json()
     assert summary == {
-        "total": 6, "healthy": 1, "warning": 1, "critical": 1,
-        "offline": 1, "unknown": 1, "disabled": 1, "scheduler_enabled": False,
+        "total": 6, "healthy": 0, "warning": 0, "critical": 0,
+        "offline": 0, "unknown": 5, "disabled": 1, "scheduler_enabled": False,
     }
     assert client.get("/api/v1/databases?page_size=1").json()["total"] == 6

@@ -5,7 +5,7 @@ import httpx
 from sentinel.ai.providers.disabled import DisabledChatProvider
 from sentinel.ai.providers.hosted import HostedChatProvider, secret_is_present
 from sentinel.ai.providers.local import LocalChatProvider
-from sentinel.ai.types import ModelReply, ProviderError
+from sentinel.ai.types import ASSESSMENT_SCHEMA, ModelReply, ProviderError
 from sentinel.config.secrets import SecretResolver
 from sentinel.config.settings import Settings
 from sentinel.knowledge.acl import Caller, is_admin_operator
@@ -51,7 +51,21 @@ class ChatGateway:
         if not self.available:
             raise ProviderError("model_disabled")
         return await self.provider.generate(
-            messages, tools=tools, structured_schema=None, correlation_id=correlation_id,
+            messages, tools=tools, structured_schema=ASSESSMENT_SCHEMA, correlation_id=correlation_id,
+        )
+
+    async def generate_structured(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        schema: dict[str, object],
+        correlation_id: str,
+    ) -> ModelReply:
+        """One JSON reply against a caller-supplied schema. No tools are offered."""
+        if not self.available:
+            raise ProviderError("model_disabled")
+        return await self.provider.generate(
+            messages, tools=None, structured_schema=schema, correlation_id=correlation_id,
         )
 
     async def health(self) -> dict[str, object]:

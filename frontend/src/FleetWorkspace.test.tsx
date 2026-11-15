@@ -32,11 +32,18 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 }
 
-function setupApi(items: Target[] = [], override?: (url: string, init?: RequestInit) => Response | undefined) {
+function setupApi(
+  items: Target[] = [],
+  override?: (url: string, init?: RequestInit) => Response | undefined,
+  role = 'operator',
+) {
   const fetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
     if (url.includes('/api/v1/auth/session')) {
-      return Promise.resolve(json({ required: false, authenticated: true, principal: '', role: 'operator', method: '' }))
+      const managesFleet = role === 'admin' || role === 'platform_admin' || role === 'dba'
+      return Promise.resolve(json({
+        required: managesFleet, authenticated: true, principal: managesFleet ? 'sentinel' : '', role, method: managesFleet ? 'local' : '',
+      }))
     }
     const custom = override?.(url, init)
     if (custom) return Promise.resolve(custom)
@@ -62,7 +69,7 @@ afterEach(() => {
 })
 
 describe('Multi-database workspace', () => {
-  it('shows all databases, truthful status colors and fleet-wide counts, then opens selected details on the right', async () => {
+  it('lists the fleet without a sidebar, then opens a database workspace whose sidebar keeps the current view', async () => {
     const items = [target('FINANCE', 'healthy'), target('WAREHOUSE', 'warning'), target('REPORTING', 'offline'), target('DEVELOPMENT')]
     setupApi(items, (url) => {
       if (url.endsWith('/databases/summary')) return json(summary(4, { healthy: 1, warning: 1, offline: 1, unknown: 1 }))
@@ -70,22 +77,49 @@ describe('Multi-database workspace', () => {
     })
     const user = userEvent.setup()
     render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Database fleet' })).toBeInTheDocument()
+    const metrics = screen.getByRole('region', { name: 'Fleet summary' })
+    await waitFor(() => expect(within(metrics).getByText('Needs attention').closest('article')).toHaveTextContent('2'))
+    expect(within(metrics).getByText('Registered databases').closest('article')).toHaveTextContent('4')
+    // The landing page is the fleet table. The database list does not sit beside it a second time.
+    expect(screen.queryByRole('complementary', { name: 'Registered databases' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('tablist', { name: 'Database views' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fleet' })).toHaveAttribute('aria-current', 'page')
+    // GraphDB and WaitDB are views of one database. They are tabs in its workspace, not top-bar sections.
+    expect(screen.queryByRole('button', { name: 'GraphDB' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'WaitDB' })).not.toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: 'View FINANCE details' }))
+    expect(await screen.findByRole('heading', { name: 'FINANCE' })).toBeInTheDocument()
     const sidebar = await screen.findByRole('complementary', { name: 'Registered databases' })
     await within(sidebar).findByRole('button', { name: 'Select FINANCE' })
     expect(within(sidebar).getByLabelText('FINANCE: Healthy')).toHaveClass('sidebar-health-healthy')
     expect(within(sidebar).getByLabelText('WAREHOUSE: Warning')).toHaveClass('sidebar-health-warning')
     expect(within(sidebar).getByLabelText('REPORTING: Down')).toHaveClass('sidebar-health-offline')
     expect(within(sidebar).getByLabelText('DEVELOPMENT: Unknown / stale')).toHaveClass('sidebar-health-unknown')
-    const metrics = screen.getByRole('region', { name: 'Fleet summary' })
-    await waitFor(() => expect(within(metrics).getByText('Needs attention').closest('article')).toHaveTextContent('2'))
-    expect(within(metrics).getByText('Registered databases').closest('article')).toHaveTextContent('4')
-    expect(screen.getByRole('button', { name: 'Fleet overview' })).toHaveAttribute('aria-current', 'page')
+    expect(within(sidebar).getByRole('button', { name: 'Select FINANCE' })).toHaveAttribute('aria-current', 'page')
+    const tabs = screen.getByRole('tablist', { name: 'Database views' })
+    expect(within(tabs).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'GraphDB', 'WaitDB', 'Events', 'Copilot'])
+    expect(within(tabs).getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
+
     await user.click(within(sidebar).getByRole('button', { name: 'Select REPORTING' }))
     expect(await screen.findByRole('heading', { name: 'REPORTING' })).toBeInTheDocument()
     expect(within(sidebar).getByRole('button', { name: 'Select REPORTING' })).toHaveAttribute('aria-current', 'page')
-    expect(within(sidebar).getByRole('button', { name: 'Select FINANCE' })).toBeInTheDocument()
-    await user.click(within(sidebar).getByRole('button', { name: 'Fleet overview' }))
+
+    // Choosing a view keeps the database. Choosing another database keeps the view.
+    await user.click(within(screen.getByRole('tablist', { name: 'Database views' })).getByRole('tab', { name: 'Events' }))
+    expect(window.location.hash).toBe('#/databases/REPORTING/events')
+    await user.click(within(screen.getByRole('complementary', { name: 'Registered databases' })).getByRole('button', { name: 'Select WAREHOUSE' }))
+    expect(window.location.hash).toBe('#/databases/WAREHOUSE/events')
+    expect(within(screen.getByRole('tablist', { name: 'Database views' })).getByRole('tab', { name: 'Events' })).toHaveAttribute('aria-selected', 'true')
+    await user.click(within(screen.getByRole('tablist', { name: 'Database views' })).getByRole('tab', { name: 'GraphDB' }))
+    expect(window.location.hash).toBe('#/graph/databases/WAREHOUSE')
+    await user.click(within(screen.getByRole('complementary', { name: 'Registered databases' })).getByRole('button', { name: 'Select FINANCE' }))
+    expect(window.location.hash).toBe('#/graph/databases/FINANCE')
+
+    await user.click(within(screen.getByRole('complementary', { name: 'Registered databases' })).getByRole('button', { name: 'Fleet overview' }))
     expect(await screen.findByRole('heading', { name: 'Database fleet' })).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Registered databases' })).not.toBeInTheDocument()
   })
 
   it('registers from TNS, tests the connection, reloads the sidebar and preserves registrations on remount', async () => {
@@ -99,7 +133,7 @@ describe('Multi-database workspace', () => {
         items.push(registered)
         return json(registered, 201)
       }
-    })
+    }, 'dba')
     const user = userEvent.setup()
     const view = render(<App />)
     await user.click(await screen.findByRole('button', { name: 'Add database' }))
@@ -122,7 +156,7 @@ describe('Multi-database workspace', () => {
     window.location.hash = ''
     render(<App />)
     expect(await screen.findByRole('heading', { name: 'Database fleet' })).toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Select Reporting production' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'View Reporting production details' })).toBeInTheDocument()
     expect(window.localStorage.getItem('databases')).toBeNull()
   })
 
@@ -166,6 +200,7 @@ describe('Multi-database workspace', () => {
         return json({ items: items.slice((page - 1) * 100, page * 100), total: 101, page, page_size: 100, environments: [] })
       }
     })
+    window.location.hash = '#/databases/DATABASE-1'
     render(<App />)
     expect(await screen.findByRole('button', { name: 'Select DATABASE-101' })).toBeInTheDocument()
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('page=2&page_size=100'), expect.anything())
@@ -173,6 +208,11 @@ describe('Multi-database workspace', () => {
 
   it('shows disabled targets in gray and makes sidebar failures explicit', async () => {
     const items = [target('DISABLED', 'healthy', false)]
+    setupApi(items)
+    render(<App />)
+    expect(await screen.findByLabelText('Health status: Disabled')).toBeInTheDocument()
+    cleanup()
+    window.location.hash = '#/databases/DISABLED'
     setupApi(items)
     render(<App />)
     expect(await screen.findByLabelText('DISABLED: Disabled')).toHaveClass('sidebar-health-disabled')
@@ -195,14 +235,50 @@ describe('Multi-database workspace', () => {
     const summary = screen.getByRole('region', { name: 'Fleet summary' })
     expect(within(summary).getByText('Healthy databases').closest('article')).toHaveTextContent('—')
     expect(screen.queryByRole('region', { name: 'Fleet health breakdown' })).not.toBeInTheDocument()
-    expect(await screen.findByRole('button', { name: 'Select FINANCE' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'View FINANCE details' })).toBeInTheDocument()
+  })
+
+  it('lets an administrator recheck the fleet and deregister a database', async () => {
+    const items = [target('FINANCE', 'unknown'), target('WAREHOUSE', 'offline')]
+    const fetch = setupApi(items, (url, init) => {
+      if (url.endsWith('/databases/check-fleet') && init?.method === 'POST') {
+        items[0] = { ...items[0], last_health_status: 'healthy', monitoring_status: 'healthy' }
+        return json({ checked: 2, items: [] })
+      }
+      if (init?.method === 'DELETE' && url.endsWith('/databases/WAREHOUSE')) {
+        const index = items.findIndex((item) => item.id === 'WAREHOUSE')
+        if (index >= 0) items.splice(index, 1)
+        return new Response(null, { status: 204 })
+      }
+    }, 'admin')
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const user = userEvent.setup()
+    render(<App />)
+    await user.click(await screen.findByRole('button', { name: 'Check fleet status' }))
+    expect(await screen.findByText(/Checked 2 databases/)).toBeInTheDocument()
+    expect(await screen.findByLabelText('Health status: Healthy')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Remove WAREHOUSE from the fleet' }))
+    expect(confirm).toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remove WAREHOUSE from the fleet' })).not.toBeInTheDocument())
+    expect(fetch.mock.calls.some((call) => String(call[0]).endsWith('/databases/check-fleet') && call[1]?.method === 'POST')).toBe(true)
+    expect(fetch.mock.calls.some((call) => String(call[0]).endsWith('/databases/WAREHOUSE') && call[1]?.method === 'DELETE')).toBe(true)
+    confirm.mockRestore()
+  })
+
+  it('hides fleet changes from an operator', async () => {
+    setupApi([target('FINANCE')])
+    render(<App />)
+    expect(await screen.findByRole('heading', { name: 'Database fleet' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Check fleet status' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove FINANCE from the fleet' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Add database' })).not.toBeInTheDocument()
   })
 
   it('defaults to 30-second refresh but respects an explicitly saved off preference', async () => {
     setupApi()
     const view = render(<App />)
     expect(await screen.findByLabelText('Auto refresh interval')).toHaveValue('30')
-    await screen.findByText('No databases registered. Add a database to begin monitoring.')
+    await screen.findByText('No databases registered')
     view.unmount()
     window.localStorage.setItem('oracle-sentinel-refresh', '0')
     render(<App />)

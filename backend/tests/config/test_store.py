@@ -77,10 +77,20 @@ def test_an_admin_cannot_store_a_secret(tmp_path, sessions) -> None:
             update_public_config(session, original, "log_level", "secret://ORACLE_PASSWORD")
 
 
+# Production refuses to start without sign-in, a real signing key, and a Secure cookie.
+_PRODUCTION: dict[str, object] = {
+    "app_env": "production",
+    "auth_required": True,
+    "auth_bootstrap_username": "sentinel",
+    "auth_cookie_secure": True,
+    "secret_key": "k" * 44,
+}
+
+
 def test_production_keeps_the_stored_value(tmp_path, sessions) -> None:
     with sessions.begin() as session:
-        sync_public_config(session, _settings(tmp_path, app_env="production", log_level="INFO"))
-    restarted = _settings(tmp_path, app_env="production", log_level="WARNING")
+        sync_public_config(session, _settings(tmp_path, **_PRODUCTION, log_level="INFO"))
+    restarted = _settings(tmp_path, **_PRODUCTION, log_level="WARNING")
     with sessions.begin() as session:
         sync_public_config(session, restarted)
     assert restarted.log_level == "INFO"

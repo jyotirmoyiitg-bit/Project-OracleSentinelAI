@@ -20,6 +20,7 @@ from sentinel.persistence.models import (
     CurrentObservation,
     DatabaseTarget,
     DiagnosticEvent,
+    Notification,
     PollRun,
 )
 from sentinel.persistence.models import (
@@ -234,6 +235,35 @@ def test_offline_status_expires_to_unknown(runner, sessions, make_target, settin
         target = session.get(DatabaseTarget, target_id)
         assert compute_health(target, checkpoints_for(session, [target_id]), [], settings,
                               utcnow() + timedelta(seconds=181)) == "unknown"
+
+
+def test_week_without_a_monitoring_connection_disables_the_database_and_asks_for_removal(runner, sessions, make_target):
+    target_id = make_target("SYNTHETIC_OFFLINE")
+    with sessions.begin() as session:
+        target = session.get(DatabaseTarget, target_id)
+        target.last_connection_at = utcnow() - timedelta(days=8)
+    assert runner.run(target_id, "connectivity") == "failed"
+    with sessions() as session:
+        target = session.get(DatabaseTarget, target_id)
+        assert target.enabled is False
+        notes = list(session.scalars(select(Notification).where(Notification.channel == "web")))
+        assert len(notes) == 1
+        assert notes[0].status == "unread"
+        assert "Remove it from the registry." in notes[0].subject
+    assert runner.run(target_id, "connectivity") == "disabled"
+    with sessions() as session:
+        assert len(list(session.scalars(select(Notification).where(Notification.channel == "web")))) == 1
+
+
+def test_a_recent_connection_failure_stays_enabled(runner, sessions, make_target):
+    target_id = make_target("SYNTHETIC_OFFLINE")
+    with sessions.begin() as session:
+        session.get(DatabaseTarget, target_id).last_connection_at = utcnow() - timedelta(days=1)
+    assert runner.run(target_id, "connectivity") == "failed"
+    with sessions() as session:
+        target = session.get(DatabaseTarget, target_id)
+        assert target.enabled is True
+        assert session.scalar(select(Notification.id)) is None
 
 
 def test_scheduler_runs_and_gracefully_stops(runner, make_target):

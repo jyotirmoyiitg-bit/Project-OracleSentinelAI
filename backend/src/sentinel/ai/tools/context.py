@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from sqlalchemy.orm import Session
@@ -13,6 +13,7 @@ from sentinel.knowledge.acl import Caller
 
 if TYPE_CHECKING:
     from sentinel.ai.activity import ActivityReading
+    from sentinel.ai.fleet import FleetScan
 
 
 @dataclass
@@ -23,3 +24,5 @@ class ToolContext:
     target_id: uuid.UUID | None
     incident_id: uuid.UUID | None
     activity: ActivityReading | None = None
+    # Fleet chat: one scan per reading kind, already collected by the orchestrator.
+    fleet_scans: dict[str, FleetScan] = field(default_factory=dict)

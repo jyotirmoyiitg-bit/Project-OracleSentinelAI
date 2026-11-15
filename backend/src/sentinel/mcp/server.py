@@ -13,7 +13,7 @@ from sentinel.adapters.oracle.activity import (
     ActivityUnavailable,
     read_rows,
 )
-from sentinel.ai.activity import SYNTHETIC, TOOL_NAMES
+from sentinel.ai.activity import SYNTHETIC, TOOL_DESCRIPTIONS, TOOL_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -25,30 +25,9 @@ _SCHEMA: dict[str, Any] = {
     "required": ["alias"],
     "additionalProperties": False,
 }
-_DESCRIPTIONS = {
-    "get_database_availability": "Live instance, open mode, startup, PDBs, services, and recent startup or shutdown lines.",
-    "get_critical_errors": "Critical ORA and fatal alert-log lines from the last 24 hours.",
-    "get_recent_ora_errors": "ORA- errors from this database alert log for the last 24 hours.",
-    "get_alert_log": "Newest alert log lines from V$DIAG_ALERT_EXT for the last 7 days.",
-    "get_tablespace_pressure": "Tablespace percent used, 80/90/95 bands, autoextend headroom, and temporary space.",
-    "get_tablespace_growth": "When a tablespace may fill, from retained samples rather than AWR.",
-    "get_performance_status": "Startup CPU ratio, active sessions, top waits, and file I/O latency.",
-    "get_blocking_sessions": "Blocking sessions, long calls, session counts, limits, and recent deadlocks.",
-    "get_sql_workload": "Cursor-cache SQL by elapsed time, executions, reads, and multiple plans.",
-    "get_memory_configuration": "Temporary space, hard parses, library cache, parameters, and resource limits.",
-    "get_recovery_status": "Last successful and failed backups, fast recovery area, and recent archive logs.",
-    "get_data_guard_status": "Database role, archive destinations, and Data Guard lag when a standby exists.",
-    "list_database_users": "Database usernames and account status. The API allows this only for an admin operator.",
-    "get_security_posture": "Locked or expired accounts, invalid objects, and current privileged role grants.",
-    "get_failed_jobs": "Scheduler jobs that failed or stopped in the last 2 days.",
-    "get_current_issues": "Current availability, critical errors, space, and blocking evidence.",
-    "list_datafiles": "Datafiles and tempfiles.",
-    "get_memory_status": "SGA and PGA inside the instance.",
-    "get_top_sql": "Top SQL in the cursor cache by CPU.",
-    "get_sessions": "User sessions that are logged on.",
-    "get_backup_status": "Backups running now and recent RMAN jobs.",
-    "get_running_jobs": "Scheduler jobs and DBMS_JOBs running now.",
-}
+_DESCRIPTIONS = TOOL_DESCRIPTIONS
+# Set when a client used the older Content-Length framing, so the reply uses the same framing.
+_legacy_framing = False
 
 
 def main() -> None:
@@ -152,28 +131,48 @@ def _error(request_id: object, message: str) -> dict[str, Any]:
 
 
 def _read_message() -> dict[str, Any] | None:
-    header = b""
-    while b"\r\n\r\n" not in header:
-        chunk = sys.stdin.buffer.read(1)
-        if not chunk:
-            return None
-        header += chunk
-        if len(header) > 65536:
-            return None
-    match = re.search(br"Content-Length:\s*(\d+)", header, re.IGNORECASE)
-    if match is None:
+    """Read one JSON-RPC message.
+
+    The MCP stdio transport sends one JSON object per line. A client that still sends a
+    Content-Length header is accepted and answered the same way.
+    """
+    global _legacy_framing
+    line = sys.stdin.buffer.readline()
+    while line and not line.strip():
+        line = sys.stdin.buffer.readline()
+    if not line:
         return None
-    length = int(match.group(1))
-    if length < 1 or length > 1_000_000:
+    if line.lower().startswith(b"content-length:"):
+        _legacy_framing = True
+        try:
+            length = int(line.split(b":", 1)[1].strip())
+        except ValueError:
+            return None
+        while True:
+            header = sys.stdin.buffer.readline()
+            if not header or not header.strip():
+                break
+        if length < 1 or length > 1_000_000:
+            return None
+        body = sys.stdin.buffer.read(length)
+    else:
+        _legacy_framing = False
+        if len(line) > 1_000_000:
+            return None
+        body = line
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError:
         return None
-    body = sys.stdin.buffer.read(length)
-    payload = json.loads(body)
     if not isinstance(payload, dict):
         return None
     return payload
 
 
 def _write_message(payload: dict[str, Any]) -> None:
-    body = json.dumps(payload).encode()
-    sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+    body = json.dumps(payload, separators=(",", ":")).encode()
+    if _legacy_framing:
+        sys.stdout.buffer.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+    else:
+        sys.stdout.buffer.write(body + b"\n")
     sys.stdout.buffer.flush()

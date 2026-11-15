@@ -31,6 +31,7 @@ export interface AuthSession {
   role: string
   method: string
   oidc_enabled?: boolean
+  directory_enabled?: boolean
 }
 
 export class ApiError extends Error {
@@ -75,6 +76,7 @@ async function request<T>(path: string, signal?: AbortSignal, init?: RequestInit
     throw new ApiError(detail, response.status)
   }
 
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 
@@ -99,9 +101,13 @@ export async function getSession(signal?: AbortSignal): Promise<AuthSession> {
       principal: body.principal ?? '',
       role: body.role ?? '',
       method: body.method ?? '',
+      oidc_enabled: body.oidc_enabled === true,
+      directory_enabled: body.directory_enabled === true,
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') throw error
+    // No answer at all means the API is down. That is reported, not treated as signed in.
+    if (error instanceof ApiError && error.status === undefined) throw error
     return openSession
   }
 }
@@ -129,6 +135,14 @@ export function getFleet(params: FleetParams, signal?: AbortSignal): Promise<Fle
 
 export function getFleetSummary(signal?: AbortSignal): Promise<FleetHealthSummary> {
   return request('/api/v1/databases/summary', signal)
+}
+
+export function checkFleetStatus(): Promise<{ checked: number }> {
+  return request('/api/v1/databases/check-fleet', undefined, { method: 'POST' })
+}
+
+export function deleteDatabase(id: string): Promise<void> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}`, undefined, { method: 'DELETE' })
 }
 
 export function getTnsAliases(signal?: AbortSignal): Promise<TnsAliasListResponse> {
@@ -182,6 +196,10 @@ export interface IncidentListParams {
   severity?: string
   owner?: string
   targetId?: string
+}
+
+export function clearIncidents(): Promise<{ deleted: number }> {
+  return request('/api/v1/incidents', undefined, { method: 'DELETE' })
 }
 
 export function listIncidents(params: IncidentListParams, signal?: AbortSignal): Promise<IncidentListResponse> {
@@ -278,7 +296,30 @@ export function reindexKnowledge(): Promise<KnowledgeReindexResponse> {
   return request('/api/v1/knowledge/reindex', undefined, {
     method: 'POST',
     body: JSON.stringify({}),
-    headers: { 'X-Sentinel-Role': 'admin' },
+  })
+}
+
+export interface KnowledgeUploadReport {
+  relative_path: string
+  category: 'Knowledge' | 'Policy'
+  size_bytes: number
+  replaced: boolean
+  scanned: number
+  indexed: number
+  updated: number
+  unchanged: number
+  quarantined: number
+  errors: string[]
+  note: string
+}
+
+/** Send one document as the raw request body. The server saves it in its intake folder and indexes it. */
+export function uploadKnowledge(file: File, category: string, replace: boolean): Promise<KnowledgeUploadReport> {
+  const query = new URLSearchParams({ filename: file.name, category, replace: String(replace) })
+  return request(`/api/v1/knowledge/upload?${query.toString()}`, undefined, {
+    method: 'POST',
+    body: file,
+    headers: { 'Content-Type': 'application/octet-stream' },
   })
 }
 
@@ -289,7 +330,19 @@ export function createChatThread(scopeType: ChatThread['scope_type'], scopeId: s
   })
 }
 
-export async function sendChatMessage(threadId: string, content: string, modelChoice?: string): Promise<ChatMessage> {
+export interface ChatStreamEvent {
+  name: string
+  data: unknown
+}
+
+export interface SendChatOptions {
+  signal?: AbortSignal
+  onEvent?: (event: ChatStreamEvent) => void
+}
+
+export async function sendChatMessage(
+  threadId: string, content: string, modelChoice?: string, options?: SendChatOptions,
+): Promise<ChatMessage> {
   let response: Response
   try {
     response = await fetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/messages`, {
@@ -297,8 +350,10 @@ export async function sendChatMessage(threadId: string, content: string, modelCh
       credentials: 'include',
       headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
       body: JSON.stringify(modelChoice ? { content, model_choice: modelChoice } : { content }),
+      signal: options?.signal,
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error
     throw new ApiError('Could not reach the Oracle Sentinel API. Check the connection and try again.')
   }
   if (!response.ok) {
@@ -313,23 +368,50 @@ export async function sendChatMessage(threadId: string, content: string, modelCh
     }
     throw new ApiError(detail, response.status)
   }
-  const events = parseServerEvents(await response.text())
+  const events: ChatStreamEvent[] = []
+  const collect = (event: ChatStreamEvent) => { events.push(event); options?.onEvent?.(event) }
+  if (response.body) {
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (value) buffer += decoder.decode(value, { stream: !done })
+      let split = buffer.indexOf('\n\n')
+      while (split >= 0) {
+        const event = parseServerEvent(buffer.slice(0, split))
+        if (event) collect(event)
+        buffer = buffer.slice(split + 2)
+        split = buffer.indexOf('\n\n')
+      }
+      if (done) break
+    }
+    const tail = parseServerEvent(buffer)
+    if (tail) collect(tail)
+  } else {
+    for (const event of parseServerEvents(await response.text())) collect(event)
+  }
   const message = events.find((event) => event.name === 'message')
   if (!message || !isChatMessage(message.data)) throw new ApiError('The copilot did not return an answer.')
   return message.data
 }
 
-function parseServerEvents(body: string): { name: string; data: unknown }[] {
-  const events: { name: string; data: unknown }[] = []
+function parseServerEvent(block: string): ChatStreamEvent | null {
+  let name = 'message'
+  const dataLines: string[] = []
+  for (const line of block.split('\n')) {
+    if (line.startsWith('event:')) name = line.slice(6).trim()
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
+  }
+  if (dataLines.length === 0) return null
+  return { name, data: JSON.parse(dataLines.join('\n')) as unknown }
+}
+
+function parseServerEvents(body: string): ChatStreamEvent[] {
+  const events: ChatStreamEvent[] = []
   for (const block of body.split('\n\n')) {
-    let name = 'message'
-    const dataLines: string[] = []
-    for (const line of block.split('\n')) {
-      if (line.startsWith('event:')) name = line.slice(6).trim()
-      else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())
-    }
-    if (dataLines.length === 0) continue
-    events.push({ name, data: JSON.parse(dataLines.join('\n')) as unknown })
+    const event = parseServerEvent(block)
+    if (event) events.push(event)
   }
   return events
 }
@@ -556,4 +638,142 @@ export interface GraphActivity {
 
 export function getGraphActivity(id: string, signal?: AbortSignal): Promise<GraphActivity> {
   return request(`/api/v1/databases/${encodeURIComponent(id)}/graph/activity`, signal)
+}
+
+export interface GraphWaitEvent {
+  event: string
+  wait_class: string
+  total_waits: number | null
+  time_waited_micro: number | null
+}
+
+export interface GraphWaits {
+  events: GraphWaitEvent[]
+  cpu_micro: number | null
+  collected_at: string
+  limitations: string[]
+  caption: string
+}
+
+export function getGraphWaits(id: string, signal?: AbortSignal): Promise<GraphWaits> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/graph/waits`, signal)
+}
+
+export interface WaitLock {
+  name: string
+  gets: number | null
+  waits: number | null
+  wait_time_ms: number | null
+}
+
+export interface WaitLocks {
+  locks: WaitLock[]
+  limitation: string | null
+  caption: string
+}
+
+export interface WaitBlockingLock {
+  sid: number | null
+  serial_no: number | null
+  username: string
+  pid: string
+  lock_type: string
+  mode_wanted: string
+  object_name: string
+}
+
+export interface WaitBlocking {
+  locks: WaitBlockingLock[]
+  limitation: string | null
+  empty: string
+  caption: string
+}
+
+export interface WaitNamedValue {
+  name: string
+  value: number | null
+}
+
+export interface WaitLibrary {
+  namespace: string
+  gets: number | null
+  gethits: number | null
+  reloads: number | null
+  invalidations: number | null
+}
+
+export interface WaitParsing {
+  counters: WaitNamedValue[]
+  times: WaitNamedValue[]
+  library: WaitLibrary[]
+  limitations: string[]
+  caption: string
+}
+
+export interface WaitBufferBusy {
+  events: GraphWaitEvent[]
+  classes: Array<{ name: string; count: number | null; time_cs: number | null }>
+  users: Array<{ username: string; sid: number | null; total_waits: number | null; waited_ms: number | null }>
+  tablespaces: Array<{ name: string; sessions: number | null }>
+  limitations: string[]
+  caption: string
+}
+
+export interface WaitIo {
+  counters: WaitNamedValue[]
+  files: {
+    reads: number | null
+    writes: number | null
+    read_time_cs: number | null
+    write_time_cs: number | null
+    limitation: string | null
+  }
+  limitation: string | null
+}
+
+export interface WaitActivity {
+  locking: WaitLocks
+  blocking: WaitBlocking
+  parsing: WaitParsing
+  buffer_busy: WaitBufferBusy
+  io: WaitIo
+  collected_at: string
+}
+
+export function getWaitActivity(id: string, signal?: AbortSignal): Promise<WaitActivity> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/wait/activity`, signal)
+}
+
+export interface OperatorAccount {
+  username: string
+  role: string
+  enabled: boolean
+  created_at: string
+}
+
+export function listOperators(signal?: AbortSignal): Promise<{ items: OperatorAccount[] }> {
+  return request('/api/v1/admin/operators', signal)
+}
+
+export function createOperator(username: string, password: string, role: string): Promise<OperatorAccount> {
+  return request('/api/v1/admin/operators', undefined, { method: 'POST', body: JSON.stringify({ username, password, role }) })
+}
+
+export function setOperatorRole(username: string, role: string): Promise<{ username: string; role: string }> {
+  return request(`/api/v1/admin/operators/${encodeURIComponent(username)}/role`, undefined, { method: 'POST', body: JSON.stringify({ role }) })
+}
+
+export function setOperatorEnabled(username: string, enabled: boolean): Promise<OperatorAccount> {
+  return request(`/api/v1/admin/operators/${encodeURIComponent(username)}/enabled`, undefined, { method: 'POST', body: JSON.stringify({ enabled }) })
+}
+
+export function resetOperatorPassword(username: string, password: string): Promise<{ username: string; updated: boolean }> {
+  return request(`/api/v1/admin/operators/${encodeURIComponent(username)}/password`, undefined, { method: 'POST', body: JSON.stringify({ password }) })
+}
+
+export function changeOwnPassword(currentPassword: string, newPassword: string): Promise<{ updated: boolean }> {
+  return request('/api/v1/auth/password', undefined, {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
 }

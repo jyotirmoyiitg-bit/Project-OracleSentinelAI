@@ -304,16 +304,17 @@ QUESTIONS: tuple[CatalogQuestion, ...] = (
     _gap(
         "Q31", "get_schema_storage", "Objects", "Schema storage",
         "Which application schemas consume the most segment storage?",
-        "Segment storage by schema is not in the approved readings. DBA_SEGMENTS is not queried.",
-        "Use the tablespace question for space by tablespace.",
+        "Segment storage grouped by schema is not in the approved readings.",
+        "Use the largest-segments question for the biggest objects, or the tablespace question for space by tablespace.",
         status="UNSUPPORTED",
     ),
-    _gap(
+    CatalogQuestion(
         "Q32", "get_largest_segments", "Objects", "Largest segments",
         "What are the largest tables and indexes in this database?",
-        "Largest tables and indexes are not in the approved readings. DBA_SEGMENTS is not queried.",
-        "Use the tablespace question for which tablespace is using space.",
-        status="UNSUPPORTED",
+        reading="segments",
+        empty="No segment was returned.",
+        limitation="These are the 20 largest segments by size, not a full inventory. Only an admin operator receives object names.",
+        next_step="Compare the largest segment with its tablespace before planning space.",
     ),
     CatalogQuestion(
         "Q33", "get_invalid_objects", "Objects", "Invalid objects",
@@ -473,8 +474,17 @@ def match_catalog(content: str) -> CatalogQuestion | None:
     return None
 
 
-def catalog_guided_commands() -> list[dict[str, str]]:
-    return [{"group": item.group, "label": item.label, "prompt": item.prompt} for item in QUESTIONS]
+def catalog_guided_commands(include_unsupported: bool = False) -> list[dict[str, str]]:
+    """Guided questions for a database chat.
+
+    A question whose answer is always "not collected" is left out of the buttons. Typing it still
+    returns the honest unsupported answer.
+    """
+    return [
+        {"group": item.group, "label": item.label, "prompt": item.prompt}
+        for item in QUESTIONS
+        if include_unsupported or item.forced_status is None
+    ]
 
 
 def present_catalog(

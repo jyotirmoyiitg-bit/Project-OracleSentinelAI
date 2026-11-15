@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from sentinel.ai.safety import event_code, event_severity, sanitize_untrusted
 from sentinel.ai.tools.context import ToolContext
@@ -31,6 +31,46 @@ def database_health(context: ToolContext, arguments: dict[str, object]) -> ToolO
     return ToolOutcome(
         "get_database_health", "allowed", summary, citations,
         {"health": target.last_health_status, "metrics": metrics, "open_incidents": len(open_incidents)},
+    )
+
+
+_FLEET_ORDER = {"offline": 0, "critical": 1, "warning": 2, "unknown": 3, "healthy": 4}
+
+
+def fleet_health(context: ToolContext, arguments: dict[str, object]) -> ToolOutcome:
+    """Stored status of every enabled database, worst first. No database is queried."""
+    del arguments
+    targets = context.session.scalars(
+        select(DatabaseTarget).where(DatabaseTarget.enabled.is_(True)).order_by(DatabaseTarget.display_name).limit(200),
+    ).all()
+    open_rows = context.session.execute(
+        select(Incident.target_id, func.count()).where(Incident.state != "resolved").group_by(Incident.target_id),
+    ).all()
+    open_incidents = {row[0]: int(row[1]) for row in open_rows}
+    counts: dict[str, int] = {}
+    entries: list[tuple[int, str, str, str]] = []
+    for target in targets:
+        health = (target.last_health_status or "unknown").lower()
+        counts[health] = counts.get(health, 0) + 1
+        seen = target.last_seen.strftime("%Y-%m-%d %H:%M UTC") if target.last_seen else "never"
+        line = (
+            f"{target.display_name} ({target.tns_alias or 'no alias'}, {target.environment or 'unknown'}) "
+            f"health {health}, last seen {seen}, open incidents {open_incidents.get(target.id, 0)}"
+        )
+        entries.append((_FLEET_ORDER.get(health, 3), target.display_name, sanitize_untrusted(line, 240), str(target.id)))
+    entries.sort(key=lambda item: (item[0], item[1]))
+    if not entries:
+        summary = "No enabled database is registered."
+    else:
+        parts = [f"{counts[name]} {name}" for name in sorted(counts, key=lambda name: _FLEET_ORDER.get(name, 3))]
+        summary = f"{len(entries)} enabled databases: " + ", ".join(parts) + ". Status is the last stored collection."
+    citations = [
+        EvidenceCitation("metric", name, "database_targets.last_health_status", line, target_id)
+        for _rank, name, line, target_id in entries[:12]
+    ]
+    return ToolOutcome(
+        "get_fleet_health", "allowed", summary, citations,
+        {"lines": [item[2] for item in entries], "counts": counts, "databases": len(entries)},
     )
 
 

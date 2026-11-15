@@ -7,6 +7,7 @@ const states: Record<string, { label: string; icon: typeof CircleCheck }> = {
   critical: { label: 'Critical', icon: XCircle },
   unknown: { label: 'Unknown', icon: CircleHelp },
   offline: { label: 'Offline', icon: CircleOff },
+  disabled: { label: 'Disabled', icon: CircleOff },
 }
 
 export function HealthBadge({ status }: { status: HealthStatus }) {

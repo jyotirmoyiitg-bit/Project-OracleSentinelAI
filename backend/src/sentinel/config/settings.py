@@ -74,6 +74,19 @@ class Settings(BaseSettings):
     ai_max_output_tokens: int = Field(default=600, ge=64, le=4000)
     ai_max_context_tokens: int = Field(default=12000, ge=500, le=32000)
     ai_require_citations: bool = Field(default=True)
+    ai_router_fallback: bool = Field(
+        default=True,
+        description=(
+            "When the fixed router finds no reading, let the model nominate up to three read-only readings "
+            "from the allowlist. The server validates each name and fixes the database."
+        ),
+    )
+    ai_fleet_max_databases: int = Field(
+        default=25, ge=1, le=200,
+        description="Most databases one fleet question reads live. The rest are reported as not read.",
+    )
+    ai_fleet_concurrency: int = Field(default=4, ge=1, le=16, description="Databases read at the same time for a fleet question")
+    ai_fleet_database_timeout_seconds: int = Field(default=45, ge=5, le=180, description="Deadline for one database in a fleet question")
     ai_redact_sensitive_telemetry: bool = Field(default=True)
     ai_hosted_approved: bool = Field(
         default=False,
@@ -225,6 +238,12 @@ class Settings(BaseSettings):
     auth_session_hours: int = Field(default=8, ge=1, le=24)
     auth_cookie_secure: bool = Field(default=False, description="Mark the session cookie Secure")
     auth_password_iterations: int = Field(default=200_000, ge=1000, le=1_000_000)
+    auth_max_failed_logins: int = Field(default=5, ge=3, le=50, description="Failed sign-ins before a temporary lock")
+    auth_lockout_minutes: int = Field(default=15, ge=1, le=1440, description="Length of the sign-in lock and its counting window")
+    metrics_public: bool | None = Field(
+        default=None,
+        description="Serve /metrics without sign-in. Empty means open in dev and test, closed in production.",
+    )
     auth_bootstrap_username: str = Field(default="", description="Local account created once when sign-in is enabled")
     auth_bootstrap_password: str = Field(default="")
     auth_bootstrap_role: str = Field(default="admin")
@@ -297,6 +316,13 @@ class Settings(BaseSettings):
             raise ValueError("Sign-in requires AUTH_AD_URL or AUTH_BOOTSTRAP_USERNAME")
         if self.auth_required and self.auth_bootstrap_username.strip() and len(self.auth_bootstrap_password) < 8:
             raise ValueError("AUTH_BOOTSTRAP_PASSWORD must be at least 8 characters")
+        if self.app_env.strip().lower() == "production":
+            if not self.auth_required:
+                raise ValueError("APP_ENV=production requires AUTH_REQUIRED=true")
+            if self.secret_key == "change-me-in-production" or len(self.secret_key) < 32:
+                raise ValueError("APP_ENV=production requires a SECRET_KEY of at least 32 characters that is not the default")
+            if not self.auth_cookie_secure:
+                raise ValueError("APP_ENV=production requires AUTH_COOKIE_SECURE=true behind TLS")
         return self
 
     model_config = {

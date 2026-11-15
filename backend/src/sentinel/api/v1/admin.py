@@ -9,7 +9,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from sentinel.ai.gateway import hosted_is_configured
+from sentinel.auth.passwords import hash_password, password_problem
 from sentinel.auth.rbac import PermissionDenied, require
+from sentinel.auth.sessions import forget
 from sentinel.collectors.normalization import utcnow
 from sentinel.config.settings import Settings
 from sentinel.config.store import ConfigUpdateError, list_public_config, update_public_config
@@ -24,6 +26,23 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 class RoleChange(BaseModel):
     role: str = Field(min_length=1, max_length=32)
+
+
+class OperatorCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=80, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$")
+    password: str = Field(min_length=1, max_length=200)
+    role: str = Field(min_length=1, max_length=32)
+
+
+class OperatorEnabled(BaseModel):
+    enabled: bool
+
+
+class OperatorPassword(BaseModel):
+    password: str = Field(min_length=1, max_length=200)
+
+
+_OPERATOR_ROLES = frozenset({"viewer", "operator", "dba", "admin", "auditor", "platform_admin", "security_auditor"})
 
 
 class CredentialRotation(BaseModel):
@@ -105,6 +124,79 @@ def platform(
     }
 
 
+def _manage_operators(caller: Caller) -> None:
+    try:
+        require(caller, "role.manage")
+    except PermissionDenied as exc:
+        raise _deny(exc) from exc
+
+
+def _account(session: Session, username: str) -> OperatorAccount:
+    account = session.scalar(select(OperatorAccount).where(OperatorAccount.username == username.strip().lower()))
+    if account is None:
+        raise HTTPException(status_code=404, detail="That operator account was not found.")
+    return account
+
+
+def _not_self(caller: Caller, username: str, action: str) -> None:
+    if username.strip().lower() == caller.principal.strip().lower():
+        raise HTTPException(
+            status_code=403,
+            detail=f"Authorization failed. An operator cannot {action} their own account here.",
+        )
+
+
+def _operator_row(account: OperatorAccount) -> dict[str, object]:
+    return {
+        "username": account.username,
+        "role": account.role,
+        "enabled": bool(account.enabled),
+        "created_at": account.created_at.isoformat() if account.created_at else "",
+    }
+
+
+@router.get("/operators")
+def list_operators(request: Request, caller: Annotated[Caller, Depends(_caller)]) -> dict[str, object]:
+    """Local operator accounts. Directory operators are managed in the directory and are not listed."""
+    _manage_operators(caller)
+    with _factory(request)() as session:
+        rows = session.scalars(select(OperatorAccount).order_by(OperatorAccount.username)).all()
+        return {"items": [_operator_row(row) for row in rows]}
+
+
+@router.post("/operators", status_code=201)
+def create_operator(
+    body: OperatorCreate,
+    request: Request,
+    caller: Annotated[Caller, Depends(_caller)],
+    settings: Annotated[Settings, Depends(_settings)],
+) -> dict[str, object]:
+    _manage_operators(caller)
+    username = body.username.strip().lower()
+    role = body.role.strip().lower()
+    if role not in _OPERATOR_ROLES:
+        raise HTTPException(status_code=400, detail="Unknown role")
+    problem = password_problem(body.password, username)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    with _factory(request).begin() as session:
+        if session.scalar(select(OperatorAccount.id).where(OperatorAccount.username == username)) is not None:
+            raise HTTPException(status_code=409, detail="That username already exists.")
+        account = OperatorAccount(
+            username=username,
+            password_hash=hash_password(body.password, settings.auth_password_iterations),
+            role=role,
+            enabled=True,
+        )
+        session.add(account)
+        session.flush()
+        record(
+            session, principal=caller.principal, action="operator.create", target=username,
+            outcome="created", correlation_id=str(uuid.uuid4()), detail={"role": role},
+        )
+        return _operator_row(account)
+
+
 @router.post("/operators/{username}/role")
 def change_role(
     username: str,
@@ -112,19 +204,14 @@ def change_role(
     request: Request,
     caller: Annotated[Caller, Depends(_caller)],
 ) -> dict[str, str]:
-    try:
-        require(caller, "role.manage")
-    except PermissionDenied as exc:
-        raise _deny(exc) from exc
+    _manage_operators(caller)
     role = body.role.strip().lower()
-    if role not in {"viewer", "operator", "dba", "admin", "auditor", "platform_admin", "security_auditor"}:
+    if role not in _OPERATOR_ROLES:
         raise HTTPException(status_code=400, detail="Unknown role")
     if username.strip().lower() == caller.principal.strip().lower():
         raise HTTPException(status_code=403, detail="Authorization failed. An operator cannot change their own role.")
     with _factory(request).begin() as session:
-        account = session.scalar(select(OperatorAccount).where(OperatorAccount.username == username.strip()))
-        if account is None:
-            raise HTTPException(status_code=404, detail="That operator account was not found.")
+        account = _account(session, username)
         account.role = role
         record(
             session,
@@ -135,7 +222,58 @@ def change_role(
             correlation_id=str(uuid.uuid4()),
             detail={"role": role},
         )
-        return {"username": account.username, "role": account.role}
+        result = {"username": account.username, "role": account.role}
+    forget(username)
+    return result
+
+
+@router.post("/operators/{username}/enabled")
+def set_operator_enabled(
+    username: str,
+    body: OperatorEnabled,
+    request: Request,
+    caller: Annotated[Caller, Depends(_caller)],
+) -> dict[str, object]:
+    """Disable or re-enable a local account. A disabled account is signed out on its next request."""
+    _manage_operators(caller)
+    _not_self(caller, username, "disable")
+    with _factory(request).begin() as session:
+        account = _account(session, username)
+        account.enabled = body.enabled
+        record(
+            session, principal=caller.principal, action="operator.enabled", target=account.username,
+            outcome="enabled" if body.enabled else "disabled", correlation_id=str(uuid.uuid4()),
+            detail={"enabled": body.enabled},
+        )
+        result = _operator_row(account)
+    forget(username)
+    return result
+
+
+@router.post("/operators/{username}/password")
+def reset_operator_password(
+    username: str,
+    body: OperatorPassword,
+    request: Request,
+    caller: Annotated[Caller, Depends(_caller)],
+    settings: Annotated[Settings, Depends(_settings)],
+) -> dict[str, object]:
+    """Set a new password for another local account. Its open sessions are signed out."""
+    _manage_operators(caller)
+    _not_self(caller, username, "reset the password of")
+    problem = password_problem(body.password, username)
+    if problem:
+        raise HTTPException(status_code=422, detail=problem)
+    with _factory(request).begin() as session:
+        account = _account(session, username)
+        account.password_hash = hash_password(body.password, settings.auth_password_iterations)
+        record(
+            session, principal=caller.principal, action="operator.password", target=account.username,
+            outcome="reset", correlation_id=str(uuid.uuid4()), detail={"self": False},
+        )
+        result: dict[str, object] = {"username": account.username, "updated": True}
+    forget(username)
+    return result
 
 
 @router.post("/targets/{target_id}/credential-rotation")

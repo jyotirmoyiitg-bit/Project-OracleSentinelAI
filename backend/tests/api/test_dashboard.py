@@ -25,6 +25,8 @@ def client(settings, sessions):
 
     app.dependency_overrides[get_session] = request_session
     with TestClient(app) as client:
+        # Registry changes need database.manage, so these tests act as a DBA.
+        client.headers.update({"X-Sentinel-Role": "dba", "X-Sentinel-Principal": "dana"})
         yield client
 
 
@@ -110,6 +112,10 @@ def test_bounded_metrics_reject_invalid_queries(client, make_target, query):
 
 
 def test_registry_validation_and_manual_connection_not_full_health(client):
+    refused = client.post("/api/v1/databases", json={"display_name": "Down", "tns_alias": "SYNTHETIC_OFFLINE"})
+    assert refused.status_code == 422
+    assert client.get("/api/v1/databases").json()["total"] == 0
+    assert client.post("/api/v1/databases", json={"display_name": "No alias"}).status_code == 422
     response = client.post("/api/v1/databases", json={"display_name": "New", "tns_alias": "SYNTHETIC_HEALTHY"})
     assert response.status_code == 201
     target_id = response.json()["id"]
@@ -124,7 +130,9 @@ def test_registry_validation_and_manual_connection_not_full_health(client):
     assert client.get("/api/v1/databases/not-a-uuid").status_code == 400
     assert client.get("/api/v1/databases/00000000-0000-0000-0000-000000000000").status_code == 404
     assert client.put(f"/api/v1/databases/{target_id}", json={"enabled": None}).status_code == 422
-    assert client.delete(f"/api/v1/databases/{target_id}").status_code == 204
+    assert client.delete(
+        f"/api/v1/databases/{target_id}", headers={"X-Sentinel-Role": "admin"},
+    ).status_code == 204
 
 
 def test_target_update_invalidates_current_not_history(client, runner, make_target):
@@ -153,6 +161,25 @@ def test_stale_readings_are_flagged(client, runner, sessions, make_target):
     assert detail["last_health_status"] == "unknown"
     assert all(obs["quality"] == "stale" for obs in detail["latest_observations"]
                if obs["metric_name"].startswith("storage.tablespace."))
+
+
+def test_check_fleet_recollects_enabled_databases_and_remove_requires_a_manager(client, make_target):
+    enabled = make_target()
+    disabled = make_target(alias="SYNTHETIC_OFFLINE", enabled=False)
+    denied = client.post("/api/v1/databases/check-fleet", headers={"X-Sentinel-Role": "operator"})
+    assert denied.status_code == 403
+    assert client.delete(f"/api/v1/databases/{enabled}", headers={"X-Sentinel-Role": "operator"}).status_code == 403
+    checked = client.post("/api/v1/databases/check-fleet", headers={"X-Sentinel-Role": "admin"})
+    assert checked.status_code == 200
+    body = checked.json()
+    assert body["checked"] == 1
+    statuses = {item["display_name"]: item["monitoring_status"] for item in body["items"]}
+    assert statuses["SYNTHETIC_HEALTHY"] == "healthy"
+    assert statuses["SYNTHETIC_OFFLINE"] == "disabled"
+    assert client.get(f"/api/v1/databases/{disabled}").json()["enabled"] is False
+    assert client.delete(f"/api/v1/databases/{enabled}", headers={"X-Sentinel-Role": "dba"}).status_code == 204
+    assert client.get(f"/api/v1/databases/{enabled}").status_code == 404
+    assert client.get("/api/v1/databases").json()["total"] == 1
 
 
 def test_readiness_returns_service_unavailable_on_failure(client):

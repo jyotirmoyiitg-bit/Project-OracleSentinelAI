@@ -9,6 +9,7 @@ export function DatabaseSidebar({
   onHome,
   onSelect,
   onRegister,
+  canRegister = true,
   refreshSeconds,
   refreshKey,
 }: {
@@ -17,6 +18,7 @@ export function DatabaseSidebar({
   onHome: () => void
   onSelect: (id: string) => void
   onRegister: () => void
+  canRegister?: boolean
   refreshSeconds: number
   refreshKey: number
 }) {
@@ -63,7 +65,7 @@ export function DatabaseSidebar({
   return (
     <aside className="database-sidebar" aria-label="Registered databases">
       <div className="sidebar-heading"><h2>Databases</h2><span className="count-pill">{targets?.length ?? '-'}</span></div>
-      <button className="button button-primary sidebar-add" onClick={onRegister}><Plus size={15} /> Add database</button>
+      {canRegister && <button className="button button-primary sidebar-add" onClick={onRegister}><Plus size={15} /> Add database</button>}
       <nav aria-label="Database navigation">
         <button className={`sidebar-home ${homeSelected ? 'sidebar-selected' : ''}`} aria-current={homeSelected ? 'page' : undefined} onClick={onHome}>
           <LayoutDashboard size={17} /> Fleet overview
@@ -75,7 +77,7 @@ export function DatabaseSidebar({
             <button className="button button-secondary" onClick={() => setRetry((value) => value + 1)}><RefreshCw size={14} /> Retry database list</button>
           </div>
         )}
-        {!error && targets?.length === 0 && <p className="sidebar-note">No databases registered. Add a database to begin monitoring.</p>}
+        {!error && targets?.length === 0 && <p className="sidebar-note">No databases registered.</p>}
         <ul className="sidebar-databases">
           {targets?.map((target) => {
             const health = target.enabled ? target.last_health_status.toLowerCase() : 'disabled'
@@ -99,7 +101,7 @@ export function DatabaseSidebar({
         </ul>
       </nav>
       <p className="sidebar-note">Green: healthy. Yellow: warning. Red: critical or down. Gray: unknown, stale or disabled.</p>
-      <p className="sidebar-note">Registrations are saved in PostgreSQL and reloaded after restart.</p>
+      <p className="sidebar-note">Choosing another database keeps the view you are on.</p>
     </aside>
   )
 }

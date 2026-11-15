@@ -30,8 +30,46 @@ TOOL_NAMES = {
     "security": "get_security_posture",
     "failed_jobs": "get_failed_jobs",
     "issues": "get_current_issues",
+    "redo_logs": "get_redo_logs",
+    "control_files": "list_control_files",
+    "segments": "get_largest_segments",
+    "background": "get_background_processes",
+    "session_programs": "get_session_programs",
+    "datafile_sizes": "get_datafile_sizes",
 }
 ACTIVITY_TOOLS = frozenset(TOOL_NAMES.values())
+# Readings that list file paths or object names. Only an admin operator receives them.
+ADMIN_ONLY_READINGS = frozenset({"database_users", "control_files", "segments"})
+TOOL_DESCRIPTIONS = {
+    "get_database_availability": "Live instance, open mode, startup, PDBs, services, and recent startup or shutdown lines.",
+    "get_critical_errors": "Critical ORA and fatal alert-log lines from the last 24 hours.",
+    "get_recent_ora_errors": "ORA- errors from this database alert log for the last 24 hours.",
+    "get_alert_log": "Newest alert log lines from V$DIAG_ALERT_EXT for the last 7 days.",
+    "get_tablespace_pressure": "Tablespace percent used, 80/90/95 bands, autoextend headroom, and temporary space.",
+    "get_tablespace_growth": "When a tablespace may fill, from retained samples rather than AWR.",
+    "get_performance_status": "Startup CPU ratio, active sessions, top wait events, and file I/O latency.",
+    "get_blocking_sessions": "Blocking sessions and locks, long calls, session counts, limits, and recent deadlocks.",
+    "get_sql_workload": "Cursor-cache SQL by elapsed time, executions, reads, and multiple plans.",
+    "get_memory_configuration": "Temporary space, hard parses, library cache, parameters, and resource limits.",
+    "get_recovery_status": "Last successful and failed backups, fast recovery area, and recent archive logs.",
+    "get_data_guard_status": "Database role, archive destinations, and Data Guard lag when a standby exists.",
+    "list_database_users": "Database usernames and account status. The API allows this only for an admin operator.",
+    "get_security_posture": "Locked or expired accounts, invalid objects, and current privileged role grants.",
+    "get_failed_jobs": "Scheduler jobs that failed or stopped in the last 2 days.",
+    "get_current_issues": "Current availability, critical errors, space, and blocking evidence.",
+    "list_datafiles": "Datafiles and tempfiles.",
+    "get_memory_status": "SGA and PGA inside the instance.",
+    "get_top_sql": "Top SQL in the cursor cache by CPU.",
+    "get_sessions": "User sessions that are logged on, with program and machine.",
+    "get_backup_status": "Backups running now and recent RMAN jobs.",
+    "get_running_jobs": "Scheduler jobs and DBMS_JOBs running now.",
+    "get_redo_logs": "Online redo log groups, sizes, status, and member files.",
+    "list_control_files": "Control file names and status. The API allows this only for an admin operator.",
+    "get_largest_segments": "The 20 largest segments by size. The API allows this only for an admin operator.",
+    "get_background_processes": "Background processes of the instance and their status.",
+    "get_session_programs": "Client programs and executables with user sessions, with session and active counts.",
+    "get_datafile_sizes": "Per tablespace: number of datafiles, the largest datafile, and the total size.",
+}
 
 
 @dataclass
@@ -53,6 +91,24 @@ def match_activity(content: str) -> str | None:
         return "errors"
     if "alert log" in text or "alertlog" in text:
         return "alert_log"
+    if "control file" in text or "controlfile" in text:
+        return "control_files"
+    if any(phrase in text for phrase in (
+        "redo log", "redo group", "redo file", "online log", "log group", "logfile", "log file",
+    )):
+        return "redo_logs"
+    if "background process" in text or "background session" in text:
+        return "background"
+    if any(phrase in text for phrase in (
+        "segment", "biggest table", "largest table", "biggest index", "largest index", "biggest object",
+        "largest object", "tables use the most space", "tables using the most space", "table sizes",
+    )):
+        return "segments"
+    if any(phrase in text for phrase in (
+        "everything ok", "everything okay", "all ok", "all okay", "all good", "everything fine",
+        "health check", "any issues", "any issue",
+    )):
+        return "issues"
     if any(phrase in text for phrase in (
         "currently running", "and healthy", "restarted", "outage", "pdb",
         "services operational", "critical status", "unknown, warning",
@@ -60,6 +116,11 @@ def match_activity(content: str) -> str | None:
         return "availability"
     if any(phrase in text for phrase in ("become full", "growth rate", "grown")):
         return "growth"
+    if any(phrase in text for phrase in (
+        "disk space", "database size", "size of the database", "how big is", "how large is",
+        "space used", "storage used", "space is the database", "storage footprint",
+    )):
+        return "tablespace"
     if "temporary" in text or "temp tablespace" in text:
         return "memory_config"
     if any(phrase in text for phrase in (
@@ -80,14 +141,17 @@ def match_activity(content: str) -> str | None:
         return "recovery"
     if "backup" in text or re.search(r"\brman\b", text):
         return "backups"
-    if ("failed" in text and "job" in text) or "stopped executing" in text:
+    if (re.search(r"\bfail(?:ed|ing|ure|ures|s)?\b", text) and "job" in text) or "stopped executing" in text:
         return "failed_jobs"
     if any(phrase in text for phrase in ("scheduler", "dbms_job", "running job", "job running")):
         return "jobs"
     if "job" in text and any(word in text for word in ("running", "program", "scheduled")):
         return "jobs"
-    if any(phrase in text for phrase in (
-        "top query", "top sql", "consuming resource", "slow query", "highest cpu",
+    # A question that names SQL IDs is the wider workload reading, handled by the next rule.
+    if "sql id" not in text and any(phrase in text for phrase in (
+        "top query", "top sql", "consuming resource", "slow query", "highest cpu", "most cpu",
+        "top statement", "expensive quer", "expensive sql", "heaviest sql", "heaviest quer",
+        "top queries", "slowest quer", "slowest sql",
     )):
         return "top_sql"
     if any(phrase in text for phrase in (
@@ -97,14 +161,20 @@ def match_activity(content: str) -> str | None:
         return "sql_workload"
     if any(phrase in text for phrase in (
         "responding slowly", "cpu utilization", "active session", "wait event", "i/o", "io latency",
-        "throughput", "baseline",
-    )):
+        "throughput", "baseline", "waiting on", "waiting for", "top wait", "database waits", "db waits",
+    )) or re.search(r"\bwaits\b", text):
         return "performance"
     if any(phrase in text for phrase in (
         "blocking", "blocked", "unusually long", "session count", "deadlock", "lock contention",
         "close to exhaustion", "connection limit",
-    )):
+    )) or re.search(r"\block(?:s|ing)?\b", text):
         return "blocking"
+    if any(phrase in text for phrase in (
+        "users are connected", "users connected", "connected users", "user connections",
+        "application program", "application process", "programs are connected", "programs connected",
+        "which programs", "what programs", "client program", "executable", "app exe", "exe ",
+    )):
+        return "sessions"
     if "who" in text and any(word in text for word in ("logon", "logged", "connected", "session")):
         return "sessions"
     if any(phrase in text for phrase in ("logged on", "logged in", "who is connected", "sessions")):
@@ -123,6 +193,10 @@ def match_activity(content: str) -> str | None:
         return "database_users"
     if any(phrase in text for phrase in ("locked", "expired", "privileged", "invalid object", "invalid database")):
         return "security"
+    if any(phrase in text for phrase in (
+        "database users", "db users", "all users", "user accounts", "database accounts", "schema list",
+    )):
+        return "database_users"
     if any(phrase in text for phrase in (
         "is there a problem", "any problem", "problem with this database", "problem with the database",
         "anything wrong", "something wrong", "what is wrong", "what's wrong", "whats wrong",
@@ -342,6 +416,46 @@ def _micros(value: str) -> str:
 
 
 SYNTHETIC: dict[str, tuple[dict[str, str], ...]] = {
+    "session_programs": (
+        {"source": "v$session", "program": "java.exe", "session_count": "12", "active_count": "4"},
+        {"source": "v$session", "program": "sqlplus.exe", "session_count": "3", "active_count": "1"},
+        {"source": "v$session", "program": "x_run.exe", "session_count": "2", "active_count": "0"},
+    ),
+    "datafile_sizes": (
+        {
+            "source": "dba_data_files", "tablespace_name": "USERS", "file_count": "3",
+            "largest_file_bytes": "34359738368", "total_bytes": "68719476736",
+        },
+        {
+            "source": "dba_data_files", "tablespace_name": "SYSTEM", "file_count": "1",
+            "largest_file_bytes": "1073741824", "total_bytes": "1073741824",
+        },
+    ),
+    "redo_logs": (
+        {"source": "v$log", "group_no": "1", "thread_no": "1", "bytes": "209715200", "status": "CURRENT"},
+        {"source": "v$log", "group_no": "2", "thread_no": "1", "bytes": "209715200", "status": "INACTIVE"},
+        {"source": "v$logfile", "group_no": "1", "member": "/u01/oradata/redo01.log"},
+        {"source": "v$logfile", "group_no": "2", "member": "/u01/oradata/redo02.log"},
+    ),
+    "control_files": (
+        {"source": "v$controlfile", "name": "/u01/oradata/control01.ctl", "status": ""},
+        {"source": "v$controlfile", "name": "/u02/oradata/control02.ctl", "status": ""},
+    ),
+    "segments": (
+        {
+            "source": "dba_segments", "owner": "APPUSER", "segment_name": "ORDERS", "segment_type": "TABLE",
+            "tablespace_name": "USERS", "bytes": "1073741824",
+        },
+        {
+            "source": "dba_segments", "owner": "APPUSER", "segment_name": "ORDERS_PK", "segment_type": "INDEX",
+            "tablespace_name": "USERS", "bytes": "268435456",
+        },
+    ),
+    "background": (
+        {"source": "v$session", "program": "oracle (PMON)", "status": "ACTIVE", "state": "WAITING"},
+        {"source": "v$session", "program": "oracle (DBW0)", "status": "ACTIVE", "state": "WAITING"},
+        {"source": "v$session", "program": "oracle (LGWR)", "status": "ACTIVE", "state": "WAITING"},
+    ),
     "datafiles": (
         {
             "source": "dba_data_files", "file_name": "/u01/oradata/users01.dbf", "tablespace_name": "USERS",

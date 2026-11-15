@@ -6,7 +6,14 @@ from collections.abc import Callable
 from sentinel.ai.safety import ALLOWED_TOOLS, PolicyDenied, digest
 from sentinel.ai.tools.activity import database_activity
 from sentinel.ai.tools.context import ToolContext
-from sentinel.ai.tools.health import database_health, recent_events
+from sentinel.ai.tools.fleet import (
+    fleet_compliance,
+    fleet_datafiles,
+    fleet_incidents,
+    fleet_programs,
+    fleet_tablespaces,
+)
+from sentinel.ai.tools.health import database_health, fleet_health, recent_events
 from sentinel.ai.tools.knowledge import compliance_status, knowledge_search
 from sentinel.ai.tools.storage import fra_status, tablespace_status
 from sentinel.ai.types import ToolOutcome
@@ -41,6 +48,18 @@ HANDLERS: dict[str, Handler] = {
     "get_security_posture": database_activity,
     "get_failed_jobs": database_activity,
     "get_current_issues": database_activity,
+    "get_redo_logs": database_activity,
+    "list_control_files": database_activity,
+    "get_largest_segments": database_activity,
+    "get_background_processes": database_activity,
+    "get_fleet_health": fleet_health,
+    "get_session_programs": database_activity,
+    "get_datafile_sizes": database_activity,
+    "get_fleet_incidents": fleet_incidents,
+    "get_fleet_compliance": fleet_compliance,
+    "get_fleet_tablespaces": fleet_tablespaces,
+    "find_fleet_programs": fleet_programs,
+    "find_fleet_datafiles": fleet_datafiles,
 }
 
 

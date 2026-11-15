@@ -326,3 +326,70 @@ def test_failed_logon_reports_every_card_and_does_not_error(settings, sessions, 
     assert body["sga"]["items"] == []
     assert any("12541" in item for item in body["limitations"])
     assert "no listener" not in response.text.lower()
+
+
+def test_waits_are_open_to_an_operator_and_name_no_sql(settings, sessions, make_target) -> None:
+    target_id = make_target(alias="PDBORCL")
+    client = _client(settings, sessions)
+    try:
+        operator = client.get(
+            f"/api/v1/databases/{target_id}/graph/waits",
+            headers={"X-Sentinel-Role": "operator", "X-Sentinel-Principal": "pat"},
+        )
+        missing = client.get(
+            "/api/v1/databases/00000000-0000-0000-0000-000000000000/graph/waits",
+            headers={"X-Sentinel-Role": "admin", "X-Sentinel-Principal": "sentinel"},
+        )
+        disabled_id = make_target(alias="RETIRED", enabled=False)
+        disabled = client.get(
+            f"/api/v1/databases/{disabled_id}/graph/waits",
+            headers={"X-Sentinel-Role": "admin", "X-Sentinel-Principal": "sentinel"},
+        )
+    finally:
+        client.__exit__(None, None, None)
+    assert operator.status_code == 200
+    body = operator.json()
+    assert [item["event"] for item in body["events"]] == ["db file sequential read", "log file sync"]
+    assert body["events"][0]["wait_class"] == "User I/O"
+    assert body["cpu_micro"] == 8000000
+    assert "Idle" not in response_text(body)
+    assert "sql" not in body
+    assert missing.status_code == 404
+    assert disabled.status_code == 404
+
+
+def test_wait_activity_is_open_to_an_operator_and_names_no_sql(settings, sessions, make_target) -> None:
+    target_id = make_target(alias="PDBORCL")
+    client = _client(settings, sessions)
+    try:
+        operator = client.get(
+            f"/api/v1/databases/{target_id}/wait/activity",
+            headers={"X-Sentinel-Role": "operator", "X-Sentinel-Principal": "pat"},
+        )
+        missing = client.get(
+            "/api/v1/databases/00000000-0000-0000-0000-000000000000/wait/activity",
+            headers={"X-Sentinel-Role": "admin", "X-Sentinel-Principal": "sentinel"},
+        )
+        disabled_id = make_target(alias="RETIRED", enabled=False)
+        disabled = client.get(
+            f"/api/v1/databases/{disabled_id}/wait/activity",
+            headers={"X-Sentinel-Role": "admin", "X-Sentinel-Principal": "sentinel"},
+        )
+    finally:
+        client.__exit__(None, None, None)
+    assert operator.status_code == 200
+    body = operator.json()
+    assert body["locking"]["locks"][0]["name"] == "Process Startup"
+    assert body["blocking"]["locks"][0]["lock_type"] == "TX"
+    assert body["blocking"]["locks"][0]["mode_wanted"] == "Exclusive"
+    assert body["parsing"]["counters"][0]["name"] == "parse count (total)"
+    assert body["buffer_busy"]["events"][0]["event"] == "buffer busy waits"
+    assert body["buffer_busy"]["classes"][0]["name"] == "data block"
+    assert body["io"]["files"]["reads"] == 100
+    assert "sql" not in body
+    assert missing.status_code == 404
+    assert disabled.status_code == 404
+
+
+def response_text(body: dict) -> str:
+    return " ".join(item["wait_class"] for item in body["events"])

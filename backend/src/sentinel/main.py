@@ -71,6 +71,41 @@ class MetricsMiddleware:
             observe_request(str(scope.get("method") or "GET"), str(path), status, time.perf_counter() - started)
 
 
+class SecurityHeadersMiddleware:
+    """Headers every response carries. API answers are never cached or framed."""
+
+    def __init__(self, app: ASGIApp, settings: Settings) -> None:
+        self.app = app
+        self.settings = settings
+
+    async def __call__(self, scope: dict[str, object], receive: ASGIApp, send: ASGIApp) -> None:
+        if scope.get("type") != "http":
+            await self.app(scope, receive, send)
+            return
+        path = str(scope.get("path") or "")
+        extra: list[tuple[bytes, bytes]] = [
+            (b"x-content-type-options", b"nosniff"),
+            (b"x-frame-options", b"DENY"),
+            (b"referrer-policy", b"no-referrer"),
+        ]
+        if path.startswith("/api/"):
+            extra.append((b"cache-control", b"no-store"))
+            extra.append((b"content-security-policy", b"default-src 'none'; frame-ancestors 'none'"))
+        if self.settings.auth_cookie_secure:
+            extra.append((b"strict-transport-security", b"max-age=31536000; includeSubDomains"))
+
+        async def send_wrapper(message: dict[str, object]) -> None:
+            if message.get("type") == "http.response.start":
+                headers = message.get("headers")
+                present = {key.lower() for key, _value in headers} if isinstance(headers, list) else set()
+                merged = list(headers) if isinstance(headers, list) else []
+                merged.extend(item for item in extra if item[0] not in present)
+                message = {**message, "headers": merged}
+            await send(message)
+
+        await self.app(scope, receive, send_wrapper)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = app.state.settings
@@ -151,6 +186,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
     )
     app.add_middleware(RequireSignIn, settings=settings)
+    app.add_middleware(SecurityHeadersMiddleware, settings=settings)
     app.include_router(auth_router)
     app.include_router(router)
     app.include_router(incidents_router)

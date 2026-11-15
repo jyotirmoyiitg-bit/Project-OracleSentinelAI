@@ -331,11 +331,13 @@ describe('GraphDB page', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('button', { name: 'GraphDB' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'GraphDB' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'GraphDB' })).not.toBeInTheDocument()
     const chooser = await screen.findByRole('region', { name: 'Registered databases' })
     await user.click(within(chooser).getByRole('button', { name: /FINANCE-PRD/ }))
     expect(await screen.findByRole('heading', { name: 'SGA' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'FINANCE-PRD' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'View waits' })).not.toBeInTheDocument()
   })
 
   it('shows an operator the picture with the disk-storage summary only', async () => {
@@ -344,7 +346,7 @@ describe('GraphDB page', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('button', { name: 'GraphDB' })).toBeInTheDocument()
+    expect(await screen.findByRole('tab', { name: 'GraphDB' })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByRole('heading', { name: 'FINANCE-PRD' })).toBeInTheDocument()
     expect(await screen.findByText('Buffer Cache Size')).toBeInTheDocument()
     expect(await screen.findByText(SUMMARY_NOTE)).toBeInTheDocument()

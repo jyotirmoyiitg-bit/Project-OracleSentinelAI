@@ -37,13 +37,12 @@ class LocalChatProvider:
         structured_schema: dict[str, object] | None,
         correlation_id: str,
     ) -> ModelReply:
-        del structured_schema
         reject_native_tools(tools)
         payload = {
             "model": self.model,
             "messages": messages,
             "stream": False,
-            "format": "json",
+            "format": structured_schema if structured_schema else "json",
             "options": {"num_predict": self.max_output_tokens},
         }
         body = await self._post("/api/chat", payload, correlation_id)

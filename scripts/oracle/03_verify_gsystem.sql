@@ -117,5 +117,15 @@ FROM v$diag_alert_ext
 WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '1' DAY
   AND rownum <= 1;
 
+SELECT eq_name, total_req#, total_wait#, cum_wait_time
+FROM v$enqueue_statistics WHERE rownum <= 1;
+
+SELECT sid, type, lmode, request FROM v$lock WHERE rownum <= 1;
+
+SELECT class, count AS wait_count, time AS wait_time FROM v$waitstat WHERE rownum <= 1;
+
+SELECT sid, event, total_waits, time_waited_micro
+FROM v$session_event WHERE rownum <= 1;
+
 PROMPT PASS: required monitoring views and columns are accessible in this container.
 PROMPT Empty FRA/archive/alert rows do not imply that these features are configured or populated.

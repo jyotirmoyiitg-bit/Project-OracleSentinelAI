@@ -66,6 +66,13 @@ GRANT SELECT ON SYS.V_$LOGFILE TO GSYSTEM;
 GRANT SELECT ON SYS.DBA_SEGMENTS TO GSYSTEM;
 GRANT SELECT ON SYS.V_$SGASTAT TO GSYSTEM;
 
+-- WaitDB lock activity, blocking locks, and buffer-busy class. SELECT only.
+GRANT SELECT ON SYS.V_$ENQUEUE_STATISTICS TO GSYSTEM;
+GRANT SELECT ON SYS.V_$LOCK TO GSYSTEM;
+GRANT SELECT ON SYS.V_$WAITSTAT TO GSYSTEM;
+GRANT SELECT ON SYS.V_$SESSION_EVENT TO GSYSTEM;
+
 PROMPT Phase 15 shared-pool grant is included: V_$SGASTAT.
+PROMPT WaitDB grants are included: V_$ENQUEUE_STATISTICS, V_$LOCK, V_$WAITSTAT, and V_$SESSION_EVENT.
 PROMPT Phase 13 disk storage grants are included: V_$CONTROLFILE, V_$LOG, and V_$LOGFILE.
 PROMPT Monitoring grants applied in the current container. Existing passwords and account locks were not changed.

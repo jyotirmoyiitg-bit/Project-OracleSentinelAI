@@ -6,7 +6,6 @@ import { HealthBadge } from './components/HealthBadge'
 import { StatePanel } from './components/StatePanel'
 import { StorageCylinder, percentLabel } from './components/StorageCylinder'
 import type { Target, TargetDetails } from './types'
-
 const NOT_FOUND = 'Database target not found'
 const HOST_MISSING = 'The host did not return that statistic.'
 const LOADING = 'Loading the current snapshot…'

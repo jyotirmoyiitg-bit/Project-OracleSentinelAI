@@ -16,13 +16,15 @@ class SessionIdentity:
     principal: str
     role: str
     method: str
+    fingerprint: str = ""
 
 
-def issue_token(settings: Settings, principal: str, role: str, method: str) -> str:
+def issue_token(settings: Settings, principal: str, role: str, method: str, fingerprint: str = "") -> str:
     payload = {
         "principal": principal,
         "role": role,
         "method": method,
+        "fp": fingerprint,
         "exp": int(time.time()) + settings.auth_session_hours * 3600,
     }
     body = base64.urlsafe_b64encode(
@@ -45,14 +47,15 @@ def read_token(settings: Settings, token: str) -> SessionIdentity | None:
         principal = str(payload["principal"])
         role = str(payload["role"])
         method = str(payload["method"])
+        fingerprint = str(payload.get("fp") or "")
         expires = int(payload["exp"])
-    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+    except (KeyError, TypeError, ValueError, AttributeError, json.JSONDecodeError):
         return None
     if expires < int(time.time()) or not principal or role not in ALLOWED_ROLES:
         return None
     if method not in {"ad", "local", "oidc"}:
         return None
-    return SessionIdentity(principal[:200], role, method)
+    return SessionIdentity(principal[:200], role, method, fingerprint[:64])
 
 
 def _secret(settings: Settings) -> bytes:

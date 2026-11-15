@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy import delete, select
@@ -11,17 +11,49 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from sentinel.collectors import checkpoints
 from sentinel.collectors.health_status import compute_health
-from sentinel.collectors.normalization import PROBES, normalize, utcnow
+from sentinel.collectors.normalization import PROBES, naive_utc, normalize, utcnow
 from sentinel.collectors.profiles import stale_after
 from sentinel.config.settings import Settings
 from sentinel.domain.models import CapabilityMatrix, Observation
+from sentinel.incidents.fingerprinting import compute_fingerprint
+from sentinel.incidents.lifecycle import IncidentLifecycle
 from sentinel.notifications.smtp import SMTPNotifier
-from sentinel.persistence.models import DatabaseTarget, DiagnosticEvent, PollRun
+from sentinel.persistence.models import DatabaseTarget, DiagnosticEvent, Notification, PollRun
 from sentinel.persistence.models import Observation as StoredObservation
 from sentinel.persistence.telemetry import checkpoints_for, current_for, save_batch
 from sentinel.rules.compliance_store import evaluate_target_compliance, sync_compliance_notifications
 
 logger = logging.getLogger(__name__)
+_UNREACHABLE_DISABLE_AFTER = timedelta(days=7)
+
+
+def _unreachable_for_a_week(target: DatabaseTarget, finished: datetime) -> bool:
+    anchor = target.last_connection_at or target.created_at
+    if anchor is None or not target.enabled:
+        return False
+    return finished - naive_utc(anchor) >= _UNREACHABLE_DISABLE_AFTER
+
+
+def _disable_unreachable_target(session: Session, target: DatabaseTarget, finished: datetime) -> None:
+    """Disable a database the monitoring account has not reached for seven days and ask for removal."""
+    target.enabled = False
+    rule_id = "gsystem.unreachable"
+    message = (
+        f"GSYSTEM could not connect to {target.display_name} for 7 days. "
+        "The database is disabled. Remove it from the registry."
+    )
+    incident, created = IncidentLifecycle.open_or_update(
+        session, target_id=target.id, rule_id=rule_id,
+        fingerprint=compute_fingerprint(rule_id, target.id, ""),
+        severity="critical", message=message, evidence={"reason": "monitoring_account_unreachable"}, now=finished,
+    )
+    if not created:
+        return
+    session.flush()
+    session.add(Notification(
+        incident_id=incident.id, channel="web", recipient="", subject=message,
+        dedup_id=f"{incident.id}:web", status="unread", attempt_count=0,
+    ))
 
 
 class ProbeAdapter(Protocol):
@@ -123,6 +155,8 @@ class CollectionRunner:
             if probe in {"configuration", "instance", "fra_archive"}:
                 self._evaluate_compliance(session, target, current, points, finished)
             target.last_health_status = compute_health(target, points, current, self.settings, finished)
+            if probe == "connectivity" and error_class and _unreachable_for_a_week(target, finished):
+                _disable_unreachable_target(session, target, finished)
             if target.last_health_status == "offline":
                 target.health_valid_until = finished + timedelta(seconds=stale_after(
                     self.settings, target.poll_profile, target.environment, "connectivity",

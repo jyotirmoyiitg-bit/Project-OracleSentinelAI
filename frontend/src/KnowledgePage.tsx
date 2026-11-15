@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { BookOpen, CircleAlert, Library, RefreshCw, Search } from 'lucide-react'
-import { ApiError, listKnowledgeDocuments, reindexKnowledge, searchKnowledge } from './api'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { BookOpen, CircleAlert, Library, RefreshCw, Search, Upload } from 'lucide-react'
+import { ApiError, listKnowledgeDocuments, reindexKnowledge, searchKnowledge, uploadKnowledge } from './api'
 import { formatDate, relativeTime } from './format'
 import { StatePanel } from './components/StatePanel'
 import type { KnowledgeDocument, KnowledgePassage, KnowledgeSearchResponse } from './types'
@@ -24,10 +24,20 @@ function citationLabel(passage: KnowledgePassage): string {
 export function KnowledgePage({
   refreshSeconds,
   onRefreshStatus,
+  role,
 }: {
   refreshSeconds: number
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
+  role?: string
 }) {
+  const isAdmin = role === 'admin' || role === 'platform_admin'
+  const [uploadCategory, setUploadCategory] = useState('Knowledge')
+  const [uploadReplace, setUploadReplace] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [uploadMessage, setUploadMessage] = useState('')
+  const [uploadError, setUploadError] = useState('')
+  const fileInput = useRef<HTMLInputElement>(null)
   const [documents, setDocuments] = useState<KnowledgeDocument[] | null>(null)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
@@ -104,6 +114,30 @@ export function KnowledgePage({
     }
   }
 
+  async function onUpload(event: FormEvent) {
+    event.preventDefault()
+    if (!uploadFile) {
+      setUploadError('Choose a PDF, DOCX, TXT, or Markdown file.')
+      return
+    }
+    setUploading(true)
+    setUploadError('')
+    setUploadMessage('')
+    try {
+      const report = await uploadKnowledge(uploadFile, uploadCategory, uploadReplace)
+      const errors = report.errors.length > 0 ? ` ${report.errors.join(' ')}` : ''
+      setUploadMessage(`${report.relative_path}: ${report.note}${errors}`)
+      setUploadFile(null)
+      setUploadReplace(false)
+      if (fileInput.current) fileInput.current.value = ''
+      await refresh(false)
+    } catch (reason) {
+      setUploadError(reason instanceof ApiError ? reason.message : 'The document could not be uploaded.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const visible = (documents ?? []).filter((document) => !category || document.category === category)
 
   return (
@@ -116,13 +150,54 @@ export function KnowledgePage({
         </div>
         <div className="heading-meta">
           <span className="updated-note"><RefreshCw size={13} /> {lastUpdated ? `Updated ${relativeTime(lastUpdated)}` : 'Waiting for data'}</span>
-          <button className="button button-secondary" type="button" onClick={() => { void onReindex() }} disabled={reindexing}>
-            <Library size={14} /> {reindexing ? 'Reindexing…' : 'Reindex folders'}
-          </button>
+          {isAdmin && (
+            <button className="button button-secondary" type="button" onClick={() => { void onReindex() }} disabled={reindexing}>
+              <Library size={14} /> {reindexing ? 'Reindexing…' : 'Reindex folders'}
+            </button>
+          )}
         </div>
       </section>
 
       {reindexMessage && <p className="inline-success" role="status">{reindexMessage}</p>}
+
+      {isAdmin && (
+        <section className="panel knowledge-upload" aria-labelledby="knowledge-upload-title">
+          <div className="panel-heading">
+            <div>
+              <h2 id="knowledge-upload-title"><Upload size={18} /> Add a document</h2>
+              <p className="knowledge-note">PDF, DOCX, TXT, or Markdown. The file is saved in its intake folder, checked, and indexed for search and the copilot.</p>
+            </div>
+          </div>
+          <form className="knowledge-upload-form" onSubmit={(event) => { void onUpload(event) }}>
+            <label className="knowledge-upload-file">
+              <span className="sr-only">Document file</span>
+              <input
+                ref={fileInput}
+                type="file"
+                aria-label="Document file"
+                accept=".pdf,.docx,.txt,.md"
+                onChange={(event) => { setUploadFile(event.target.files?.[0] ?? null); setUploadError('') }}
+              />
+            </label>
+            <label className="filter-control">
+              <span className="sr-only">Upload category</span>
+              <select aria-label="Upload category" value={uploadCategory} onChange={(event) => setUploadCategory(event.target.value)}>
+                <option value="Knowledge">Knowledge (manuals, runbooks)</option>
+                <option value="Policy">Policy (company rules)</option>
+              </select>
+            </label>
+            <label className="knowledge-upload-replace">
+              <input type="checkbox" checked={uploadReplace} onChange={(event) => setUploadReplace(event.target.checked)} />
+              Replace a document with the same name
+            </label>
+            <button className="button button-primary" type="submit" disabled={uploading}>
+              <Upload size={14} /> {uploading ? 'Uploading…' : 'Upload and index'}
+            </button>
+          </form>
+          {uploadError && <div className="inline-error knowledge-upload-note" role="alert"><CircleAlert size={16} /> {uploadError}</div>}
+          {uploadMessage && <p className="inline-success knowledge-upload-note" role="status">{uploadMessage}</p>}
+        </section>
+      )}
 
       <section className="panel" aria-labelledby="knowledge-search-title">
         <div className="panel-heading">
@@ -193,7 +268,7 @@ export function KnowledgePage({
         ) : loading && !documents ? (
           <div className="loading-state" role="status"><span className="spinner" /> Loading documents…</div>
         ) : visible.length === 0 ? (
-          <StatePanel title="No documents indexed" message="Add PDF, DOCX, text, or Markdown files to the ora-19c-manual or Policy folders, then reindex." icon={<BookOpen size={24} />} />
+          <StatePanel title="No documents indexed" message={isAdmin ? 'Upload a PDF, DOCX, text, or Markdown file above.' : 'An administrator has not added a document yet.'} icon={<BookOpen size={24} />} />
         ) : (
           <div className="table-scroll">
             <table className="data-table knowledge-table">

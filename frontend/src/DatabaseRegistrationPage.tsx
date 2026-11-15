@@ -96,7 +96,7 @@ export function DatabaseRegistrationPage({ onBack, onRegistered, onRefreshStatus
             <button type="button" className="button button-secondary" disabled={!canSubmit} onClick={() => { void execute(false) }}>Test connection</button>
             <button type="submit" className="button button-primary" disabled={!canSubmit}><Plus size={15} />{busy ? 'Working...' : 'Register database'}</button>
           </div>
-          <p className="registration-note">Registration rechecks the connection before saving. A connection test does not mark database health green; health stays unknown until fresh monitoring probes complete.</p>
+          <p className="registration-note">Registration rechecks the connection before saving. If the monitoring account cannot connect, the database is not registered. Health stays unknown until fresh monitoring probes complete. A database that stays unreachable for 7 days is disabled, and the operator is asked to remove it.</p>
         </form>
       </section>
     </main>

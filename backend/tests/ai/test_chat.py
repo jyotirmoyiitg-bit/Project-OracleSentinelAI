@@ -159,6 +159,7 @@ def test_disabled_copilot_keeps_monitoring_available_and_blocks_injected_tools(c
     message = messages[0]
     assert message["llm_used"] is False
     assert message["provider_status"] == "disabled"
+    assert message["answer"]["kind"] == "fallback"
     assert any(item["label"] == "FRA status" for item in message["guided_commands"])
     tools = message["tools"]
     assert any(item["tool"] == "execute_sql" and item["decision"] == "denied" for item in tools)
@@ -515,3 +516,67 @@ async def test_database_change_is_explained_and_not_executed(settings, sessions)
     assert "ALTER DATABASE ARCHIVELOG" in answer.content
     assert "No statement was sent to Oracle." in answer.content
     assert any(item["tool"] == "execute_sql" and item["decision"] == "denied" for item in answer.tools)
+
+
+class _RepairModel:
+    def __init__(self) -> None:
+        self.name = "local"
+        self.model = "test-local"
+        self.disclosure = "local"
+        self.available = True
+        self.calls = 0
+        self.messages: list[dict[str, str]] = []
+
+    async def generate(self, messages: list[dict[str, str]], *, tools: object, correlation_id: str) -> ModelReply:
+        del tools, correlation_id
+        self.calls += 1
+        self.messages = messages
+        if self.calls == 1:
+            return ModelReply("not json at all", 1, 1, self.name, self.model)
+        return ModelReply(json.dumps({
+            "assessment": "Limitations: none in the data. The FRA is **nearly full**.",
+            "confidence": "high",
+            "limitations": "Latest reading only.",
+            "next_steps": ["Free space; then recheck", "Review archive destination"],
+        }), 3, 5, self.name, self.model)
+
+
+@pytest.mark.asyncio
+async def test_structured_answer_survives_a_semicolon_step_and_repairs_bad_json(settings, sessions) -> None:
+    model = _RepairModel()
+    with sessions.begin() as session:
+        thread_id = _thread(session, "operator").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        answer = await orchestrator.answer(session, stored, Caller("operator", "reader"), "What is the Oracle architecture?")
+    assert model.calls == 2
+    assert answer.structured["kind"] == "model"
+    assert answer.structured["confidence"] == "high"
+    assert answer.structured["summary"].startswith("Limitations: none in the data.")
+    assert answer.structured["next_steps"][0] == "Free space; then recheck"
+    assert answer.structured["limitations"].startswith("Latest reading only.")
+    assert "Free space; then recheck" in answer.content
+
+
+@pytest.mark.asyncio
+async def test_followup_turn_sends_prior_turn_as_history(settings, sessions) -> None:
+    model = _ScriptedModel(json.dumps({
+        "assessment": "An Oracle instance has a system global area.",
+        "confidence": "medium", "limitations": "", "next_steps": [],
+    }))
+    with sessions.begin() as session:
+        thread_id = _thread(session, "operator").id
+    orchestrator = Orchestrator(settings, model)  # type: ignore[arg-type]
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        await orchestrator.answer(session, stored, Caller("operator", "reader"), "What is the Oracle architecture?")
+    with sessions.begin() as session:
+        stored = session.get(ChatThread, thread_id)
+        assert stored is not None
+        await orchestrator.answer(session, stored, Caller("operator", "reader"), "What is the Oracle architecture?")
+    roles = [item["role"] for item in model.messages]
+    assert roles[0] == "system"
+    assert "user" in roles[1:-1] and "assistant" in roles[1:-1]

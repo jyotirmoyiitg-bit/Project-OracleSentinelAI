@@ -40,6 +40,36 @@ def seed_notification(sessions, target_id, channel="web"):
         return str(notification.id), str(incident.id)
 
 
+def test_incident_list_names_each_database_and_filters_by_it(client, sessions, make_target):
+    finance = make_target("FINANCE")
+    warehouse = make_target("WAREHOUSE")
+    _, finance_incident = seed_notification(sessions, finance)
+    _, warehouse_incident = seed_notification(sessions, warehouse)
+    listed = client.get("/api/v1/incidents").json()
+    names = {item["id"]: item["target_name"] for item in listed["items"]}
+    assert names[finance_incident] == "FINANCE"
+    assert names[warehouse_incident] == "WAREHOUSE"
+    filtered = client.get(f"/api/v1/incidents?target_id={finance}").json()
+    assert filtered["total"] == 1
+    assert filtered["items"][0]["id"] == finance_incident
+    assert filtered["items"][0]["target_name"] == "FINANCE"
+    assert client.get(f"/api/v1/incidents/{warehouse_incident}").json()["target_name"] == "WAREHOUSE"
+    assert client.get("/api/v1/incidents?target_id=not-a-uuid").status_code == 400
+
+
+def test_only_an_administrator_can_clear_every_incident(client, sessions, make_target):
+    target_id = make_target("FINANCE")
+    seed_notification(sessions, target_id)
+    seed_notification(sessions, target_id, "smtp")
+    assert client.delete("/api/v1/incidents", headers={"X-Sentinel-Role": "operator"}).status_code == 403
+    assert client.delete("/api/v1/incidents", headers={"X-Sentinel-Role": "dba"}).status_code == 403
+    cleared = client.delete("/api/v1/incidents", headers={"X-Sentinel-Role": "admin"})
+    assert cleared.status_code == 200
+    assert cleared.json() == {"deleted": 2}
+    assert client.get("/api/v1/incidents").json()["total"] == 0
+    assert client.get("/api/v1/notifications").json() == []
+
+
 def test_empty_portal_inbox(client):
     assert client.get("/api/v1/portal-notifications").json() == {
         "items": [], "total": 0, "unread_count": 0, "page": 1, "page_size": 10,

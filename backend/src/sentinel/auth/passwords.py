@@ -23,3 +23,19 @@ def verify_password(password: str, stored: str) -> bool:
         return False
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, iterations)
     return hmac.compare_digest(digest, expected)
+
+
+MIN_PASSWORD_LENGTH = 10
+
+
+def password_problem(password: str, username: str = "") -> str | None:
+    """Why a new local password is refused, or None when it is acceptable."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return f"The password must be at least {MIN_PASSWORD_LENGTH} characters."
+    if len(password) > 200:
+        return "The password must be at most 200 characters."
+    if not any(char.isalpha() for char in password) or not any(char.isdigit() for char in password):
+        return "The password must contain a letter and a digit."
+    if username and username.strip().lower() in password.lower():
+        return "The password must not contain the username."
+    return None

@@ -4,17 +4,17 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Literal
 
 import oracledb
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
 from sentinel.adapters.oracle.adapter import OracleAdapter
 from sentinel.adapters.oracle.connection import network_aliases
-from sentinel.api.v1.dashboard import detail_response, effective_status, target_response
+from sentinel.api.v1.dashboard import detail_response, target_response
 from sentinel.api.v1.schemas import (
     ComplianceSummary,
     ConnectionTestRequest,
@@ -23,18 +23,23 @@ from sentinel.api.v1.schemas import (
     DatabaseTargetCreate,
     DatabaseTargetResponse,
     DatabaseTargetUpdate,
+    FleetCheckItem,
+    FleetCheckResponse,
     FleetHealthSummary,
     FleetResponse,
-    HealthStatus,
     ObservationResponse,
     TnsAliasListResponse,
     TnsAliasResponse,
     TnsRegistrationRequest,
 )
+from sentinel.auth.rbac import PermissionDenied, require
 from sentinel.collectors.adapters import adapter_for
-from sentinel.collectors.normalization import naive_utc, utcnow
+from sentinel.collectors.jobs import CollectionRunner
+from sentinel.collectors.normalization import PROBES, naive_utc, utcnow
 from sentinel.config.settings import Settings
-from sentinel.persistence.models import CollectorCheckpoint, CurrentObservation, DatabaseTarget
+from sentinel.knowledge.acl import Caller, caller_from_headers
+from sentinel.observability.audit import record_action
+from sentinel.persistence.models import CollectorCheckpoint, CurrentObservation, DatabaseTarget, Incident
 from sentinel.persistence.repositories import DatabaseTargetRepository, TargetCredentialRepository
 from sentinel.persistence.session import get_session
 from sentinel.persistence.telemetry import checkpoints_for, current_for, history
@@ -43,6 +48,7 @@ from sentinel.rules.policy_definitions import load_policy_definitions
 
 router = APIRouter(prefix="/api/v1/databases", tags=["databases"])
 logger = logging.getLogger(__name__)
+DisplayedHealth = Literal["healthy", "warning", "critical", "unknown", "offline", "disabled"]
 
 
 def runtime_settings(request: Request) -> Settings:
@@ -67,53 +73,153 @@ def find_target(session: Session, target_id: str) -> DatabaseTarget:
     return target
 
 
-@router.get("", response_model=FleetResponse)
-def list_databases(
-    session: SessionDep, settings: SettingsDep,
-    page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
-    environment: str | None = None, health_status: HealthStatus | None = None, enabled_only: bool = False,
-) -> FleetResponse:
+def _critical_counts(session: Session, target_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
+    """Open critical incidents per database. A database with none is zero, not unknown."""
+    if not target_ids:
+        return {}
+    rows = session.execute(
+        select(Incident.target_id, func.count())
+        .where(Incident.target_id.in_(target_ids), Incident.state != "resolved", Incident.severity == "critical")
+        .group_by(Incident.target_id),
+    ).all()
+    return {row[0]: int(row[1]) for row in rows}
+
+
+def fleet_rows(
+    session: Session, settings: Settings, environment: str | None = None, enabled_only: bool = False,
+) -> tuple[list[DatabaseTargetResponse], list[str]]:
+    """Every registered database with the same health the fleet table shows."""
     now = utcnow()
     filters: list[ColumnElement[bool]] = []
     if enabled_only:
         filters.append(DatabaseTarget.enabled.is_(True))
     if environment:
         filters.append(DatabaseTarget.environment == environment)
-    if health_status:
-        filters.append(effective_status(now) == health_status)
-    total = session.scalar(select(func.count()).select_from(DatabaseTarget).where(*filters)) or 0
-    targets = list(session.scalars(select(DatabaseTarget).where(*filters)
-                                  .order_by(DatabaseTarget.display_name, DatabaseTarget.id)
-                                  .offset((page - 1) * page_size).limit(page_size)))
+    targets = list(session.scalars(
+        select(DatabaseTarget).where(*filters).order_by(DatabaseTarget.display_name, DatabaseTarget.id),
+    ))
     ids = [target.id for target in targets]
     points, current = checkpoints_for(session, ids), current_for(session, ids)
     items = [
-        target_response(target, [p for p in points if p.target_id == target.id],
-                        [o for o in current if o.target_id == target.id], settings, now)
+        target_response(
+            target, [point for point in points if point.target_id == target.id],
+            [obs for obs in current if obs.target_id == target.id], settings, now,
+        )
         for target in targets
     ]
+    critical = _critical_counts(session, ids)
+    for item in items:
+        item.critical_incident_count = critical.get(item.id, 0)
     environments = list(session.scalars(select(DatabaseTarget.environment).distinct().order_by(DatabaseTarget.environment)))
-    return FleetResponse(items=items, total=total, page=page, page_size=page_size, environments=environments)
+    return items, environments
+
+
+def _caller(request: Request) -> Caller:
+    existing = getattr(request.state, "caller", None)
+    if isinstance(existing, Caller):
+        return existing
+    try:
+        return caller_from_headers(request.headers.get("X-Sentinel-Role"), request.headers.get("X-Sentinel-Principal"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _allow_registry_change(request: Request) -> Caller:
+    """Registering, changing, removing, or test-connecting a database needs database.manage."""
+    caller = _caller(request)
+    try:
+        require(caller, "database.manage")
+    except PermissionDenied as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    return caller
+
+
+@router.get("", response_model=FleetResponse)
+def list_databases(
+    session: SessionDep, settings: SettingsDep,
+    page: int = Query(1, ge=1), page_size: int = Query(25, ge=1, le=100),
+    environment: str | None = None, health_status: DisplayedHealth | None = None, enabled_only: bool = False,
+) -> FleetResponse:
+    items, environments = fleet_rows(session, settings, environment, enabled_only)
+    if health_status:
+        items = [item for item in items if item.monitoring_status == health_status]
+    total = len(items)
+    start = (page - 1) * page_size
+    return FleetResponse(
+        items=items[start:start + page_size], total=total, page=page, page_size=page_size, environments=environments,
+    )
 
 
 @router.post("", response_model=DatabaseTargetResponse, status_code=201)
-def register_database(body: DatabaseTargetCreate, session: SessionDep) -> DatabaseTarget:
+def register_database(
+    body: DatabaseTargetCreate, request: Request, session: SessionDep, settings: SettingsDep,
+) -> DatabaseTarget:
+    caller = _allow_registry_change(request)
     if body.secret_reference and not body.secret_reference.startswith("env:"):
         raise HTTPException(422, "Only env:VARIABLE secret references are supported")
+    alias = (body.tns_alias or "").strip()
+    if not alias:
+        raise HTTPException(422, "Select a TNS alias. The monitoring account must connect before the database is registered.")
+    result = check_portal_connection(alias, settings)
+    if result.status != "connected":
+        raise HTTPException(422, "The monitoring account could not connect, so the database was not registered.")
     target = DatabaseTargetRepository.create(session=session, **body.model_dump(exclude={"secret_reference"}))
     if body.secret_reference:
         TargetCredentialRepository.save_credential(session, target.id, body.secret_reference)
+    target.last_connection_at = utcnow()
+    record_action(session, caller.principal, "database.register", str(target.id), "created", {"tns_alias": alias})
     session.commit()
     return target
 
 
 @router.get("/summary", response_model=FleetHealthSummary)
 def fleet_health_summary(session: SessionDep, settings: SettingsDep) -> FleetHealthSummary:
-    status = case((DatabaseTarget.enabled.is_(False), "disabled"), else_=effective_status(utcnow()))
-    counts = dict(session.execute(select(status, func.count()).select_from(DatabaseTarget).group_by(status)).all())
+    items, _environments = fleet_rows(session, settings)
+    counts = {name: 0 for name in ("healthy", "warning", "critical", "offline", "unknown", "disabled")}
+    for item in items:
+        status = item.monitoring_status if item.monitoring_status in counts else "unknown"
+        counts[status] += 1
     return FleetHealthSummary.model_validate({
-        **counts, "total": sum(counts.values()), "scheduler_enabled": settings.scheduler_enabled,
+        **counts, "total": len(items), "scheduler_enabled": settings.scheduler_enabled,
     })
+
+
+def _collection_runner(request: Request, settings: Settings) -> CollectionRunner:
+    scheduler = getattr(request.app.state, "collector_scheduler", None)
+    existing = getattr(scheduler, "runner", None) if scheduler is not None else None
+    if isinstance(existing, CollectionRunner):
+        return existing
+    factory = getattr(request.app.state, "session_factory", None)
+    if factory is None:
+        raise HTTPException(status_code=503, detail="Fleet status cannot be checked until the API is ready.")
+    return CollectionRunner(factory, settings, lambda target: adapter_for(target, settings))
+
+
+@router.post("/check-fleet", response_model=FleetCheckResponse)
+def check_fleet(request: Request, session: SessionDep, settings: SettingsDep) -> FleetCheckResponse:
+    """Recollect every enabled database, then return the same status the fleet table shows."""
+    caller = _allow_registry_change(request)
+    enabled_ids = list(session.scalars(
+        select(DatabaseTarget.id).where(DatabaseTarget.enabled.is_(True)).order_by(
+            DatabaseTarget.display_name, DatabaseTarget.id,
+        ),
+    ))
+    session.commit()
+    runner = _collection_runner(request, settings)
+    for target_id in enabled_ids:
+        for probe in PROBES:
+            runner.run(target_id, probe)
+    session.expire_all()
+    items, _environments = fleet_rows(session, settings)
+    record_action(session, caller.principal, "database.check_fleet", "fleet", "checked", {"checked": len(enabled_ids)})
+    session.commit()
+    return FleetCheckResponse(
+        checked=len(enabled_ids),
+        items=[
+            FleetCheckItem(id=item.id, display_name=item.display_name, monitoring_status=item.monitoring_status)
+            for item in items
+        ],
+    )
 
 
 def configured_aliases(settings: Settings) -> list[str]:
@@ -166,12 +272,22 @@ def check_portal_connection(alias: str, settings: Settings) -> ConnectionTestRes
 
 
 @router.post("/test-tns-connection", response_model=ConnectionTestResponse)
-def test_tns_connection(body: TnsRegistrationRequest, settings: SettingsDep) -> ConnectionTestResponse:
-    return check_portal_connection(canonical_alias(body.tns_alias, settings), settings)
+def test_tns_connection(
+    body: TnsRegistrationRequest, request: Request, session: SessionDep, settings: SettingsDep,
+) -> ConnectionTestResponse:
+    caller = _allow_registry_change(request)
+    alias = canonical_alias(body.tns_alias, settings)
+    result = check_portal_connection(alias, settings)
+    record_action(session, caller.principal, "database.test_connection", alias[:80], result.status, {"tns_alias": alias})
+    session.commit()
+    return result
 
 
 @router.post("/register-from-tns", response_model=DatabaseTargetResponse, status_code=201)
-def register_from_tns(body: TnsRegistrationRequest, session: SessionDep, settings: SettingsDep) -> DatabaseTarget:
+def register_from_tns(
+    body: TnsRegistrationRequest, request: Request, session: SessionDep, settings: SettingsDep,
+) -> DatabaseTarget:
+    caller = _allow_registry_change(request)
     alias = canonical_alias(body.tns_alias, settings)
     existing = session.scalar(select(DatabaseTarget.id).where(func.upper(DatabaseTarget.tns_alias) == alias.upper()))
     if existing is not None:
@@ -184,6 +300,7 @@ def register_from_tns(body: TnsRegistrationRequest, session: SessionDep, setting
         environment=body.environment, owner=body.owner,
     )
     target.last_connection_at = utcnow()
+    record_action(session, caller.principal, "database.register", str(target.id), "created", {"tns_alias": alias})
     session.commit()
     return target
 
@@ -208,13 +325,15 @@ def get_database(target_id: str, session: SessionDep, settings: SettingsDep) -> 
         target, checkpoints_for(session, [target.id]), current_for(session, [target.id]), settings, utcnow(),
     )
     response.compliance = ComplianceSummary(**counts)
+    response.critical_incident_count = _critical_counts(session, [target.id]).get(target.id, 0)
     return response
 
 
 @router.put("/{target_id}", response_model=DatabaseTargetResponse)
 def update_database(
-    target_id: str, body: DatabaseTargetUpdate, session: SessionDep,
+    target_id: str, body: DatabaseTargetUpdate, request: Request, session: SessionDep,
 ) -> DatabaseTarget:
+    caller = _allow_registry_change(request)
     target = find_target(session, target_id)
     updates = body.model_dump(exclude_unset=True)
     for key, value in updates.items():
@@ -228,20 +347,33 @@ def update_database(
         session.execute(update(CollectorCheckpoint).where(CollectorCheckpoint.target_id == target.id).values(
             last_success_at=None, status="pending", error_class=None,
         ))
+        record_action(
+            session, caller.principal, "database.update", str(target.id), "updated",
+            {"fields": sorted(updates)},
+        )
     session.commit()
     return target
 
 
 @router.delete("/{target_id}", status_code=204)
-def delete_database(target_id: str, session: SessionDep) -> None:
-    session.delete(find_target(session, target_id))
+def delete_database(target_id: str, request: Request, session: SessionDep) -> None:
+    """Remove a database from the registry. This does not change Oracle."""
+    caller = _allow_registry_change(request)
+    target = find_target(session, target_id)
+    record_action(
+        session, caller.principal, "database.remove", str(target.id), "removed",
+        {"display_name": target.display_name, "tns_alias": target.tns_alias or ""},
+    )
+    session.delete(target)
     session.commit()
 
 
 @router.post("/{target_id}/test-connection", response_model=ConnectionTestResponse)
 def test_connection(
-    target_id: str, session: SessionDep, settings: SettingsDep, body: ConnectionTestRequest | None = None,
+    target_id: str, request: Request, session: SessionDep, settings: SettingsDep,
+    body: ConnectionTestRequest | None = None,
 ) -> ConnectionTestResponse:
+    caller = _allow_registry_change(request)
     target = find_target(session, target_id)
     alias = (body.tns_alias if body else None) or target.tns_alias
     if not alias:
@@ -258,7 +390,11 @@ def test_connection(
         caps = asyncio.run(adapter.detect_capabilities(alias)).to_dict()
         target.capability_snapshot = caps
         target.last_connection_at = utcnow()
-        session.commit()
+    record_action(
+        session, caller.principal, "database.test_connection", str(target.id), str(result["status"])[:20],
+        {"tns_alias": alias},
+    )
+    session.commit()
     # This manual check is not a full collection run and cannot mark the target healthy.
     return ConnectionTestResponse(
         status=result["status"], message=result["message"], version=result.get("version"),

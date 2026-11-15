@@ -128,6 +128,48 @@ class ToolOutcome:
         }
 
 
+ASSESSMENT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "required": ["assessment", "confidence"],
+    "properties": {
+        "assessment": {"type": "string"},
+        "confidence": {"enum": ["low", "medium", "high"]},
+        "limitations": {"type": "string"},
+        "next_steps": {"type": "array", "items": {"type": "string"}},
+    },
+}
+
+
+@dataclass
+class StructuredAnswer:
+    """The answer as data. `content` on Answer stays its plain-text rendering."""
+
+    kind: str = "model"
+    summary: str = ""
+    confidence: str = ""
+    limitations: str = ""
+    next_steps: list[str] = field(default_factory=list)
+    verdict: dict[str, str] | None = None
+    reading: list[str] = field(default_factory=list)
+    citation_note: str = ""
+    evidence_lines: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "summary": self.summary,
+            "confidence": self.confidence,
+            "limitations": self.limitations,
+            "next_steps": list(self.next_steps),
+            "verdict": dict(self.verdict) if self.verdict else None,
+            "reading": list(self.reading),
+            "citation_note": self.citation_note,
+            "evidence_lines": list(self.evidence_lines),
+            "notes": list(self.notes),
+        }
+
+
 @dataclass
 class Answer:
     content: str
@@ -144,3 +186,4 @@ class Answer:
     completion_tokens: int
     correlation_id: str
     message_id: str
+    structured: dict[str, Any] = field(default_factory=dict)

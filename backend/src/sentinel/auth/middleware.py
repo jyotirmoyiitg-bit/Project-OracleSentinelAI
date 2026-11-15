@@ -2,6 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 
+from sentinel.auth.sessions import session_is_current
 from sentinel.auth.tokens import read_token
 from sentinel.config.settings import Settings
 from sentinel.knowledge.acl import Caller
@@ -9,7 +10,6 @@ from sentinel.knowledge.acl import Caller
 PUBLIC_PATHS = frozenset({
     "/health/live",
     "/health/ready",
-    "/metrics",
     "/api/v1/auth/login",
     "/api/v1/auth/logout",
     "/api/v1/auth/session",
@@ -30,17 +30,29 @@ class RequireSignIn:
             return
         method = str(scope.get("method") or "GET")
         path = str(scope.get("path") or "")
-        if method == "OPTIONS" or path in PUBLIC_PATHS:
+        if method == "OPTIONS" or path in PUBLIC_PATHS or (path == "/metrics" and metrics_are_public(self.settings)):
             await self.app(scope, receive, send)
             return
         identity = read_token(self.settings, _cookie(scope, "sentinel_session") or "")
         if identity is None:
             await _reject(send)
             return
+        application = scope.get("app")
+        factory = getattr(getattr(application, "state", None), "session_factory", None)
+        if not session_is_current(self.settings, factory, identity):
+            await _reject(send)
+            return
         state = scope.setdefault("state", {})
         if isinstance(state, dict):
             state["caller"] = Caller(identity.role, identity.principal)
         await self.app(scope, receive, send)
+
+
+def metrics_are_public(settings: Settings) -> bool:
+    """Open by default outside production. Production needs METRICS_PUBLIC=true to expose it."""
+    if settings.metrics_public is not None:
+        return settings.metrics_public
+    return settings.app_env != "production"
 
 
 def _cookie(scope: dict[str, object], name: str) -> str | None:

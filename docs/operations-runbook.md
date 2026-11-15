@@ -187,3 +187,16 @@ OIDC is off until `AUTH_OIDC_ISSUER` and `AUTH_OIDC_CLIENT_ID` are set. The clie
 
 Audit rows are append-only. The application refuses to purge them. Credential rotation stores a `secret://` reference and a timestamp, not the password. Prometheus metrics are at `/metrics`.
 
+## Phase 20 production settings and operators
+
+Production start-up. `APP_ENV=production` starts only with `AUTH_REQUIRED=true`, a `SECRET_KEY` of at least 32 characters that is not the default, and `AUTH_COOKIE_SECURE=true` behind TLS. `/metrics` then needs sign-in unless `METRICS_PUBLIC=true`; point the scraper at a signed-in session or expose metrics on a network only the scraper can reach.
+
+Operators. An administrator adds local operators in Admin, Operators. A password needs at least 10 characters with a letter and a digit. Disabling an account, changing its role, or resetting its password signs its open sessions out on their next request. A local operator changes their own password from the key icon in the top bar. Directory accounts are managed in the directory.
+
+Failed sign-ins. Five failures inside fifteen minutes for one username and client address lock that pair for fifteen minutes (`AUTH_MAX_FAILED_LOGINS`, `AUTH_LOCKOUT_MINUTES`). The counters live in the API process, so a restart clears them and several API processes each count on their own.
+
+Audit. Sign-ins, operator changes, registry changes, connection tests, incident actions, copilot questions, and knowledge changes are in Audit. The audit table rejects updates and deletes.
+
+Knowledge. An administrator uploads a PDF, DOCX, TXT, or Markdown file on the Knowledge page. The file lands in `knowledge-intake/ora-19c-manual` or `knowledge-intake/Policy` and is scanned at once. A manual above `KNOWLEDGE_MAX_PAGES` is quarantined by that scan.
+
+Model-assisted routing. With a model enabled, a database question the fixed router cannot place is routed by the model to at most three approved readings. Set `AI_ROUTER_FALLBACK=false` in Admin, Language model to keep routing fixed only.

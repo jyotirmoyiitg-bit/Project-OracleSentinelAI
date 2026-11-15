@@ -24,6 +24,7 @@ async def ask_reading(settings: Settings, tool_name: str, alias: str) -> tuple[s
         stderr=asyncio.subprocess.DEVNULL,
         cwd=str(_BACKEND),
         env=env,
+        limit=2 * 1024 * 1024,
     )
     try:
         return await asyncio.wait_for(_exchange(process, tool_name, alias), timeout=90)
@@ -61,31 +62,22 @@ async def _exchange(
 
 
 async def _send(process: asyncio.subprocess.Process, payload: dict[str, Any]) -> None:
+    """One JSON object per line, as the MCP stdio transport defines."""
     if process.stdin is None:
         return
-    body = json.dumps(payload).encode()
-    process.stdin.write(f"Content-Length: {len(body)}\r\n\r\n".encode() + body)
+    process.stdin.write(json.dumps(payload, separators=(",", ":")).encode() + b"\n")
     await process.stdin.drain()
 
 
 async def _read(stdout: asyncio.StreamReader) -> dict[str, Any]:
-    header = b""
-    while b"\r\n\r\n" not in header:
-        chunk = await stdout.read(1)
-        if not chunk:
-            raise ValueError("readings server closed")
-        header += chunk
-        if len(header) > 65536:
-            raise ValueError("readings header is too large")
-    marker = header.lower().find(b"content-length:")
-    if marker < 0:
-        raise ValueError("readings response has no length")
-    line = header[marker:].split(b"\r\n", 1)[0]
-    length = int(line.split(b":", 1)[1].strip())
-    if length < 1 or length > 1_000_000:
-        raise ValueError("readings response length is invalid")
-    body = await stdout.readexactly(length)
-    payload = json.loads(body)
+    line = await stdout.readline()
+    while line and not line.strip():
+        line = await stdout.readline()
+    if not line:
+        raise ValueError("readings server closed")
+    if len(line) > 1_000_000:
+        raise ValueError("readings response is too large")
+    payload = json.loads(line)
     if not isinstance(payload, dict):
         raise TypeError("readings response is not an object")
     return payload

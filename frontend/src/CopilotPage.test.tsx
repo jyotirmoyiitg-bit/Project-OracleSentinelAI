@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import App from './App'
 import type { ChatMessage, ChatThread } from './types'
@@ -84,7 +84,7 @@ describe('Copilot page', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Copilot' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Fleet copilot' })).toBeInTheDocument()
     expect(screen.getByText('No language model')).toBeInTheDocument()
     expect(screen.queryByLabelText('Language model')).not.toBeInTheDocument()
     expect(screen.getByText(/does not run SQL/)).toBeInTheDocument()
@@ -111,7 +111,7 @@ describe('Copilot page', () => {
 
     await user.click(screen.getByRole('button', { name: 'New chat' }))
     expect(screen.queryByText('get_fra_status')).not.toBeInTheDocument()
-    expect(screen.getByText(/Ask about files/)).toBeInTheDocument()
+    expect(screen.getByText(/Ask which databases have an incident/)).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Ask the copilot' })).toBeInTheDocument()
   })
 
@@ -120,6 +120,18 @@ describe('Copilot page', () => {
       ...answer,
       id: 'message-2',
       content: 'The FRA is configured and empty.\nLimitations: No backup history is stored.\nNext steps: Check the archive destination; Confirm a backup job\n\nDatabase reading:\nFRA space limit is 6.77 GB',
+      answer: {
+        kind: 'model',
+        summary: 'The **FRA** is configured and empty.\n\n| Area | State |\n|---|---|\n| FRA | empty |\n\n```sql\nSELECT 1 FROM dual;\n```',
+        confidence: 'high',
+        limitations: 'No backup history is stored.',
+        next_steps: ['Check the archive destination; then recheck', 'Confirm a backup job'],
+        verdict: null,
+        reading: ['FRA 0 percent used (0 of 6.77 GB)'],
+        citation_note: '',
+        evidence_lines: [],
+        notes: [],
+      },
       provider: 'hosted',
       model: 'claude-sonnet-4-5',
       llm_used: true,
@@ -142,14 +154,18 @@ describe('Copilot page', () => {
     expect(await screen.findByText('Hosted model · claude-sonnet-4-5')).toBeInTheDocument()
     await user.click(screen.getByRole('tab', { name: 'Common' }))
     await user.click(screen.getByRole('button', { name: 'FRA status' }))
-    expect(await screen.findByText('The FRA is configured and empty.')).toBeInTheDocument()
+    expect(await screen.findByText('FRA', { selector: 'strong' })).toBeInTheDocument()
+    expect(screen.getByText('Confidence')).toBeInTheDocument()
+    expect(screen.getByText('high')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Area' })).toBeInTheDocument()
+    expect(screen.getByText('SELECT 1 FROM dual;')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Limitations' })).toBeInTheDocument()
     expect(screen.getByText('No backup history is stored.')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Next steps' })).toBeInTheDocument()
-    expect(screen.getByText('Check the archive destination')).toBeInTheDocument()
+    expect(screen.getByText('Check the archive destination; then recheck')).toBeInTheDocument()
     expect(screen.getByText('Confirm a backup job')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Database reading' })).toBeInTheDocument()
-    expect(screen.getByText('FRA space limit is 6.77 GB')).toBeInTheDocument()
+    expect(screen.getByText(/0 percent used/)).toBeInTheDocument()
     expect(screen.getByText('Answered')).toBeInTheDocument()
   })
 
@@ -177,6 +193,14 @@ describe('Copilot page', () => {
       ...answer,
       id: 'message-3',
       content: 'Identity. Status OK. Health HEALTHY.\n\nDatabase ORCL12C open_mode READ WRITE role PRIMARY\nLimitations: Oracle version is not part of this reading.\nNext steps: Use the database name and open mode below as the identity of the selected target.',
+      answer: {
+        kind: 'catalog', summary: '', confidence: '',
+        limitations: 'Oracle version is not part of this reading.',
+        next_steps: ['Use the database name and open mode below as the identity of the selected target.'],
+        verdict: { label: 'Identity', status: 'OK', health: 'HEALTHY' },
+        reading: ['Database ORCL12C open_mode READ WRITE role PRIMARY'],
+        citation_note: '', evidence_lines: [], notes: [],
+      },
       provider_status: 'answered',
       citations: [],
       tools: [],
@@ -198,7 +222,9 @@ describe('Copilot page', () => {
     const user = userEvent.setup()
     render(<App />)
 
-    expect(await screen.findByRole('heading', { name: 'Copilot' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Database copilot' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('Fleet finders')).not.toBeInTheDocument()
+    expect(screen.getByText(/Ask about this database/)).toBeInTheDocument()
     const active = await screen.findByLabelText('Active database')
     expect(active).toHaveTextContent('FINANCE-PRD')
     expect(active).toHaveTextContent('finance-prd')
@@ -225,6 +251,91 @@ describe('Copilot page', () => {
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Database scope' }), '')
     expect(window.location.hash).toBe('#/copilot')
+  })
+
+  it('gives the fleet its own questions, finders, and a findings table by database', async () => {
+    const fleetThread: ChatThread = {
+      ...thread,
+      guided_commands: [
+        { group: 'Incidents', label: 'Databases with incidents', prompt: 'Which databases in the fleet have reported an incident?' },
+        { group: 'Programs', label: 'java.exe', prompt: 'Which databases have an active session from java.exe?' },
+        { group: 'Policy', label: 'Policy violations', prompt: 'Which databases are running in violation of organizational policy?' },
+      ],
+    }
+    const fleetAnswer: ChatMessage = {
+      ...answer,
+      id: 'message-fleet',
+      content: 'x_run.exe, java.exe: found on 1 of 2 databases read.',
+      answer: {
+        kind: 'fleet', summary: 'x_run.exe, java.exe: found on 1 of 2 databases read.', confidence: '',
+        limitations: 'A database that could not be read is not known; it is not counted as clean.', next_steps: [], verdict: null,
+        reading: [
+          'FINANCE-PRD: java.exe 12 sessions (4 active); x_run.exe 2 sessions (0 active)',
+          "No session from x_run.exe, java.exe: WAREHOUSE-DEV.",
+        ],
+        citation_note: '', evidence_lines: [], notes: [],
+      },
+      provider_status: 'answered',
+      citations: [],
+      tools: [{ tool: 'find_fleet_programs', decision: 'allowed', summary: 'found on 1 of 2', reason: '', duration_ms: 40 }],
+      guided_commands: fleetThread.guided_commands,
+    }
+    const database = (id: string, name: string, health: string) => ({
+      id, display_name: name, tns_alias: name.toLowerCase(), enabled: true, environment: 'production', engine: 'oracle',
+      owner: '', poll_profile: {}, capability_snapshot: {}, last_connection_at: null, last_health_status: health,
+      created_at: '2026-11-13T00:00:00Z', updated_at: '2026-11-13T00:00:00Z', last_seen: null, monitoring_status: health,
+      critical_incident_count: 0, trend_snapshots: [],
+    })
+    const asked: string[] = []
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url.includes('/portal-notifications')) return Promise.resolve(jsonResponse({ items: [], total: 0, unread_count: 0, page: 1, page_size: 10 }))
+      if (url.includes('page_size=100') && url.includes('/databases')) {
+        return Promise.resolve(jsonResponse({
+          items: [database('t1', 'FINANCE-PRD', 'healthy'), database('t2', 'WAREHOUSE-DEV', 'offline')],
+          total: 2, page: 1, page_size: 100, environments: ['production'],
+        }))
+      }
+      if (url.endsWith('/api/v1/chat/threads') && init?.method === 'POST') return Promise.resolve(jsonResponse(fleetThread))
+      if (url.includes('/api/v1/chat/threads/thread-1/messages')) {
+        asked.push((JSON.parse(String(init?.body)) as { content: string }).content)
+        return Promise.resolve(eventResponse(fleetAnswer))
+      }
+      return Promise.resolve(jsonResponse({ detail: 'not found' }, 404))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    render(<App />)
+
+    expect(await screen.findByRole('heading', { name: 'Fleet copilot' })).toBeInTheDocument()
+    const card = await screen.findByLabelText('Fleet in scope')
+    await within(card).findByText('2 databases')
+    expect(card).toHaveTextContent('Healthy1')
+    expect(card).toHaveTextContent('Down1')
+    expect(screen.getByRole('option', { name: '● Fleet · all databases (active)' })).toBeInTheDocument()
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Incidents1', 'Programs1', 'Policy1'])
+    expect(screen.queryByRole('tab', { name: 'Common' })).not.toBeInTheDocument()
+    expect(screen.getByRole('list', { name: 'Example fleet questions' })).toBeInTheDocument()
+
+    const finders = screen.getByLabelText('Fleet finders')
+    await user.click(within(finders).getByRole('button', { name: 'Find programs' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter program or executable names')
+    await user.type(screen.getByLabelText('Program names'), 'x_run.exe, java.exe')
+    await user.click(within(finders).getByRole('button', { name: 'Find programs' }))
+    expect(await screen.findByRole('heading', { name: 'Fleet findings' })).toBeInTheDocument()
+    expect(asked).toEqual(["Which databases have a session from program 'x_run.exe' or 'java.exe'?"])
+    const table = document.querySelector('.copilot-fleet-table') as HTMLElement
+    expect(within(table).getByRole('rowheader', { name: 'FINANCE-PRD' })).toBeInTheDocument()
+    expect(within(table).getByText('java.exe 12 sessions (4 active)')).toBeInTheDocument()
+    expect(within(table).getByText('x_run.exe 2 sessions (0 active)')).toBeInTheDocument()
+    expect(within(table).getByRole('rowheader', { name: 'No session from x_run.exe, java.exe' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Database reading' })).not.toBeInTheDocument()
+
+    await user.clear(screen.getByLabelText('Datafile size in GB'))
+    await user.type(screen.getByLabelText('Datafile size in GB'), '25')
+    await user.click(within(finders).getByRole('button', { name: 'Find datafiles' }))
+    await waitFor(() => expect(asked).toHaveLength(2))
+    expect(asked[1]).toBe('Which databases have a tablespace with a datafile larger than 25 GB?')
   })
 
   it('shows the disclosure for the model selected in the portal', async () => {

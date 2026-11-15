@@ -38,6 +38,7 @@ BEGIN
               'V_$ARCHIVED_LOG', 'V_$DATAGUARD_STATS', 'DBA_USERS',
               'DBA_OBJECTS', 'DBA_ROLE_PRIVS', 'DBA_SCHEDULER_JOB_RUN_DETAILS',
               'V_$CONTROLFILE', 'V_$LOG', 'V_$LOGFILE', 'DBA_SEGMENTS', 'V_$SGASTAT',
+              'V_$ENQUEUE_STATISTICS', 'V_$LOCK', 'V_$WAITSTAT', 'V_$SESSION_EVENT',
               -- Clean up extra grants from earlier provisioning scripts as well.
               'V_$TABLESPACE', 'V_$SYSSTAT', 'V_$SYSMETRIC'
           )

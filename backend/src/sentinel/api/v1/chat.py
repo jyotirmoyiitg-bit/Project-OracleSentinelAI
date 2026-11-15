@@ -12,11 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from sentinel.ai.gateway import build_gateway, hosted_is_configured, model_choice_payload, resolve_gateway
-from sentinel.ai.orchestrator import Orchestrator, disclosure_for, public_guided_commands
+from sentinel.ai.orchestrator import Orchestrator, disclosure_for, guided_commands_for
 from sentinel.auth.rbac import has_permission
 from sentinel.config.secrets import SecretResolver
 from sentinel.config.settings import Settings
 from sentinel.knowledge.acl import Caller, caller_from_headers
+from sentinel.observability.audit import record_action
 from sentinel.persistence.models import ChatMessage, ChatThread, DatabaseTarget, Incident
 
 router = APIRouter(prefix="/api/v1", tags=["chat"])
@@ -67,7 +68,7 @@ def _thread_payload(
         "model": thread.model,
         "llm_enabled": settings.ai_enabled and settings.ai_provider != "disabled",
         "disclosure": gateway_disclosure,
-        "guided_commands": public_guided_commands(),
+        "guided_commands": guided_commands_for(thread.scope_type, caller.role),
         "model_choices": model_choice_payload(settings, caller),
     }
 
@@ -117,9 +118,8 @@ def list_messages(
     request: Request,
     caller: Annotated[Caller, Depends(_caller)],
 ) -> dict[str, object]:
-    del caller
     with _factory(request)() as session:
-        thread = _existing(session, thread_id)
+        thread = _existing(session, thread_id, caller)
         messages = session.scalars(
             select(ChatMessage).where(ChatMessage.thread_id == thread.id).order_by(ChatMessage.created_at),
         ).all()
@@ -142,8 +142,19 @@ async def create_message(
     )
     orchestrator = Orchestrator(settings, gateway)
     with _factory(request).begin() as session:
-        thread = _existing(session, thread_id)
+        thread = _existing(session, thread_id, caller)
         answer = await orchestrator.answer(session, thread, caller, body.content)
+        record_action(
+            session, caller.principal, "chat.question", str(thread.id), answer.provider_status[:20] or "answered",
+            {
+                "scope_type": thread.scope_type,
+                "scope_id": thread.scope_id or "",
+                "intent": answer.intent,
+                "llm_used": answer.llm_used,
+                "tools": [f"{item.get('tool')}:{item.get('decision')}" for item in answer.tools][:12],
+            },
+            correlation_id=answer.correlation_id,
+        )
     def events() -> Iterator[str]:
         yield _event("status", {
             "provider": answer.provider, "model": answer.model, "llm_used": answer.llm_used,
@@ -154,7 +165,7 @@ async def create_message(
         for citation in answer.citations:
             yield _event("citation", citation)
         yield _event("message", {
-            "id": answer.message_id, "role": "assistant", "content": answer.content,
+            "id": answer.message_id, "role": "assistant", "content": answer.content, "answer": answer.structured,
             "provider": answer.provider, "model": answer.model, "llm_used": answer.llm_used,
             "provider_status": answer.provider_status, "citations": answer.citations, "tools": answer.tools,
             "guided_commands": answer.guided_commands,
@@ -179,13 +190,14 @@ async def provider_status(
     return health
 
 
-def _existing(session: Session, thread_id: str) -> ChatThread:
+def _existing(session: Session, thread_id: str, caller: Caller) -> ChatThread:
+    """A thread belongs to the operator who opened it. Another operator receives not-found."""
     try:
         identifier = uuid.UUID(thread_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid UUID format") from exc
     thread = session.get(ChatThread, identifier)
-    if thread is None:
+    if thread is None or (thread.principal or "") != (caller.principal or ""):
         raise HTTPException(status_code=404, detail="Chat thread not found")
     return thread
 

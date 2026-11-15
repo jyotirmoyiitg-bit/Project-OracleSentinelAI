@@ -540,7 +540,87 @@ def _seconds(value: str | None) -> str:
     return f"{amount / 60:.0f}m"
 
 
+def _redo_logs(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    groups = _source(rows, "v$log")
+    members = _source(rows, "v$logfile")
+    if not groups:
+        return "No redo log group was returned.", []
+    total = sum(_number(row.get("bytes")) or 0 for row in groups)
+    lines = [f"Redo log groups {len(groups)}, total size {_bytes(str(int(total)))}."]
+    for row in groups:
+        group = row.get("group_no") or ""
+        paths = [item.get("member") or "" for item in members if (item.get("group_no") or "") == group]
+        line = (
+            f"Group {group} thread {row.get('thread_no') or ''} {_bytes(row.get('bytes'))} "
+            f"status {row.get('status') or 'UNKNOWN'}"
+        )
+        if paths:
+            line += " members " + ", ".join(path for path in paths if path)
+        lines.append(line.strip())
+    return f"{len(groups)} redo log groups read from the database.", lines
+
+
+def _control_files(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    lines = [
+        f"Control file {row.get('name') or ''} status {row.get('status') or 'in use'}".strip()
+        for row in rows if row.get("name")
+    ]
+    if not lines:
+        return "No control file was returned.", []
+    return f"{len(lines)} control files read from the database.", lines
+
+
+def _segments(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    lines = [
+        f"{row.get('owner') or ''}.{row.get('segment_name') or ''} {row.get('segment_type') or ''} "
+        f"in {row.get('tablespace_name') or ''} {_bytes(row.get('bytes'))}".strip()
+        for row in rows[:20] if row.get("segment_name")
+    ]
+    if not lines:
+        return "No segment was returned.", []
+    return "The 20 largest segments by size. This is not a full inventory.", lines
+
+
+def _background(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    lines = [
+        f"{row.get('program') or 'The process name was not returned.'} {row.get('status') or ''} "
+        f"{row.get('state') or ''}".strip()
+        for row in rows
+    ]
+    if not lines:
+        return "No background process was returned.", []
+    return f"{len(lines)} background processes are running in the instance.", lines
+
+
+def _session_programs(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    lines = [
+        f"{row.get('program') or 'unknown'} {row.get('session_count') or '0'} sessions "
+        f"({row.get('active_count') or '0'} active)"
+        for row in rows[:40]
+    ]
+    if not lines:
+        return "No user session was returned.", []
+    return f"{len(lines)} client programs have user sessions now.", lines
+
+
+def _datafile_sizes(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    lines = [
+        f"{row.get('tablespace_name') or 'tablespace'} largest datafile {_bytes(row.get('largest_file_bytes'))}, "
+        f"{row.get('file_count') or '0'} files, {_bytes(row.get('total_bytes'))} total"
+        for row in rows[:40]
+    ]
+    if not lines:
+        return "No datafile was returned.", []
+    return f"Datafile sizes for {len(lines)} tablespaces, largest first.", lines
+
+
 _HANDLERS = {
+    "session_programs": _session_programs,
+    "datafile_sizes": _datafile_sizes,
+    "redo_logs": _redo_logs,
+    "control_files": _control_files,
+    "segments": _segments,
+    "background": _background,
     "availability": _availability,
     "errors": _errors,
     "ora_errors": _ora_errors,

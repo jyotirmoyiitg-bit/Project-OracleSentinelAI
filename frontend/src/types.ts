@@ -177,6 +177,7 @@ export type IncidentState = 'new' | 'acknowledged' | 'resolved'
 export interface Incident {
   id: string
   target_id: string
+  target_name: string
   rule_id: string
   fingerprint: string
   state: IncidentState
@@ -363,10 +364,30 @@ export interface ChatToolTrace {
   duration_ms: number
 }
 
+export interface CopilotVerdict {
+  label: string
+  status: string
+  health: string
+}
+
+export interface StructuredAnswer {
+  kind: 'model' | 'catalog' | 'fallback' | string
+  summary: string
+  confidence: string
+  limitations: string
+  next_steps: string[]
+  verdict: CopilotVerdict | null
+  reading: string[]
+  citation_note: string
+  evidence_lines: string[]
+  notes: string[]
+}
+
 export interface ChatMessage {
   id: string
   role: string
   content: string
+  answer?: StructuredAnswer
   citations: ChatCitation[]
   tools: ChatToolTrace[]
   provider: string

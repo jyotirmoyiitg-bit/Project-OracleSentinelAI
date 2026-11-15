@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getPlatform, listAppConfig, updateAppConfig, type AppConfigItem, type PlatformSummary } from './api'
+import { OperatorsPanel } from './AdminOperators'
 
 function draftFor(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value)
@@ -19,9 +20,11 @@ function parseDraft(current: unknown, draft: string): unknown {
 export function AdminPage({
   onOpenRegistry,
   onRefreshStatus,
+  currentUser = '',
 }: {
   onOpenRegistry: () => void
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
+  currentUser?: string
 }) {
   const [platform, setPlatform] = useState<PlatformSummary | null>(null)
   const [config, setConfig] = useState<AppConfigItem[] | null>(null)
@@ -142,6 +145,7 @@ export function AdminPage({
           </section>
         </div>
       )}
+      <OperatorsPanel currentUser={currentUser} />
       <section className="config-editor" aria-labelledby="config-title">
         <h2 id="config-title">Configuration</h2>
         <p>Sections stay closed and read-only until you edit one. Fixed settings stay visible and cannot be saved. Passwords and secrets are not listed.</p>

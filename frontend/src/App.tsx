@@ -18,20 +18,25 @@ import {
   Play,
   RefreshCw,
   Server,
+  Trash2,
   ShieldCheck,
   UserRound,
   ClipboardList,
   ScrollText,
   Settings,
-  Network,
+  KeyRound,
+  LayoutDashboard,
+  Plus,
   X,
 } from 'lucide-react'
-import { ApiError, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
+import { ApiError, checkFleetStatus, deleteDatabase, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
 import { formatBytes, formatDate, formatMetric, relativeTime } from './format'
 import { HealthBadge } from './components/HealthBadge'
 import { MetricCard } from './components/MetricCard'
 import { NotificationBell } from './components/NotificationBell'
 import { DatabaseSidebar } from './components/DatabaseSidebar'
+import { DatabaseTabs, type DatabaseTab } from './components/DatabaseTabs'
+import { PasswordDialog } from './components/PasswordDialog'
 import { StatePanel } from './components/StatePanel'
 import { TablespaceTable } from './components/TablespaceTable'
 import { TimelineChart } from './components/TimelineChart'
@@ -47,6 +52,7 @@ import { OperationsPage } from './OperationsPage'
 import { AdminPage } from './AdminPage'
 import { AuditPage } from './AuditPage'
 import { GraphPage } from './GraphPage'
+import { WaitPage } from './WaitPage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
 const PAGE_SIZE = 25
@@ -75,6 +81,8 @@ type Route =
   | { page: 'audit' }
   | { page: 'graph' }
   | { page: 'graph-database'; id: string }
+  | { page: 'wait' }
+  | { page: 'wait-database'; id: string }
 
 function parseHash(hash: string): Route {
   if (hash === '#/register') return { page: 'register' }
@@ -97,6 +105,9 @@ function parseHash(hash: string): Route {
   match = hash.match(/^#\/graph\/databases\/([^/]+)$/)
   if (match) return { page: 'graph-database', id: decodeURIComponent(match[1]) }
   if (hash.match(/^#\/graph\/?$/)) return { page: 'graph' }
+  match = hash.match(/^#\/wait\/databases\/([^/]+)$/)
+  if (match) return { page: 'wait-database', id: decodeURIComponent(match[1]) }
+  if (hash.match(/^#\/wait\/?$/)) return { page: 'wait' }
   return { page: 'fleet' }
 }
 
@@ -129,6 +140,8 @@ function usePageNavigation() {
     navigateToAudit: () => navigate('#/audit'),
     navigateToGraph: () => navigate('#/graph'),
     navigateToGraphDatabase: (id: string) => navigate(`#/graph/databases/${encodeURIComponent(id)}`),
+    navigateToWait: () => navigate('#/wait'),
+    navigateToWaitDatabase: (id: string) => navigate(`#/wait/databases/${encodeURIComponent(id)}`),
   }
 }
 
@@ -174,11 +187,9 @@ function AppHeader({
   onOpenOperations,
   onOpenAdmin,
   onOpenAudit,
-  onOpenGraph,
   showOperations,
   showAdmin,
   showAudit,
-  showGraph,
   onOpenIncident,
   notificationRefreshKey,
   refreshSeconds,
@@ -189,6 +200,7 @@ function AppHeader({
   principal,
   role,
   onSignOut,
+  onChangePassword,
 }: {
   currentPage: Route['page']
   onHome: () => void
@@ -198,11 +210,9 @@ function AppHeader({
   onOpenOperations: () => void
   onOpenAdmin: () => void
   onOpenAudit: () => void
-  onOpenGraph: () => void
   showOperations: boolean
   showAdmin: boolean
   showAudit: boolean
-  showGraph: boolean
   onOpenIncident: (id: string) => void
   notificationRefreshKey: number
   refreshSeconds: number
@@ -213,6 +223,7 @@ function AppHeader({
   principal?: string
   role?: string
   onSignOut?: () => void
+  onChangePassword?: () => void
 }) {
   return (
     <header className="topbar">
@@ -222,14 +233,15 @@ function AppHeader({
         <span className="brand-separator" />
         <span className="product-name">Fleet health</span>
       </button>
-      <nav className="topbar-nav">
-        <button className="nav-link" aria-current={currentPage === 'incidents' || currentPage === 'incident' ? 'page' : undefined} onClick={onOpenIncidents}><ShieldCheck size={15} /> Incidents</button>
-        <button className="nav-link" aria-current={currentPage === 'knowledge' ? 'page' : undefined} onClick={onOpenKnowledge}><BookOpen size={15} /> Knowledge</button>
-        <button className="nav-link" aria-current={currentPage === 'copilot' || currentPage === 'copilot-database' || currentPage === 'copilot-incident' ? 'page' : undefined} onClick={onOpenCopilot}><MessageSquare size={15} /> Copilot</button>
-        {showOperations && <button className="nav-link" aria-current={currentPage === 'operations' ? 'page' : undefined} onClick={onOpenOperations}><ClipboardList size={15} /> Proposals</button>}
-        {showAudit && <button className="nav-link" aria-current={currentPage === 'audit' ? 'page' : undefined} onClick={onOpenAudit}><ScrollText size={15} /> Audit</button>}
-        {showAdmin && <button className="nav-link" aria-current={currentPage === 'admin' ? 'page' : undefined} onClick={onOpenAdmin}><Settings size={15} /> Admin</button>}
-        {showGraph && <button className="nav-link" aria-current={currentPage === 'graph' || currentPage === 'graph-database' ? 'page' : undefined} onClick={onOpenGraph}><Network size={15} /> GraphDB</button>}
+      <nav className="topbar-nav" aria-label="Sections">
+        <button className="nav-link" aria-label="Fleet" title="Fleet" aria-current={currentPage === 'fleet' ? 'page' : undefined} onClick={onHome}><LayoutDashboard size={15} /><span className="nav-label">Fleet</span></button>
+        <button className="nav-link" aria-label="Incidents" title="Incidents" aria-current={currentPage === 'incidents' || currentPage === 'incident' ? 'page' : undefined} onClick={onOpenIncidents}><ShieldCheck size={15} /><span className="nav-label">Incidents</span></button>
+        <button className="nav-link" aria-label="Copilot" title="Copilot" aria-current={currentPage === 'copilot' || currentPage === 'copilot-database' || currentPage === 'copilot-incident' ? 'page' : undefined} onClick={onOpenCopilot}><MessageSquare size={15} /><span className="nav-label">Copilot</span></button>
+        <button className="nav-link" aria-label="Knowledge" title="Knowledge" aria-current={currentPage === 'knowledge' ? 'page' : undefined} onClick={onOpenKnowledge}><BookOpen size={15} /><span className="nav-label">Knowledge</span></button>
+        {(showOperations || showAudit || showAdmin) && <span className="nav-divider" aria-hidden="true" />}
+        {showOperations && <button className="nav-link" aria-label="Proposals" title="Proposals" aria-current={currentPage === 'operations' ? 'page' : undefined} onClick={onOpenOperations}><ClipboardList size={15} /><span className="nav-label">Proposals</span></button>}
+        {showAudit && <button className="nav-link" aria-label="Audit" title="Audit" aria-current={currentPage === 'audit' ? 'page' : undefined} onClick={onOpenAudit}><ScrollText size={15} /><span className="nav-label">Audit</span></button>}
+        {showAdmin && <button className="nav-link" aria-label="Admin" title="Admin" aria-current={currentPage === 'admin' ? 'page' : undefined} onClick={onOpenAdmin}><Settings size={15} /><span className="nav-label">Admin</span></button>}
       </nav>
       <div className="topbar-actions">
         <NotificationBell onOpenIncident={onOpenIncident} refreshSeconds={refreshSeconds} refreshKey={notificationRefreshKey} />
@@ -255,6 +267,7 @@ function AppHeader({
               <strong>{principal}</strong>
               {roleLabel(role) && <small>{roleLabel(role)}</small>}
             </span>
+            {onChangePassword && <button className="icon-button" type="button" aria-label="Change password" title="Change password" onClick={onChangePassword}><KeyRound size={15} /></button>}
             <button className="nav-link" type="button" onClick={onSignOut}>Sign out</button>
           </span>
         ) : <span className="user-avatar" aria-label="Oracle Sentinel monitoring">OS</span>}
@@ -263,16 +276,26 @@ function AppHeader({
   )
 }
 
+function canManageFleet(role: string | undefined): boolean {
+  return role === 'admin' || role === 'platform_admin' || role === 'dba'
+}
+
 function FleetPage({
   onOpenTarget,
   onOpenIncidents,
   refreshSeconds,
   onRefreshStatus,
+  role,
+  onChanged,
+  onRegister,
 }: {
   onOpenTarget: (target: Target) => void
   onOpenIncidents: () => void
   refreshSeconds: number
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
+  role?: string
+  onChanged: () => void
+  onRegister: () => void
 }) {
   const [fleet, setFleet] = useState<FleetResponse | null>(null)
   const [summary, setSummary] = useState<FleetHealthSummary | null>(null)
@@ -283,7 +306,10 @@ function FleetPage({
   const [health, setHealth] = useState('')
   const [page, setPage] = useState(1)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [checkNote, setCheckNote] = useState('')
   const inFlight = useRef(false)
+  const manageFleet = canManageFleet(role)
   const query = useMemo(() => ({ page, pageSize: PAGE_SIZE, environment, healthStatus: health }), [page, environment, health])
 
   const refresh = useCallback(async (initial = false) => {
@@ -336,6 +362,40 @@ function FleetPage({
     setPage(1)
   }
 
+  async function checkFleet() {
+    setChecking(true)
+    setCheckNote('')
+    setError('')
+    try {
+      const result = await checkFleetStatus()
+      const count = result.checked
+      setCheckNote(count === 1 ? 'Checked 1 database.' : `Checked ${count} databases.`)
+      onChanged()
+      await refresh(false)
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      setError(reason instanceof ApiError ? reason.message : 'Could not check fleet status.')
+    } finally {
+      setChecking(false)
+    }
+  }
+
+  async function removeTarget(target: Target) {
+    const confirmed = window.confirm(
+      `Remove ${target.display_name} from the fleet? This deregisters the database. Oracle is not changed.`,
+    )
+    if (!confirmed) return
+    setError('')
+    try {
+      await deleteDatabase(target.id)
+      onChanged()
+      await refresh(false)
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      setError(reason instanceof ApiError ? reason.message : 'Could not remove the database.')
+    }
+  }
+
   return (
     <main className="page-shell">
       <section className="page-heading">
@@ -345,6 +405,16 @@ function FleetPage({
           <p>Health and telemetry across your Oracle estate.</p>
         </div>
         <div className="heading-meta">
+          {manageFleet && (
+            <div className="heading-buttons">
+              <button type="button" className="button button-secondary heading-action" onClick={onRegister}>
+                <Plus size={14} /> Add database
+              </button>
+              <button type="button" className="button button-primary heading-action" disabled={checking} onClick={() => { void checkFleet() }}>
+                <RefreshCw size={14} /> {checking ? 'Checking fleet…' : 'Check fleet status'}
+              </button>
+            </div>
+          )}
           <span className="updated-note"><RefreshCw size={13} /> {lastUpdated ? `Updated ${relativeTime(lastUpdated)}` : 'Waiting for data'}</span>
           <span className={`auto-state ${refreshSeconds ? 'auto-on' : ''}`}>{refreshSeconds ? <Play size={11} fill="currentColor" /> : <Pause size={11} fill="currentColor" />}{refreshSeconds ? `Auto · ${refreshSeconds}s` : 'Auto refresh off'}</span>
         </div>
@@ -375,7 +445,8 @@ function FleetPage({
           <span>Disabled <strong>{summary.disabled}</strong></span>
         </section>
       )}
-      {summary && !summary.scheduler_enabled && <p className="monitoring-warning">Automatic monitoring is off. Enable SCHEDULER_ENABLED=true in the backend .env and restart to collect data.</p>}
+      {summary && !summary.scheduler_enabled && <p className="monitoring-warning">Automatic monitoring is off, so status is not being collected. An administrator can turn the scheduler on in Admin, Collection.</p>}
+      {checkNote && <p className="fleet-check-note" role="status">{checkNote} Status is refreshed from the monitoring account.</p>}
 
       <section className="panel fleet-panel" aria-labelledby="fleet-table-title">
         <div className="panel-heading fleet-panel-heading">
@@ -401,6 +472,7 @@ function FleetPage({
                 <option value="critical">Critical</option>
                 <option value="unknown">Unknown</option>
                 <option value="offline">Offline</option>
+                <option value="disabled">Disabled</option>
               </select>
               <ChevronDown size={14} aria-hidden="true" />
             </label>
@@ -424,7 +496,7 @@ function FleetPage({
         ) : items.length === 0 ? (
           <StatePanel
             title={environment || health ? 'No databases match these filters' : 'No databases registered'}
-            message={environment || health ? 'Try another environment or health status.' : 'Use Add database in the sidebar to register a TNS database alias.'}
+            message={environment || health ? 'Try another environment or health status.' : manageFleet ? 'Use Add database to register a TNS database alias.' : 'Ask a DBA or an administrator to register a database.'}
             icon={<Database size={24} />}
             action={(environment || health) ? <button className="button button-secondary" onClick={() => { changeEnvironment(''); changeHealth('') }}>Clear filters</button> : undefined}
           />
@@ -439,6 +511,7 @@ function FleetPage({
                     <th scope="col">Health status</th>
                     <th scope="col">Last seen</th>
                     <th scope="col">Critical incidents</th>
+                    {manageFleet && <th scope="col">Registry</th>}
                     <th scope="col"><span className="sr-only">Details</span></th>
                   </tr>
                 </thead>
@@ -452,9 +525,21 @@ function FleetPage({
                         </button>
                       </td>
                       <td><span className={`environment-tag env-${target.environment.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}>{target.environment || 'Unspecified'}</span></td>
-                      <td><HealthBadge status={target.last_health_status} /></td>
+                      <td><HealthBadge status={target.enabled ? target.last_health_status : 'disabled'} /></td>
                       <td><span className="last-seen">{relativeTime(target.last_seen)}</span>{target.last_seen && <small className="timestamp-sub">{formatDate(target.last_seen)}</small>}</td>
-                      <td>{target.critical_incident_count == null ? <span className="unavailable-tag" title="Incident reporting is planned for Phase 3">Not available</span> : <span className="incident-count">{target.critical_incident_count}</span>}</td>
+                      <td>{target.critical_incident_count == null ? <span className="unavailable-tag" title="The incident count was not returned">Not available</span> : <span className="incident-count">{target.critical_incident_count}</span>}</td>
+                      {manageFleet && (
+                        <td>
+                          <button
+                            type="button"
+                            className="row-remove"
+                            aria-label={`Remove ${target.display_name} from the fleet`}
+                            onClick={(event) => { event.stopPropagation(); void removeTarget(target) }}
+                          >
+                            <Trash2 size={13} /> Remove
+                          </button>
+                        </td>
+                      )}
                       <td><button className="row-action" aria-label={`View ${target.display_name} details`} onClick={(event) => { event.stopPropagation(); onOpenTarget(target) }}><ArrowRight size={17} /></button></td>
                     </tr>
                   ))}
@@ -633,7 +718,7 @@ function DetailPage({
         <MetricCard label="Health status" value={detail.last_health_status.replaceAll('_', ' ')} detail={`Monitoring ${detail.monitoring_status || 'status unavailable'}`} icon={<Activity size={18} />} tone={detail.last_health_status === 'healthy' ? 'good' : 'warning'} />
         <MetricCard label="Tablespace usage" value={storageMetric ? formatMetric(storageMetric.value, storageMetric.unit) : 'Unavailable'} detail={storageMetric ? `Updated ${relativeTime(storageMetric.timestamp)}` : 'No current measurement'} icon={<Layers3 size={18} />} tone={storageMetric?.value != null && storageMetric.value >= 85 ? 'warning' : 'default'} />
         <MetricCard label="Compliance checks" value={detail.compliance.pass + detail.compliance.fail + detail.compliance.unknown} detail={`${detail.compliance.pass} pass · ${detail.compliance.fail} fail · ${detail.compliance.unknown} unknown`} icon={<ShieldCheck size={18} />} tone={detail.compliance.fail ? 'warning' : 'default'} />
-        <MetricCard label="Critical incidents" value={detail.critical_incident_count ?? 'Phase 3'} detail={detail.critical_incident_count == null ? 'Incident counts are not available yet' : 'Open critical incidents'} icon={<CircleAlert size={18} />} tone="default" />
+        <MetricCard label="Critical incidents" value={detail.critical_incident_count ?? '—'} detail={detail.critical_incident_count == null ? 'The incident count was not returned' : 'Open critical incidents'} icon={<CircleAlert size={18} />} tone="default" />
       </section>
 
       <div className="detail-grid">
@@ -747,6 +832,8 @@ export default function App() {
     navigateToAudit,
     navigateToGraph,
     navigateToGraphDatabase,
+    navigateToWait,
+    navigateToWaitDatabase,
   } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
@@ -761,25 +848,60 @@ export default function App() {
     setNotificationRefreshKey((value) => value + 1)
   }, [])
   const [session, setSession] = useState<AuthSession | null>(null)
+  const [sessionError, setSessionError] = useState('')
+  const [sessionAttempt, setSessionAttempt] = useState(0)
+  const [passwordOpen, setPasswordOpen] = useState(false)
   useEffect(() => {
     const controller = new AbortController()
+    setSessionError('')
     getSession(controller.signal).then(setSession).catch((reason: unknown) => {
       if (reason instanceof DOMException && reason.name === 'AbortError') return
-      setSession({ required: false, authenticated: true, principal: '', role: 'operator', method: '' })
+      // An unreachable API is shown as an error. It is never treated as a signed-in operator.
+      setSessionError(reason instanceof ApiError ? reason.message : 'Could not reach the Oracle Sentinel API.')
     })
     return () => controller.abort()
-  }, [])
+  }, [sessionAttempt])
+  const databaseId = route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database'
+    || route.page === 'graph-database' || route.page === 'wait-database' ? route.id : null
+  const activeTab: DatabaseTab = route.page === 'graph-database' ? 'graph' : route.page === 'wait-database' ? 'wait'
+    : route.page === 'database-events' ? 'events' : route.page === 'copilot-database' ? 'copilot' : 'overview'
+  const openTab = (tab: DatabaseTab, id: string) => {
+    if (tab === 'graph') navigateToGraphDatabase(id)
+    else if (tab === 'wait') navigateToWaitDatabase(id)
+    else if (tab === 'events') navigateToDatabaseEvents(id)
+    else if (tab === 'copilot') navigateToDatabaseCopilot(id)
+    else navigateToDatabase(id)
+  }
   useEffect(() => {
     if (route.page === 'fleet' || route.page === 'register' || route.page.startsWith('copilot') || refreshSeconds === 0) return
     const timer = window.setInterval(() => refreshAction.current(), refreshSeconds * 1000)
     return () => window.clearInterval(timer)
   }, [route.page, refreshSeconds])
 
+  if (!session && sessionError) {
+    return (
+      <main className="page-shell">
+        <StatePanel
+          tone="error"
+          title="Oracle Sentinel is not reachable"
+          message={sessionError}
+          icon={<CircleAlert size={23} />}
+          action={<button className="button button-primary" type="button" onClick={() => setSessionAttempt((value) => value + 1)}><RefreshCw size={15} /> Try again</button>}
+        />
+      </main>
+    )
+  }
   if (!session) {
     return <main className="page-shell detail-loading"><div className="loading-state" role="status"><span className="spinner" /> Checking sign-in…</div></main>
   }
   if (session.required && !session.authenticated) {
-    return <LoginPage oidcEnabled={session.oidc_enabled === true} onSuccess={setSession} />
+    return (
+      <LoginPage
+        oidcEnabled={session.oidc_enabled === true}
+        directoryEnabled={session.directory_enabled === true}
+        onSuccess={(next) => setSession({ ...session, ...next })}
+      />
+    )
   }
 
   return (
@@ -793,11 +915,9 @@ export default function App() {
         onOpenOperations={navigateToOperations}
         onOpenAdmin={navigateToAdmin}
         onOpenAudit={navigateToAudit}
-        onOpenGraph={navigateToGraph}
         showOperations={canReadProposals(session.role)}
         showAdmin={canAdminister(session.role)}
         showAudit={canReadAudit(session.role)}
-        showGraph={Boolean(session.role)}
         onOpenIncident={navigateToIncident}
         notificationRefreshKey={notificationRefreshKey}
         refreshSeconds={refreshSeconds}
@@ -809,18 +929,24 @@ export default function App() {
         onSignOut={() => {
           void logout().finally(() => setSession({ ...session, authenticated: false, principal: '', role: '', method: '' }))
         }}
+        onChangePassword={session.required && session.method === 'local' ? () => setPasswordOpen(true) : undefined}
       />
-      <div className="database-workspace">
-      <DatabaseSidebar
-        selectedId={route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database' || route.page === 'graph-database' ? route.id : null}
-        homeSelected={route.page === 'fleet'}
-        onHome={navigateHome}
-        onSelect={navigateToDatabase}
-        onRegister={navigateToRegistration}
-        refreshSeconds={refreshSeconds}
-        refreshKey={notificationRefreshKey}
-      />
+      {passwordOpen && <PasswordDialog onClose={() => setPasswordOpen(false)} />}
+      <div className={databaseId ? 'database-workspace' : 'database-workspace database-workspace-wide'}>
+      {databaseId && (
+        <DatabaseSidebar
+          selectedId={databaseId}
+          homeSelected={false}
+          onHome={navigateHome}
+          onSelect={(id) => openTab(activeTab, id)}
+          onRegister={navigateToRegistration}
+          canRegister={canManageFleet(session.role)}
+          refreshSeconds={refreshSeconds}
+          refreshKey={notificationRefreshKey}
+        />
+      )}
       <div className="workspace-content">
+      {databaseId && <DatabaseTabs active={activeTab} onOpen={(tab) => openTab(tab, databaseId)} />}
       {route.page === 'register' ? (
         <DatabaseRegistrationPage onBack={navigateHome} onRefreshStatus={registerRefresh} onRegistered={(target) => {
           setNotificationRefreshKey((value) => value + 1)
@@ -845,6 +971,8 @@ export default function App() {
           onOpenTarget={navigateToDatabase}
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
+          role={session.role}
+          onCleared={() => setNotificationRefreshKey((value) => value + 1)}
         />
       ) : route.page === 'incident' ? (
         <IncidentCenterPage
@@ -856,11 +984,13 @@ export default function App() {
           onAskCopilot={navigateToIncidentCopilot}
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
+          role={session.role}
+          onCleared={() => setNotificationRefreshKey((value) => value + 1)}
         />
       ) : route.page === 'operations' ? (
         <OperationsPage role={session.role} principal={session.principal} onRefreshStatus={registerRefresh} />
       ) : route.page === 'admin' ? (
-        <AdminPage onOpenRegistry={navigateToRegistration} onRefreshStatus={registerRefresh} />
+        <AdminPage onOpenRegistry={navigateToRegistration} onRefreshStatus={registerRefresh} currentUser={session.principal} />
       ) : route.page === 'audit' ? (
         <AuditPage onRefreshStatus={registerRefresh} />
       ) : route.page === 'graph' || route.page === 'graph-database' ? (
@@ -873,8 +1003,18 @@ export default function App() {
           onOpenDatabase={navigateToDatabase}
           onRefreshStatus={registerRefresh}
         />
+      ) : route.page === 'wait' || route.page === 'wait-database' ? (
+        <WaitPage
+          key={route.page === 'wait-database' ? route.id : 'choose'}
+          databaseId={route.page === 'wait-database' ? route.id : null}
+          onChoose={navigateToWaitDatabase}
+          onBack={navigateToWait}
+          onAskCopilot={navigateToDatabaseCopilot}
+          onOpenDatabase={navigateToDatabase}
+          onRefreshStatus={registerRefresh}
+        />
       ) : route.page === 'knowledge' ? (
-        <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} />
+        <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} role={session.role} />
       ) : route.page === 'copilot' || route.page === 'copilot-database' || route.page === 'copilot-incident' ? (
         <CopilotPage
           key={`${route.page}:${'id' in route ? route.id : 'fleet'}`}
@@ -889,6 +1029,9 @@ export default function App() {
           onOpenIncidents={navigateToIncidents}
           refreshSeconds={refreshSeconds}
           onRefreshStatus={registerRefresh}
+          role={session.role}
+          onChanged={() => setNotificationRefreshKey((value) => value + 1)}
+          onRegister={navigateToRegistration}
         />
       )}
       </div>

@@ -9,12 +9,16 @@ import {
   MessageSquare,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   X,
 } from 'lucide-react'
 import {
   acknowledgeIncident,
   ApiError,
+  clearIncidents,
+  getFleet,
   getIncident,
+  getTarget,
   listIncidents,
   resolveIncident,
 } from './api'
@@ -22,12 +26,33 @@ import { formatDate, relativeTime } from './format'
 import { IncidentStatusBadge } from './components/IncidentStatusBadge'
 import { SeverityBadge } from './components/SeverityBadge'
 import { StatePanel } from './components/StatePanel'
-import type { Incident, IncidentDetail, IncidentListResponse } from './types'
+import type { Incident, IncidentDetail, IncidentListResponse, Target } from './types'
 
 const PAGE_SIZE = 25
 
-function shortId(id: string): string {
-  return id.length > 8 ? `${id.slice(0, 8)}…` : id
+function canClearIncidents(role: string | undefined): boolean {
+  return role === 'admin' || role === 'platform_admin'
+}
+
+function databaseLabel(incident: Pick<Incident, 'target_id' | 'target_name'>, databases: Target[]): string {
+  const named = incident.target_name?.trim()
+  if (named) return named
+  const id = incident.target_id.toLowerCase()
+  const match = databases.find((item) => item.id.toLowerCase() === id)
+  return match?.display_name || 'Unknown database'
+}
+
+async function loadRegisteredDatabases(signal: AbortSignal): Promise<Target[]> {
+  const collected: Target[] = []
+  let page = 1
+  let total = 0
+  do {
+    const fleet = await getFleet({ page, pageSize: 100, environment: '', healthStatus: '' }, signal)
+    collected.push(...fleet.items)
+    total = fleet.total
+    page += 1
+  } while (collected.length < total)
+  return collected
 }
 
 function IncidentListView({
@@ -35,37 +60,59 @@ function IncidentListView({
   onOpenTarget,
   refreshSeconds,
   onRefreshStatus,
+  role,
+  onCleared,
 }: {
   onOpenIncident: (id: string) => void
   onOpenTarget: (id: string) => void
   refreshSeconds: number
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
+  role?: string
+  onCleared: () => void
 }) {
   const [response, setResponse] = useState<IncidentListResponse | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [state, setState] = useState('')
   const [severity, setSeverity] = useState('')
+  const [targetId, setTargetId] = useState('')
+  const [databases, setDatabases] = useState<Target[]>([])
   const [page, setPage] = useState(1)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [clearing, setClearing] = useState(false)
   const inFlight = useRef(false)
-  const query = useMemo(() => ({ page, pageSize: PAGE_SIZE, state, severity }), [page, state, severity])
+  const allowClear = canClearIncidents(role)
+  const query = useMemo(
+    () => ({ page, pageSize: PAGE_SIZE, state, severity, targetId }),
+    [page, state, severity, targetId],
+  )
 
   const refresh = useCallback(async (initial = false) => {
     if (inFlight.current) return
     inFlight.current = true
     if (initial) setLoading(true)
+    setRefreshing(true)
     setError('')
     const controller = new AbortController()
     try {
       const result = await listIncidents(query, controller.signal)
+      let fleet: Target[] = []
+      try {
+        fleet = await loadRegisteredDatabases(controller.signal)
+      } catch (reason) {
+        if (reason instanceof DOMException && reason.name === 'AbortError') throw reason
+        fleet = []
+      }
       setResponse(result)
+      setDatabases(fleet)
       setLastUpdated(new Date().toISOString())
     } catch (reason) {
       if (reason instanceof DOMException && reason.name === 'AbortError') return
       setError(reason instanceof ApiError ? reason.message : 'Unexpected error while loading incidents.')
     } finally {
       inFlight.current = false
+      setRefreshing(false)
       setLoading(false)
     }
   }, [query])
@@ -93,6 +140,30 @@ function IncidentListView({
     setSeverity(value)
     setPage(1)
   }
+  function changeDatabase(value: string) {
+    setTargetId(value)
+    setPage(1)
+  }
+  const filtersActive = Boolean(state || severity || targetId)
+
+  async function clearAll() {
+    const confirmed = window.confirm(
+      'Clear every incident? This removes the incident records for all registered databases. Oracle is not changed.',
+    )
+    if (!confirmed) return
+    setClearing(true)
+    setError('')
+    try {
+      await clearIncidents()
+      onCleared()
+      await refresh(false)
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === 'AbortError') return
+      setError(reason instanceof ApiError ? reason.message : 'Could not clear the incidents.')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   return (
     <main className="page-shell">
@@ -103,6 +174,26 @@ function IncidentListView({
           <p>Active and resolved incidents raised from alert-log rules.</p>
         </div>
         <div className="heading-meta">
+          {allowClear && (
+            <button
+              type="button"
+              className="button heading-action heading-danger"
+              aria-label="Clear all incidents"
+              disabled={clearing || refreshing}
+              onClick={() => { void clearAll() }}
+            >
+              <Trash2 size={14} /> {clearing ? 'Clearing…' : 'Clear all incidents'}
+            </button>
+          )}
+          <button
+            type="button"
+            className="button button-primary heading-action"
+            aria-label="Refresh incidents"
+            disabled={refreshing || clearing}
+            onClick={() => { void refresh(false) }}
+          >
+            <RefreshCw size={14} /> {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
           <span className="updated-note"><RefreshCw size={13} /> {lastUpdated ? `Updated ${relativeTime(lastUpdated)}` : 'Waiting for data'}</span>
         </div>
       </section>
@@ -111,9 +202,17 @@ function IncidentListView({
         <div className="panel-heading fleet-panel-heading">
           <div>
             <h2 id="incident-table-title">All incidents <span className="count-pill">{response?.total ?? '—'}</span></h2>
-            <p>Filter by state or severity</p>
+            <p>Latest incidents from every registered database</p>
           </div>
           <div className="filters">
+            <label className="filter-control">
+              <span className="sr-only">Filter by database</span>
+              <select aria-label="Filter by database" value={targetId} onChange={(event) => changeDatabase(event.target.value)}>
+                <option value="">All databases</option>
+                {databases.map((database) => <option value={database.id} key={database.id}>{database.display_name}</option>)}
+              </select>
+              <ChevronDown size={14} aria-hidden="true" />
+            </label>
             <label className="filter-control">
               <span className="sr-only">Filter by state</span>
               <select aria-label="Filter by state" value={state} onChange={(event) => changeState(event.target.value)}>
@@ -134,8 +233,8 @@ function IncidentListView({
               </select>
               <ChevronDown size={14} aria-hidden="true" />
             </label>
-            {(state || severity) && (
-              <button className="clear-filters" onClick={() => { changeState(''); changeSeverity('') }}>
+            {filtersActive && (
+              <button className="clear-filters" onClick={() => { changeState(''); changeSeverity(''); changeDatabase('') }}>
                 <X size={13} /> Clear
               </button>
             )}
@@ -153,10 +252,10 @@ function IncidentListView({
           <div className="loading-state" role="status"><span className="spinner" /> Loading incidents…</div>
         ) : items.length === 0 ? (
           <StatePanel
-            title={state || severity ? 'No incidents match these filters' : 'No incidents reported'}
-            message={state || severity ? 'Try another state or severity.' : 'Incidents will appear here when alert-log rules trigger.'}
+            title={filtersActive ? 'No incidents match these filters' : 'No incidents reported'}
+            message={filtersActive ? 'Try another database, state, or severity.' : 'Incidents will appear here when alert-log rules trigger.'}
             icon={<ShieldCheck size={24} />}
-            action={(state || severity) ? <button className="button button-secondary" onClick={() => { changeState(''); changeSeverity('') }}>Clear filters</button> : undefined}
+            action={filtersActive ? <button className="button button-secondary" onClick={() => { changeState(''); changeSeverity(''); changeDatabase('') }}>Clear filters</button> : undefined}
           />
         ) : (
           <>
@@ -167,7 +266,7 @@ function IncidentListView({
                     <th scope="col">Status</th>
                     <th scope="col">Severity</th>
                     <th scope="col">Message</th>
-                    <th scope="col">Target database</th>
+                    <th scope="col">Database</th>
                     <th scope="col">First seen</th>
                     <th scope="col">Last seen</th>
                     <th scope="col">Owner</th>
@@ -182,7 +281,7 @@ function IncidentListView({
                       <td className="primary-cell incident-message-cell">{incident.message}</td>
                       <td>
                         <button className="database-link" onClick={(event) => { event.stopPropagation(); onOpenTarget(incident.target_id) }}>
-                          <span>{shortId(incident.target_id)}</span>
+                          <span>{databaseLabel(incident, databases)}</span>
                         </button>
                       </td>
                       <td><span className="last-seen">{relativeTime(incident.first_seen)}</span></td>
@@ -258,6 +357,7 @@ function IncidentDetailView({
   const [actionError, setActionError] = useState('')
   const [actionMessage, setActionMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  const [databaseName, setDatabaseName] = useState('')
   const inFlight = useRef(false)
 
   const refresh = useCallback(async (initial = false) => {
@@ -282,6 +382,22 @@ function IncidentDetailView({
   useEffect(() => {
     onRefreshStatus(loading, () => { void refresh(false) })
   }, [loading, onRefreshStatus, refresh])
+  useEffect(() => {
+    if (!incident) return
+    const named = incident.target_name?.trim()
+    if (named) {
+      setDatabaseName(named)
+      return
+    }
+    const controller = new AbortController()
+    getTarget(incident.target_id, controller.signal)
+      .then((target) => setDatabaseName(target.display_name))
+      .catch((reason: unknown) => {
+        if (reason instanceof DOMException && reason.name === 'AbortError') return
+        setDatabaseName('')
+      })
+    return () => controller.abort()
+  }, [incident])
 
   async function runAction(action: 'acknowledge' | 'resolve', reason: string) {
     setBusy(true)
@@ -326,7 +442,7 @@ function IncidentDetailView({
             <div className="eyebrow">INCIDENT <span className="eyebrow-dot">/</span> {incident.rule_id.toUpperCase()}</div>
             <h1>{incident.message}</h1>
             <div className="detail-subtitle">
-              <button className="database-link" onClick={() => onOpenTarget(incident.target_id)}>{shortId(incident.target_id)}</button>
+              <button className="database-link" onClick={() => onOpenTarget(incident.target_id)}>{databaseName || 'Unknown database'}</button>
               <span className="bullet">·</span><span>First seen {relativeTime(incident.first_seen)}</span>
             </div>
           </div>
@@ -400,6 +516,8 @@ export function IncidentCenterPage({
   onAskCopilot,
   refreshSeconds,
   onRefreshStatus,
+  role,
+  onCleared,
 }: {
   incidentId: string | null
   onOpenIncident: (id: string) => void
@@ -408,6 +526,8 @@ export function IncidentCenterPage({
   onAskCopilot?: (id: string) => void
   refreshSeconds: number
   onRefreshStatus: (refreshing: boolean, callback: () => void) => void
+  role?: string
+  onCleared: () => void
 }) {
   if (incidentId) {
     return (
@@ -421,7 +541,16 @@ export function IncidentCenterPage({
       />
     )
   }
-  return <IncidentListView onOpenIncident={onOpenIncident} onOpenTarget={onOpenTarget} refreshSeconds={refreshSeconds} onRefreshStatus={onRefreshStatus} />
+  return (
+    <IncidentListView
+      onOpenIncident={onOpenIncident}
+      onOpenTarget={onOpenTarget}
+      refreshSeconds={refreshSeconds}
+      onRefreshStatus={onRefreshStatus}
+      role={role}
+      onCleared={onCleared}
+    />
+  )
 }
 
 export type { Incident }

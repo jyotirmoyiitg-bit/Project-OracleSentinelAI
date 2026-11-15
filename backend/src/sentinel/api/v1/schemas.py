@@ -134,6 +134,17 @@ class FleetHealthSummary(BaseModel):
     scheduler_enabled: bool
 
 
+class FleetCheckItem(BaseModel):
+    id: UUID
+    display_name: str
+    monitoring_status: str
+
+
+class FleetCheckResponse(BaseModel):
+    checked: int
+    items: list[FleetCheckItem]
+
+
 class TnsAliasResponse(BaseModel):
     name: str
     registered: bool
@@ -318,6 +329,7 @@ class IncidentResponse(BaseModel):
 
     id: UUID
     target_id: UUID
+    target_name: str = ""
     rule_id: str
     fingerprint: str
     state: IncidentState
@@ -341,6 +353,10 @@ class IncidentListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class IncidentClearResponse(BaseModel):
+    deleted: int
 
 
 class IncidentActionRequest(BaseModel):

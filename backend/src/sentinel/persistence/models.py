@@ -216,6 +216,13 @@ class Incident(Base):
     events: Mapped[list[IncidentEvent]] = relationship(back_populates="incident", cascade="all, delete-orphan")
     notifications: Mapped[list[Notification]] = relationship(back_populates="incident", cascade="all, delete-orphan")
 
+    @property
+    def target_name(self) -> str:
+        target = self.target
+        if target is None:
+            return ""
+        return target.display_name
+
 
 class IncidentEvent(Base):
     """Immutable audit trail of incident state transitions, notes, and evidence."""

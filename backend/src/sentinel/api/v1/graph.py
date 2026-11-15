@@ -20,6 +20,8 @@ from sentinel.config.settings import Settings
 from sentinel.graph.activity import ActivityPicture, load_activity
 from sentinel.graph.memory import MemoryPicture, load_memory
 from sentinel.graph.storage import StoragePicture, load_storage, summarize
+from sentinel.graph.wait_activity import WaitActivity, load_wait_activity
+from sentinel.graph.waits import WaitPicture, load_waits
 from sentinel.knowledge.acl import Caller, caller_from_headers
 from sentinel.persistence.session import get_session
 
@@ -130,3 +132,27 @@ def graph_activity(
     _allow(caller)
     alias = _alias(session, target_id)
     return asyncio.run(_picture(settings, alias, load_activity))
+
+
+@database_graph.get("/{target_id}/graph/waits", response_model=WaitPicture)
+def graph_waits(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> WaitPicture:
+    _allow(caller)
+    alias = _alias(session, target_id)
+    return asyncio.run(_picture(settings, alias, load_waits))
+
+
+@database_graph.get("/{target_id}/wait/activity", response_model=WaitActivity)
+def wait_activity(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> WaitActivity:
+    _allow(caller)
+    alias = _alias(session, target_id)
+    return asyncio.run(_picture(settings, alias, load_wait_activity))

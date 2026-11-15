@@ -47,6 +47,7 @@ LOCKED_KEYS = frozenset({
     "operations_require_dual_approval",
     "auth_required",
     "auth_cookie_secure",
+    "metrics_public",
     "auth_bootstrap_username",
     "auth_bootstrap_role",
     "auth_ad_url",
@@ -73,7 +74,8 @@ CONFIG_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Language model", (
         "ai_enabled", "ai_provider", "ai_fallback_provider", "ai_local_url", "ai_model_name",
         "ai_timeout_seconds", "ai_max_tool_calls", "ai_max_output_tokens", "ai_max_context_tokens",
-        "ai_require_citations", "ai_redact_sensitive_telemetry", "ai_hosted_approved", "ai_hosted_vendor",
+        "ai_require_citations", "ai_router_fallback", "ai_fleet_max_databases",
+        "ai_fleet_concurrency", "ai_fleet_database_timeout_seconds", "ai_redact_sensitive_telemetry", "ai_hosted_approved", "ai_hosted_vendor",
         "ai_hosted_api_base", "ai_hosted_model", "ai_hosted_privacy_disclosure",
         "ai_local_model", "ai_local_privacy_disclosure", "ai_local_timeout_seconds", "ai_local_max_output_tokens",
         "ai_anthropic_model", "ai_anthropic_api_base", "ai_anthropic_privacy_disclosure",
@@ -93,7 +95,8 @@ CONFIG_SECTIONS: tuple[tuple[str, tuple[str, ...]], ...] = (
         "notification_recipients", "notification_max_retries", "notification_retry_backoff_seconds",
     )),
     ("Sign-in", (
-        "auth_required", "auth_session_hours", "auth_cookie_secure", "auth_bootstrap_username",
+        "auth_required", "auth_session_hours", "auth_cookie_secure", "auth_max_failed_logins",
+        "auth_lockout_minutes", "metrics_public", "auth_bootstrap_username",
         "auth_bootstrap_role", "auth_ad_url", "auth_ad_domain", "auth_ad_base_dn",
         "auth_ad_operator_group", "auth_ad_dba_group", "auth_ad_admin_group",
         "auth_oidc_issuer", "auth_oidc_client_id", "auth_oidc_redirect_uri", "auth_oidc_success_url",

@@ -42,7 +42,7 @@ class HostedChatProvider:
         structured_schema: dict[str, object] | None,
         correlation_id: str,
     ) -> ModelReply:
-        del structured_schema, correlation_id
+        del correlation_id
         reject_native_tools(tools)
         if not self.approved:
             raise ProviderError("hosted_not_approved")
@@ -57,7 +57,11 @@ class HostedChatProvider:
                 "messages": messages,
                 "max_tokens": self.max_output_tokens,
                 "temperature": 0,
-                "response_format": {"type": "json_object"},
+                "response_format": (
+                    {"type": "json_schema", "json_schema": {"name": "assessment", "schema": structured_schema}}
+                    if structured_schema
+                    else {"type": "json_object"}
+                ),
             }
             headers = {"Authorization": f"Bearer {key}"}
             url = _completions_url(self.api_base)

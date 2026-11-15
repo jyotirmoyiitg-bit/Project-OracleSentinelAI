@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import uuid
 from typing import Any
 
 from sqlalchemy import event
@@ -46,6 +47,27 @@ def record(
     session.add(event_row)
     session.flush()
     return event_row
+
+
+def record_action(
+    session: Session,
+    principal: str,
+    action: str,
+    target: str,
+    outcome: str,
+    detail: dict[str, Any] | None = None,
+    correlation_id: str | None = None,
+) -> AuditEvent:
+    """Audit one operator action inside the caller's transaction."""
+    return record(
+        session,
+        principal=principal or "unknown",
+        action=action,
+        target=target,
+        outcome=outcome,
+        correlation_id=correlation_id or str(uuid.uuid4()),
+        detail=detail or {},
+    )
 
 
 @event.listens_for(AuditEvent, "before_update")

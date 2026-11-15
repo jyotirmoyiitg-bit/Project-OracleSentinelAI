@@ -40,6 +40,7 @@ async def test_same_prompt_works_for_local_and_hosted_mocks(monkeypatch: pytest.
         assert "execute_sql" not in request.content.decode()
         seen.append((request.url.host, request.url.path))
         if request.url.path == "/api/chat":
+            assert body["format"]["properties"]["confidence"]["enum"] == ["low", "medium", "high"]
             return httpx.Response(200, json={"message": {"content": json.dumps(ASSESSMENT)}, "prompt_eval_count": 3, "eval_count": 4})
         assert request.headers["authorization"] == "Bearer local-test-secret"
         return httpx.Response(200, json={
@@ -185,7 +186,8 @@ async def test_openai_uses_the_default_chat_completions_url(monkeypatch: pytest.
     assert isinstance(body, dict)
     assert captured["url"] == "https://api.openai.com/v1/chat/completions"
     assert captured["authorization"] == "Bearer openai-test-secret"
-    assert body["response_format"] == {"type": "json_object"}
+    assert body["response_format"]["type"] == "json_schema"
+    assert body["response_format"]["json_schema"]["schema"]["properties"]["confidence"]["enum"] == ["low", "medium", "high"]
     assert reply.content == "openai answer"
     assert reply.provider == "hosted"
 

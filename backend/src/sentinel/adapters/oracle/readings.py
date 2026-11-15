@@ -551,6 +551,137 @@ GRAPH_RATE_SQL = """
     FROM v$sysstat
     WHERE name IN ('physical reads', 'redo entries', 'parse count (total)', 'execute count')
 """
+GRAPH_WAIT_SQL = """
+    SELECT event, wait_class, total_waits, time_waited_micro
+    FROM (
+        SELECT event, wait_class, total_waits, time_waited_micro
+        FROM v$system_event
+        WHERE wait_class <> 'Idle'
+        ORDER BY time_waited_micro DESC, event
+    )
+    WHERE ROWNUM <= 15
+"""
+GRAPH_WAIT_CPU_SQL = """
+    SELECT stat_name, value
+    FROM v$sys_time_model
+    WHERE stat_name = 'DB CPU'
+"""
+WAIT_ENQUEUE_SQL = """
+    SELECT eq_name, gets, waits, wait_time
+    FROM (
+        SELECT eq_name,
+               SUM(total_req#) AS gets,
+               SUM(total_wait#) AS waits,
+               SUM(cum_wait_time) AS wait_time
+        FROM v$enqueue_statistics
+        GROUP BY eq_name
+        ORDER BY SUM(cum_wait_time) DESC, eq_name
+    )
+    WHERE ROWNUM <= 12
+"""
+WAIT_BLOCKING_LOCK_SQL = """
+    SELECT sid, serial_no, username, pid, lock_type, mode_wanted, object_name
+    FROM (
+        SELECT s.sid, s.serial# AS serial_no, s.username,
+               SUBSTR(s.process, 1, 24) AS pid, l.type AS lock_type,
+               l.request AS mode_wanted, SUBSTR(o.object_name, 1, 40) AS object_name
+        FROM v$lock l
+        JOIN v$session s ON s.sid = l.sid
+        LEFT JOIN dba_objects o ON l.type = 'TM' AND o.object_id = l.id1
+        WHERE l.request > 0 AND s.type = 'USER'
+        ORDER BY s.sid
+    )
+    WHERE ROWNUM <= 20
+"""
+WAIT_PARSE_SQL = """
+    SELECT name, value
+    FROM v$sysstat
+    WHERE name IN (
+        'parse count (total)', 'parse count (hard)', 'parse count (failures)',
+        'session cursor cache hits'
+    )
+"""
+WAIT_PARSE_TIME_SQL = """
+    SELECT stat_name, value
+    FROM v$sys_time_model
+    WHERE stat_name IN (
+        'parse time elapsed', 'hard parse elapsed time', 'failed parse elapsed time'
+    )
+    ORDER BY stat_name
+"""
+WAIT_LIBRARY_SQL = """
+    SELECT namespace, gets, gethits, reloads, invalidations
+    FROM v$librarycache
+    WHERE namespace IN ('SQL AREA', 'TABLE/PROCEDURE', 'BODY', 'TRIGGER')
+"""
+WAIT_BUFFER_BUSY_SQL = """
+    SELECT event, wait_class, total_waits, time_waited_micro
+    FROM v$system_event
+    WHERE event IN (
+        'buffer busy waits',
+        'read by other session',
+        'gc buffer busy acquire',
+        'gc buffer busy release'
+    )
+    ORDER BY time_waited_micro DESC, event
+"""
+WAIT_CLASS_SQL = """
+    SELECT class_name, wait_count, wait_time
+    FROM (
+        SELECT class AS class_name, count AS wait_count, time AS wait_time
+        FROM v$waitstat
+        WHERE NVL(count, 0) > 0
+        ORDER BY time DESC, class
+    )
+    WHERE ROWNUM <= 12
+"""
+WAIT_BUFFER_USER_SQL = """
+    SELECT username, sid, total_waits, time_waited_micro
+    FROM (
+        SELECT SUBSTR(NVL(s.username, s.program), 1, 40) AS username,
+               s.sid, e.total_waits, e.time_waited_micro
+        FROM v$session_event e
+        JOIN v$session s ON s.sid = e.sid
+        WHERE e.event IN (
+            'buffer busy waits',
+            'read by other session',
+            'gc buffer busy acquire',
+            'gc buffer busy release'
+        )
+        ORDER BY e.time_waited_micro DESC, s.sid
+    )
+    WHERE ROWNUM <= 15
+"""
+WAIT_BUFFER_TABLESPACE_SQL = """
+    SELECT tablespace_name, session_count
+    FROM (
+        SELECT f.tablespace_name, COUNT(*) AS session_count
+        FROM v$session s
+        JOIN dba_data_files f ON f.file_id = s.row_wait_file#
+        WHERE s.event IN (
+            'buffer busy waits',
+            'read by other session',
+            'gc buffer busy acquire',
+            'gc buffer busy release'
+        )
+        GROUP BY f.tablespace_name
+        ORDER BY COUNT(*) DESC, f.tablespace_name
+    )
+    WHERE ROWNUM <= 8
+"""
+WAIT_IO_SQL = """
+    SELECT name, value
+    FROM v$sysstat
+    WHERE name IN (
+        'db block changes', 'physical reads', 'physical reads direct',
+        'consistent gets', 'physical writes', 'physical writes direct'
+    )
+"""
+WAIT_FILE_IO_SQL = """
+    SELECT SUM(phyrds) AS reads, SUM(phywrts) AS writes,
+           SUM(readtim) AS read_time, SUM(writetim) AS write_time
+    FROM v$filestat
+"""
 GRAPH_HIT_SQL = """
     SELECT name, value
     FROM v$sysstat
@@ -601,6 +732,31 @@ GRAPH_BACKUP_SQL = """
         ORDER BY start_time DESC
     )
     WHERE ROWNUM <= 1
+"""
+
+
+FLEET_PROGRAM_SQL = """
+    SELECT program, session_count, active_count
+    FROM (
+        SELECT SUBSTR(NVL(program, 'unknown'), 1, 80) AS program,
+               COUNT(*) AS session_count,
+               SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS active_count
+        FROM v$session
+        WHERE type = 'USER'
+        GROUP BY SUBSTR(NVL(program, 'unknown'), 1, 80)
+        ORDER BY COUNT(*) DESC
+    )
+    WHERE ROWNUM <= 200
+"""
+FLEET_DATAFILE_SQL = """
+    SELECT tablespace_name, file_count, largest_file_bytes, total_bytes
+    FROM (
+        SELECT tablespace_name, COUNT(*) AS file_count, MAX(bytes) AS largest_file_bytes, SUM(bytes) AS total_bytes
+        FROM dba_data_files
+        GROUP BY tablespace_name
+        ORDER BY MAX(bytes) DESC
+    )
+    WHERE ROWNUM <= 200
 """
 
 
@@ -698,6 +854,19 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
     graph_jobs = (FixedQuery("dba_scheduler_running_jobs", GRAPH_JOB_SQL, "SYS.DBA_SCHEDULER_RUNNING_JOBS"),)
     graph_segments = (FixedQuery("dba_segments", GRAPH_SEGMENT_SQL, "SYS.DBA_SEGMENTS"),)
     graph_rates = (FixedQuery("v$sysstat", GRAPH_RATE_SQL, "SYS.V_$SYSSTAT"),)
+    graph_waits = (FixedQuery("v$system_event", GRAPH_WAIT_SQL, "SYS.V_$SYSTEM_EVENT"),)
+    graph_wait_cpu = (FixedQuery("v$sys_time_model", GRAPH_WAIT_CPU_SQL, "SYS.V_$SYS_TIME_MODEL"),)
+    wait_enqueues = (FixedQuery("v$enqueue_statistics", WAIT_ENQUEUE_SQL, "SYS.V_$ENQUEUE_STATISTICS"),)
+    wait_blocking_locks = (FixedQuery("v$lock", WAIT_BLOCKING_LOCK_SQL, "SYS.V_$LOCK"),)
+    wait_parse = (FixedQuery("v$sysstat", WAIT_PARSE_SQL, "SYS.V_$SYSSTAT"),)
+    wait_parse_time = (FixedQuery("v$sys_time_model", WAIT_PARSE_TIME_SQL, "SYS.V_$SYS_TIME_MODEL"),)
+    wait_library = (FixedQuery("v$librarycache", WAIT_LIBRARY_SQL, "SYS.V_$LIBRARYCACHE"),)
+    wait_buffer_busy = (FixedQuery("v$system_event", WAIT_BUFFER_BUSY_SQL, "SYS.V_$SYSTEM_EVENT"),)
+    wait_classes = (FixedQuery("v$waitstat", WAIT_CLASS_SQL, "SYS.V_$WAITSTAT"),)
+    wait_buffer_users = (FixedQuery("v$session_event", WAIT_BUFFER_USER_SQL, "SYS.V_$SESSION_EVENT"),)
+    wait_buffer_tablespaces = (FixedQuery("dba_data_files", WAIT_BUFFER_TABLESPACE_SQL, "SYS.DBA_DATA_FILES"),)
+    wait_io = (FixedQuery("v$sysstat", WAIT_IO_SQL, "SYS.V_$SYSSTAT"),)
+    wait_file_io = (FixedQuery("v$filestat", WAIT_FILE_IO_SQL, "SYS.V_$FILESTAT"),)
     graph_hit_ratio = (FixedQuery("v$sysstat", GRAPH_HIT_SQL, "SYS.V_$SYSSTAT"),)
     graph_shared_pool = (FixedQuery("v$sgastat", GRAPH_SGASTAT_SQL, "SYS.V_$SGASTAT"),)
     graph_memory_management = (FixedQuery("v$parameter", GRAPH_MEMORY_PARAMETER_SQL, "SYS.V_$PARAMETER"),)
@@ -721,6 +890,12 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         FixedQuery("v$resource_limit", LIMIT_SQL, "SYS.V_$RESOURCE_LIMIT", required=False),
     )
     return {
+        "session_programs": (FixedQuery("v$session", FLEET_PROGRAM_SQL, "SYS.V_$SESSION"),),
+        "datafile_sizes": (FixedQuery("dba_data_files", FLEET_DATAFILE_SQL, "SYS.DBA_DATA_FILES"),),
+        "redo_logs": graph_redo,
+        "control_files": graph_control_files,
+        "segments": graph_segments,
+        "background": graph_background,
         "availability": availability,
         "errors": errors,
         "ora_errors": ora_errors,
@@ -750,6 +925,19 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         "get_job_queue": graph_jobs,
         "get_largest_segments": graph_segments,
         "get_rate_counters": graph_rates,
+        "get_wait_events": graph_waits,
+        "get_wait_cpu": graph_wait_cpu,
+        "get_enqueue_stats": wait_enqueues,
+        "get_blocking_locks": wait_blocking_locks,
+        "get_parse_counts": wait_parse,
+        "get_parse_time": wait_parse_time,
+        "get_library_cache": wait_library,
+        "get_buffer_busy": wait_buffer_busy,
+        "get_buffer_classes": wait_classes,
+        "get_buffer_users": wait_buffer_users,
+        "get_buffer_tablespaces": wait_buffer_tablespaces,
+        "get_io_counters": wait_io,
+        "get_file_io": wait_file_io,
         "get_buffer_hit_ratio": graph_hit_ratio,
         "get_shared_pool_free": graph_shared_pool,
         "get_memory_management": graph_memory_management,

@@ -37,6 +37,18 @@ ALLOWED_TOOLS = frozenset({
     "get_security_posture",
     "get_failed_jobs",
     "get_current_issues",
+    "get_redo_logs",
+    "list_control_files",
+    "get_largest_segments",
+    "get_background_processes",
+    "get_fleet_health",
+    "get_session_programs",
+    "get_datafile_sizes",
+    "get_fleet_incidents",
+    "get_fleet_compliance",
+    "get_fleet_tablespaces",
+    "find_fleet_programs",
+    "find_fleet_datafiles",
 })
 _FORBIDDEN = re.compile(
     r"\b(execute_sql|sql_query|run_sql|execute_shell|shell|subprocess|http_request|send_to_hosted)\b",
