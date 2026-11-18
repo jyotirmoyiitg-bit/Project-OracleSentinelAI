@@ -1,12 +1,16 @@
-import { Activity, FileText, Hourglass, MessageSquare, Network } from 'lucide-react'
+import { Activity, BellRing, Cpu, FileText, HardDrive, Hourglass, MessageSquare, Network, SlidersHorizontal } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-export type DatabaseTab = 'overview' | 'graph' | 'wait' | 'events' | 'copilot'
+export type DatabaseTab = 'overview' | 'graph' | 'wait' | 'memory' | 'storage' | 'parameters' | 'alerts' | 'events' | 'copilot'
 
 const TABS: { id: DatabaseTab; label: string; icon: ReactNode }[] = [
   { id: 'overview', label: 'Overview', icon: <Activity size={14} /> },
   { id: 'graph', label: 'GraphDB', icon: <Network size={14} /> },
   { id: 'wait', label: 'WaitDB', icon: <Hourglass size={14} /> },
+  { id: 'memory', label: 'MemoryDB', icon: <Cpu size={14} /> },
+  { id: 'storage', label: 'StorageDB', icon: <HardDrive size={14} /> },
+  { id: 'parameters', label: 'ParameterDB', icon: <SlidersHorizontal size={14} /> },
+  { id: 'alerts', label: 'AlertDB', icon: <BellRing size={14} /> },
   { id: 'events', label: 'Events', icon: <FileText size={14} /> },
   { id: 'copilot', label: 'Copilot', icon: <MessageSquare size={14} /> },
 ]

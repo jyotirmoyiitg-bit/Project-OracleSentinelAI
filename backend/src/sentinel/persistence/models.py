@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -540,3 +540,123 @@ class AuditEvent(Base):
     outcome: Mapped[str] = mapped_column(String(20))
     evidence_digest: Mapped[str] = mapped_column(String(64))
     detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+
+class AgentRun(Base):
+    """One run of one agent toward one goal."""
+
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        Index("ix_agent_runs_created", "created_at"),
+        Index("ix_agent_runs_target", "target_id", "created_at"),
+        Index("ix_agent_runs_incident", "incident_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    agent: Mapped[str] = mapped_column(String(32))
+    trigger: Mapped[str] = mapped_column(String(20), default="operator")
+    scope_type: Mapped[str] = mapped_column(String(20), default="database")
+    target_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("incidents.id", ondelete="SET NULL"))
+    goal: Mapped[str] = mapped_column(Text, default="")
+    playbook: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(20), default="queued")
+    principal: Mapped[str] = mapped_column(String(200), default="")
+    role: Mapped[str] = mapped_column(String(32), default="operator")
+    provider: Mapped[str] = mapped_column(String(40), default="disabled")
+    model: Mapped[str] = mapped_column(String(120), default="")
+    llm_used: Mapped[bool] = mapped_column(Boolean, default=False)
+    steps_used: Mapped[int] = mapped_column(Integer, default=0)
+    model_calls: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    correlation_id: Mapped[str] = mapped_column(String(36), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class AgentStep(Base):
+    """One saved step of an agent run."""
+
+    __tablename__ = "agent_steps"
+    __table_args__ = (Index("ix_agent_steps_run", "run_id", "seq"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    seq: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200), default="")
+    detail: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    outcome: Mapped[str] = mapped_column(String(20), default="ok")
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class EvidenceSnapshot(Base):
+    """One fixed reading from one database at one time. Rows are data and are never executed."""
+
+    __tablename__ = "evidence_snapshots"
+    __table_args__ = (
+        Index("ix_evidence_snapshots_target_kind", "target_id", "kind", "taken_at"),
+        Index("ix_evidence_snapshots_batch", "batch_id"),
+        Index("ix_evidence_snapshots_taken", "taken_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column()
+    run_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("agent_runs.id", ondelete="SET NULL"))
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    pack: Mapped[str] = mapped_column(String(32), default="")
+    kind: Mapped[str] = mapped_column(String(40))
+    taken_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    status: Mapped[str] = mapped_column(String(20), default="ok")
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+    rows: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    note: Mapped[str] = mapped_column(String(300), default="")
+    digest: Mapped[str] = mapped_column(String(64), default="")
+    restricted: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AgentFinding(Base):
+    """One conclusion shown to an operator, with the evidence it cites."""
+
+    __tablename__ = "agent_findings"
+    __table_args__ = (
+        Index("ix_agent_findings_decision", "decision", "created_at"),
+        Index("ix_agent_findings_incident", "incident_id"),
+        Index("ix_agent_findings_target", "target_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("agent_runs.id", ondelete="CASCADE"))
+    target_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"))
+    incident_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("incidents.id", ondelete="SET NULL"))
+    severity: Mapped[str] = mapped_column(String(20), default="info")
+    title: Mapped[str] = mapped_column(String(200), default="")
+    summary: Mapped[str] = mapped_column(Text, default="")
+    next_steps: Mapped[list[str]] = mapped_column(JSON, default=list)
+    evidence: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    confidence: Mapped[str] = mapped_column(String(20), default="none")
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    verifier_note: Mapped[str] = mapped_column(String(300), default="")
+    written_by: Mapped[str] = mapped_column(String(20), default="rules")
+    restricted: Mapped[bool] = mapped_column(Boolean, default=False)
+    decision: Mapped[str] = mapped_column(String(20), default="open")
+    decided_by: Mapped[str] = mapped_column(String(200), default="")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime)
+    decision_note: Mapped[str] = mapped_column(String(300), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AgentDatabaseSetting(Base):
+    """One agent setting overridden for one database. A missing row means the system default applies."""
+
+    __tablename__ = "agent_database_settings"
+
+    target_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("database_targets.id", ondelete="CASCADE"), primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[Any] = mapped_column(JSON, nullable=False)
+    changed_by: Mapped[str] = mapped_column(String(200), default="")
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

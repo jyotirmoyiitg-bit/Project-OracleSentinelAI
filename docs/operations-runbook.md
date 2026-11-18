@@ -200,3 +200,53 @@ Audit. Sign-ins, operator changes, registry changes, connection tests, incident 
 Knowledge. An administrator uploads a PDF, DOCX, TXT, or Markdown file on the Knowledge page. The file lands in `knowledge-intake/ora-19c-manual` or `knowledge-intake/Policy` and is scanned at once. A manual above `KNOWLEDGE_MAX_PAGES` is quarantined by that scan.
 
 Model-assisted routing. With a model enabled, a database question the fixed router cannot place is routed by the model to at most three approved readings. Set `AI_ROUTER_FALLBACK=false` in Admin, Language model to keep routing fixed only.
+
+## Phase 26 copilot fixes
+
+- No migration, grant, or setting. Restart the API; the portal needs no rebuild.
+- "Which schema is not a system schema?" and "list the schemas" are read from the selected database for an administrator. The reading lists application schemas first, then the ones Oracle maintains. Anyone else is told that the list of database users is limited to an administrator.
+- The monitoring account appears among the application schemas, marked as the Sentinel monitoring account. That is correct: Oracle does not maintain it.
+- An Oracle-knowledge answer marked low confidence with "No manual passage was found" means the manuals are not indexed or the search found nothing. Index them with `test_real_phase24\Verify_Phase24_Real.ps1 -ReindexOnly`.
+- When an answer looks wrong, read the thread in `chat_messages`, oldest first. The `tool_trace` of the answer names the route and the readings, and the messages before it are what the model was sent.
+- An answer that repeats an earlier one is asked for again automatically. That turn takes one or two more model calls.
+- The user reading needs Oracle Database 12.1 or later. On 11g `DBA_USERS` has no `ORACLE_MAINTAINED` column and the reading reports that it could not be read.
+- Live check: `test_real_phase26\Verify_Phase26_Real.ps1`. Add `-RequireModel` to fail unless the local model routed and answered.
+
+## Phase 25 database sections
+
+- No migration and no grant. Restart the API and reload the portal. A database workspace then has MemoryDB, StorageDB, ParameterDB, and AlertDB tabs.
+- Each section opens one Oracle session when it is opened and on each refresh. AlertDB reads `V$DIAG_ALERT_EXT`, which is the slowest of the four on a large alert log.
+- A section that shows "Grant SELECT on ..." names the view the monitoring account is missing. All views used here are in `scripts/oracle/02_grant_readonly_monitoring.sql`.
+- An operator who needs a parameter value that is held back, or a file path in the alert log, must ask an administrator. The rule is fixed.
+- Nothing can be changed from these pages. ParameterDB has no modify control.
+- Live check: `test_real_phase25\Verify_Phase25_Real.ps1`. It changes no setting.
+
+## Phase 24 embeddings and supervisor
+
+- Run `alembic upgrade head` first. Revision `0012` clears the stored passage vectors and marks every document for embedding again. Keyword search keeps working until the indexing step has run.
+- Index once with `test_real_phase24\Verify_Phase24_Real.ps1 -ReindexOnly`. It pulls `nomic-embed-text` into Ollama when it is missing, stores the local model as the embedding provider, raises the stored page, size, and parse limits when they are too low, and embeds every file. Twelve manuals take about fifteen minutes on a GPU.
+- Run it again after adding, replacing, or removing a manual. Unchanged files are skipped, so it takes seconds. A stopped run continues with the unfinished files.
+- Ollama must be running for a search by meaning. When it is not, search uses keywords only and the copilot still answers.
+- An embedding model must return 768 numbers. Another length is refused with a message.
+- The supervisor needs the local language model stored in Admin, Language model. `ai_supervisor_enabled` turns it off; the fixed patterns then route as before.
+- Answers from snapshots need agents on. `ai_snapshot_max_age_seconds` is 900 by default; 0 always reads live.
+- Each answer in the portal shows who answered. Hover the badges to see whether the supervisor or the fixed patterns chose.
+
+## Phase 23 graph history
+
+- No migration. Restart the API. The sampler starts with the collection scheduler, so it needs `SCHEDULER_ENABLED=true`.
+- It is on by default and logs on to each enabled database once every 5 minutes to read five fixed readings. Change the interval (60 to 3600 seconds), the retention (1 to 168 hours), or turn it off in Admin, Graph history. A changed interval applies within 30 seconds.
+- Samples are rows in `observations` with `metric_name = 'activity.sample'`. At the defaults one database holds about 288 rows.
+- GraphDB and WaitDB read again 3 seconds after they open. That adds one Oracle logon per page open.
+- A page that shows "Rate needs a second sample" for more than a few seconds means the quick reading failed; check the database connection.
+- Live check: `test_real_phase23\Verify_Phase23_Real.ps1`. It sets a 60 second interval for the run and puts every setting back.
+
+## Phase 22 agents
+
+- Run `alembic upgrade head` first. The API does not start without the agent tables of revision `0011`.
+- Agents are off after the upgrade. An administrator turns them on in Admin, Agents (`agents_enabled`). A database can be left out, or given its own packs, retention, minimum gap, and automatic investigation, in the Snapshot panel of its Overview page.
+- A snapshot logs on to the database once and runs up to 15 fixed readings for the default packs. Keep the minimum gap above zero in normal use.
+- Automatic investigation of a new critical incident (`agent_auto_investigate`) and snapshot retention run on the agent timer, which starts only when `SCHEDULER_ENABLED=true`.
+- Snapshots are deleted after `agent_snapshot_retention_days` (14 by default, 30 at most). Runs and findings are kept.
+- The local model writes the cause in a finding. Without it, findings show the evidence only.
+- Live check: `test_real_phase22\Verify_Phase22_Real.ps1`. It turns agents on for the run when they are off and puts every changed setting back.

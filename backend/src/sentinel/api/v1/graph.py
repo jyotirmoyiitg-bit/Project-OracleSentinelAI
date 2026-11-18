@@ -2,14 +2,19 @@
 
 The shell does not query Oracle. The three picture endpoints open one Oracle session per
 request and run every reading on it. A non-administrator receives the disk-storage summary
-without file paths, redo members, or segment names.
+without file paths, redo members, or segment names. The history endpoint returns stored
+counter samples from PostgreSQL and does not query Oracle.
+
+MemoryDB, StorageDB, ParameterDB, and AlertDB add four more pictures of one database. They are open
+to every signed-in role too. A parameter value that holds a path or an address, and a file path in
+the alert log, are shown to an administrator only.
 """
 
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -18,7 +23,20 @@ from sentinel.api.v1.databases import find_target, runtime_settings
 from sentinel.auth.rbac import PermissionDenied, has_permission, require
 from sentinel.config.settings import Settings
 from sentinel.graph.activity import ActivityPicture, load_activity
+from sentinel.graph.history import GraphHistory, caption, read_history
 from sentinel.graph.memory import MemoryPicture, load_memory
+from sentinel.graph.sections import (
+    AlertTail,
+    ParameterList,
+    SgaBreakdown,
+    TablespaceUtilization,
+    alert_tail_for_role,
+    load_alert_tail,
+    load_parameters,
+    load_sga_breakdown,
+    load_tablespaces,
+    parameters_for_role,
+)
 from sentinel.graph.storage import StoragePicture, load_storage, summarize
 from sentinel.graph.wait_activity import WaitActivity, load_wait_activity
 from sentinel.graph.waits import WaitPicture, load_waits
@@ -134,6 +152,26 @@ def graph_activity(
     return asyncio.run(_picture(settings, alias, load_activity))
 
 
+@database_graph.get("/{target_id}/graph/history", response_model=GraphHistory)
+def graph_history(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+    minutes: Annotated[int, Query(ge=5, le=1440)] = 60,
+) -> GraphHistory:
+    """Stored counter samples for the charts and meters. Oracle is not read."""
+    _allow(caller)
+    _alias(session, target_id)
+    samples = read_history(session, find_target(session, target_id).id, minutes)
+    return GraphHistory(
+        samples=samples,
+        enabled=bool(settings.scheduler_enabled and settings.graph_history_enabled),
+        interval_seconds=settings.graph_history_interval_seconds,
+        caption=caption(settings, len(samples)),
+    )
+
+
 @database_graph.get("/{target_id}/graph/waits", response_model=WaitPicture)
 def graph_waits(
     target_id: str,
@@ -156,3 +194,57 @@ def wait_activity(
     _allow(caller)
     alias = _alias(session, target_id)
     return asyncio.run(_picture(settings, alias, load_wait_activity))
+
+
+@database_graph.get("/{target_id}/memory/sga", response_model=SgaBreakdown)
+def memory_sga(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> SgaBreakdown:
+    """MemoryDB: how the SGA is divided between its pools."""
+    _allow(caller)
+    alias = _alias(session, target_id)
+    return asyncio.run(_picture(settings, alias, load_sga_breakdown))
+
+
+@database_graph.get("/{target_id}/storage/tablespaces", response_model=TablespaceUtilization)
+def storage_tablespaces(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> TablespaceUtilization:
+    """StorageDB: size, free space, and fragments of every tablespace."""
+    _allow(caller)
+    alias = _alias(session, target_id)
+    return asyncio.run(_picture(settings, alias, load_tablespaces))
+
+
+@database_graph.get("/{target_id}/parameters", response_model=ParameterList)
+def database_parameters(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> ParameterList:
+    """ParameterDB: the initialization parameters in effect. Paths and addresses are shown to an administrator."""
+    _allow(caller)
+    alias = _alias(session, target_id)
+    picture = asyncio.run(_picture(settings, alias, load_parameters))
+    return parameters_for_role(picture, sees_detail(caller))
+
+
+@database_graph.get("/{target_id}/alert-log", response_model=AlertTail)
+def database_alert_log(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> AlertTail:
+    """AlertDB: the most recent lines of the alert log. File paths are shown to an administrator."""
+    _allow(caller)
+    alias = _alias(session, target_id)
+    picture = asyncio.run(_picture(settings, alias, load_alert_tail))
+    return alert_tail_for_role(picture, sees_detail(caller))

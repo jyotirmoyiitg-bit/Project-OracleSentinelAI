@@ -15,7 +15,7 @@ overrides live-mode settings. Root .env is not modified. Passwords and API keys
 are never copied or printed.
 
 This builds on the earlier live harnesses: it starts Docker PostgreSQL, upgrades
-the schema through revision 0010, signs in with the local bootstrap account, reuses
+the schema to the current revision, signs in with the local bootstrap account, reuses
 or registers the selected real TNS alias, and confirms the Oracle connection.
 
 The language model stays disabled for this run. Privileged execution stays disabled.
@@ -206,9 +206,9 @@ try {
     $SchemaOutput = & $Python $Runtime schema
     if ($LASTEXITCODE -ne 0) { throw 'Phase 7 schema check failed. See the safe error above.' }
     $Schema = $SchemaOutput | ConvertFrom-Json
-    if ($Schema.alembic_head -ne '0010') { throw "Expected Alembic head 0010, received $($Schema.alembic_head)." }
+    if ([string]$Schema.alembic_head -lt '0010') { throw "Expected Alembic head 0010 or later, received $($Schema.alembic_head)." }
     if ([int]$Schema.privileged_rows -ne 0) { throw 'The privileged operation table is not empty.' }
-    Write-Host '[PASS] Schema is at revision 0010 and the privileged table is empty' -ForegroundColor Green
+    Write-Host "[PASS] Schema is at revision $($Schema.alembic_head) and the privileged table is empty" -ForegroundColor Green
 
     $Logs = Join-Path ([System.IO.Path]::GetTempPath()) ('OracleSentinel-RealPhase8-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $Logs | Out-Null

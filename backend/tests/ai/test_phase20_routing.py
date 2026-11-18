@@ -162,7 +162,8 @@ def test_fixed_route_does_not_ask_the_model_to_route(settings, sessions, make_ta
     target_id = str(make_target(alias="PDBORCL"))
     provider = _Provider(["get_top_sql"])
     thread_id = _thread(sessions, "database", target_id, "olga", "operator")
-    answer = _ask(sessions, settings, provider, thread_id, Caller("operator", "olga"), "Where are the redo log files?")
+    fixed = settings.model_copy(update={"ai_supervisor_enabled": False})
+    answer = _ask(sessions, fixed, provider, thread_id, Caller("operator", "olga"), "Where are the redo log files?")
     tools = [item["tool"] for item in answer.tools]
     assert "route_question" not in tools
     assert "get_redo_logs" in tools
@@ -176,7 +177,7 @@ def test_router_fallback_can_be_switched_off(settings, sessions, make_target) ->
     target_id = str(make_target(alias="PDBORCL"))
     provider = _Provider(["get_memory_status"])
     thread_id = _thread(sessions, "database", target_id, "olga", "operator")
-    off = settings.model_copy(update={"ai_router_fallback": False})
+    off = settings.model_copy(update={"ai_router_fallback": False, "ai_supervisor_enabled": False})
     answer = _ask(sessions, off, provider, thread_id, Caller("operator", "olga"), "Is the buffer cache hit ratio ok?")
     assert "route_question" not in [item["tool"] for item in answer.tools]
     assert all("readings" not in schema.get("properties", {}) for schema in provider.schemas)
@@ -237,7 +238,7 @@ def test_mcp_server_speaks_one_json_object_per_line(monkeypatch) -> None:
     lines = [json.loads(line) for line in stdout.buffer.getvalue().splitlines() if line.strip()]
     assert [item["id"] for item in lines] == [1, 2, 3, 4]
     names = {tool["name"] for tool in lines[1]["result"]["tools"]}
-    assert names == set(TOOL_NAMES.values())
+    assert names == set(TOOL_NAMES.values()) | {"collect_snapshot"}
     reading = json.loads(lines[2]["result"]["content"][0]["text"])
     assert reading["status"] == "ok"
     assert len(reading["rows"]) == 4

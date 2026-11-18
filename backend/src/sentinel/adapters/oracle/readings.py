@@ -348,12 +348,13 @@ GUARD_STATS_SQL = """
     SELECT name, value
     FROM v$dataguard_stats
 """
+# Application schemas come first, so the 80-row limit never hides one behind the Oracle-maintained accounts.
 USER_LIST_SQL = """
-    SELECT username, account_status
+    SELECT username, account_status, oracle_maintained
     FROM (
-        SELECT username, account_status
+        SELECT username, account_status, oracle_maintained
         FROM dba_users
-        ORDER BY username
+        ORDER BY oracle_maintained, username
     )
     WHERE ROWNUM <= 80
 """
@@ -760,6 +761,108 @@ FLEET_DATAFILE_SQL = """
 """
 
 
+# ---- Phase 25: MemoryDB, StorageDB, ParameterDB, AlertDB. Every view below was already granted.
+SECTION_SGASTAT_SQL = """
+    SELECT pool, name, bytes
+    FROM (
+        SELECT NVL(pool, '-') AS pool, name, bytes
+        FROM v$sgastat
+        ORDER BY bytes DESC, name
+    )
+    WHERE ROWNUM <= 60
+"""
+SECTION_SGA_POOL_SQL = """
+    SELECT pool, name, bytes, free_bytes
+    FROM (
+        SELECT pool, name, SUM(bytes) AS bytes, SUM(free_part) AS free_bytes
+        FROM (
+            SELECT NVL(pool, '-') AS pool,
+                   CASE WHEN pool IS NULL THEN name ELSE NULL END AS name,
+                   bytes,
+                   CASE WHEN name = 'free memory' THEN bytes ELSE 0 END AS free_part
+            FROM v$sgastat
+        )
+        GROUP BY pool, name
+    )
+    WHERE ROWNUM <= 40
+"""
+SECTION_SHARED_POOL_SQL = """
+    SELECT name, bytes
+    FROM (
+        SELECT name, bytes
+        FROM v$sgastat
+        WHERE pool = 'shared pool'
+        ORDER BY bytes DESC, name
+    )
+    WHERE ROWNUM <= 25
+"""
+SECTION_TABLESPACE_SQL = """
+    SELECT tablespace_name, contents, status, bytes_total, bytes_free, fragments
+    FROM (
+        SELECT spaces.tablespace_name, spaces.contents, spaces.status,
+               NVL(data_files.bytes_total, temp_files.bytes_total) AS bytes_total,
+               CASE WHEN spaces.contents = 'TEMPORARY'
+                    THEN NVL(temp_free.bytes_free, 0)
+                    ELSE NVL(free_space.bytes_free, 0) END AS bytes_free,
+               NVL(free_space.fragments, 0) AS fragments
+        FROM dba_tablespaces spaces
+        LEFT JOIN (
+            SELECT tablespace_name, SUM(bytes) AS bytes_total
+            FROM dba_data_files
+            GROUP BY tablespace_name
+        ) data_files ON data_files.tablespace_name = spaces.tablespace_name
+        LEFT JOIN (
+            SELECT tablespace_name, SUM(bytes) AS bytes_total
+            FROM dba_temp_files
+            GROUP BY tablespace_name
+        ) temp_files ON temp_files.tablespace_name = spaces.tablespace_name
+        LEFT JOIN (
+            SELECT tablespace_name, SUM(bytes) AS bytes_free, COUNT(*) AS fragments
+            FROM dba_free_space
+            GROUP BY tablespace_name
+        ) free_space ON free_space.tablespace_name = spaces.tablespace_name
+        LEFT JOIN (
+            SELECT tablespace_name, SUM(bytes_free) AS bytes_free
+            FROM v$temp_space_header
+            GROUP BY tablespace_name
+        ) temp_free ON temp_free.tablespace_name = spaces.tablespace_name
+        ORDER BY spaces.tablespace_name
+    )
+    WHERE ROWNUM <= 200
+"""
+SECTION_PARAMETER_SQL = """
+    SELECT name, value, isdefault, issys_modifiable, description
+    FROM (
+        SELECT name,
+               SUBSTR(NVL(display_value, value), 1, 200) AS value,
+               isdefault, issys_modifiable,
+               SUBSTR(description, 1, 160) AS description
+        FROM v$parameter
+        ORDER BY name
+    )
+    WHERE ROWNUM <= 700
+"""
+SECTION_VERSION_SQL = """
+    SELECT banner
+    FROM v$version
+    WHERE ROWNUM <= 1
+"""
+SECTION_ALERT_SQL = f"""
+    SELECT occurred_at, message_type, message_text
+    FROM (
+        SELECT TO_CHAR(originating_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS occurred_at,
+               message_type,
+               SUBSTR(message_text, 1, 200) AS message_text
+        FROM v$diag_alert_ext
+        WHERE originating_timestamp > SYSTIMESTAMP - INTERVAL '7' DAY
+          AND message_text IS NOT NULL
+          AND {_DATABASE_ALERT_FILE}
+        ORDER BY originating_timestamp DESC, record_id DESC
+    )
+    WHERE ROWNUM <= 300
+"""
+
+
 def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
     """Fixed statements for the operator question groups."""
     availability = (
@@ -945,5 +1048,20 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         "get_recovery_area": graph_recovery,
         "get_archive": graph_archive,
         "get_backup": graph_backup,
+        "get_sga_breakdown": (
+            FixedQuery("v$sgastat", SECTION_SGASTAT_SQL, "SYS.V_$SGASTAT"),
+            FixedQuery("v$sgastat_pools", SECTION_SGA_POOL_SQL, "SYS.V_$SGASTAT"),
+            FixedQuery("v$sgastat_shared", SECTION_SHARED_POOL_SQL, "SYS.V_$SGASTAT"),
+        ),
+        "get_tablespace_utilization": (
+            FixedQuery("dba_tablespaces", SECTION_TABLESPACE_SQL, "SYS.DBA_TABLESPACES"),
+        ),
+        "get_parameters": (
+            FixedQuery("v$parameter", SECTION_PARAMETER_SQL, "SYS.V_$PARAMETER"),
+            FixedQuery("v$version", SECTION_VERSION_SQL, "SYS.V_$VERSION", required=False),
+        ),
+        "get_alert_tail": (
+            FixedQuery("v$diag_alert_ext", SECTION_ALERT_SQL, "SYS.V_$DIAG_ALERT_EXT"),
+        ),
         "issues": issues,
     }

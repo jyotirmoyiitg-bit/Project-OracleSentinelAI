@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oracle Sentinel AI — Components and Switches</title>
+  <style>
+    :root {
+      --ink: #1c2838;
+      --muted: #5c6b80;
+      --line: #d5deea;
+      --paper: #f3f6fb;
+      --card: #ffffff;
+      --portal: #1d4e89;
+      --api: #0f6e6e;
+      --timer: #1e4d3a;
+      --request: #b45309;
+      --agent: #a21caf;
+      --outside: #475569;
+      --shadow: 0 10px 30px rgba(28, 40, 56, 0.06);
+      --always-bg: #dff3ef; --always-fg: #0b5a57;
+      --on-bg: #e2f4e7; --on-fg: #1c6b3e;
+      --off-bg: #fff0d6; --off-fg: #8a5200;
+      --demand-bg: #e4ecfb; --demand-fg: #1d4e89;
+      --fixed-bg: #fbe3e7; --fixed-fg: #94233a;
+      --ext-bg: #e9edf3; --ext-fg: #475569;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 400px at 10% -10%, #e7eef8 0%, transparent 50%),
+        var(--paper);
+      font: 16px/1.5 "Segoe UI", Calibri, sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 72px; }
+    header h1 { margin: 0 0 4px; font-size: 34px; letter-spacing: -0.03em; }
+    header .version { margin: 0 0 10px; font-size: 14px; font-weight: 650; color: var(--api); }
+    header p { margin: 0; max-width: 800px; color: var(--muted); }
+    nav.toc { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 0; font-size: 14px; }
+    nav.toc a, footer a, p a { color: var(--portal); font-weight: 650; text-decoration: none; }
+    nav.toc a:hover, footer a:hover, p a:hover { text-decoration: underline; }
+    section { margin-top: 40px; }
+    h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.02em; }
+    h3 { margin: 22px 0 6px; font-size: 16px; }
+    .lead { margin: 0 0 14px; color: var(--muted); max-width: 860px; }
+    figure {
+      margin: 0; background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; box-shadow: var(--shadow); overflow: hidden;
+    }
+    .scroll { overflow-x: auto; }
+    .scroll svg { min-width: 760px; }
+    figcaption { padding: 14px 18px 16px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+    svg { display: block; width: 100%; height: auto; }
+    .box { fill: #fff; stroke-width: 1.6; }
+    .title { font: 700 15px "Segoe UI", sans-serif; fill: var(--ink); }
+    .cell { font: 700 14px "Segoe UI", sans-serif; fill: var(--ink); }
+    .small { font: 12px "Segoe UI", sans-serif; fill: var(--muted); }
+    .label { font: 12px "Segoe UI", sans-serif; fill: #3e4d63; }
+    .head { font: 700 12px "Segoe UI", sans-serif; letter-spacing: 0.06em; }
+    .pilltext { font: 700 10.5px "Segoe UI", sans-serif; letter-spacing: 0.05em; }
+    .wire { stroke: #64748b; stroke-width: 1.6; fill: none; }
+    .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+    th { font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: #f8fafc; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    td:first-child { font-weight: 650; }
+    td small { display: block; margin-top: 2px; color: var(--muted); font-weight: 400; }
+    code { font: 13px Consolas, "Cascadia Mono", monospace; background: #eef2f7; border-radius: 4px; padding: 1px 5px; white-space: nowrap; }
+    .pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em; white-space: nowrap; }
+    .p-always { background: var(--always-bg); color: var(--always-fg); }
+    .p-on { background: var(--on-bg); color: var(--on-fg); }
+    .p-off { background: var(--off-bg); color: var(--off-fg); }
+    .p-demand { background: var(--demand-bg); color: var(--demand-fg); }
+    .p-fixed { background: var(--fixed-bg); color: var(--fixed-fg); }
+    .p-ext { background: var(--ext-bg); color: var(--ext-fg); }
+    .legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 14px 0 0; font-size: 13px; color: var(--muted); }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 14px 0 0; padding: 0; list-style: none; counter-reset: step; }
+    .steps li { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 14px 52px; font-size: 14px; counter-increment: step; }
+    .steps li::before {
+      content: counter(step); position: absolute; left: 14px; top: 14px; width: 26px; height: 26px; border-radius: 50%;
+      background: var(--portal); color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center;
+    }
+    .steps strong { display: block; margin-bottom: 2px; }
+    .steps span { color: var(--muted); }
+    .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 14px; }
+    .cards article { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+    .cards h3 { margin: 0 0 6px; font-size: 15px; }
+    .cards ol { margin: 0; padding-left: 20px; color: var(--muted); font-size: 14px; }
+    .cards li { margin: 3px 0; }
+    .note { margin: 14px 0 0; padding: 12px 16px; background: #fffaf0; border: 1px solid #f1dfb6; border-radius: 12px; color: #5b4a1e; font-size: 14px; }
+    footer { margin-top: 36px; color: var(--muted); font-size: 13px; }
+    @media (max-width: 860px) {
+      .steps, .cards { grid-template-columns: 1fr; }
+      header h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Oracle Sentinel AI</h1>
+    <p class="version">Architecture, version 3 · Components and switches · 16 November 2026 · through Phase 25 · schema revision 0012</p>
+    <p>Every part of the application, whether it runs out of the box, and where in the portal an administrator turns it on or off. <a href="architecture_v2.html">Version 2</a> has the data flow and implementation diagrams; this version is the operating view.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#map">1. Component map</a>
+      <a href="#components">2. Components and default state</a>
+      <a href="#switch">3. Changing a switch in the portal</a>
+      <a href="#background">4. What runs in the background</a>
+      <a href="#recipes">5. Turning on a capability</a>
+      <a href="#database">6. Controls for one database</a>
+      <a href="#fixed">7. What the portal cannot change</a>
+    </nav>
+  </header>
+
+  <section id="map">
+    <h2>1. Component map</h2>
+    <p class="lead">The portal and the API are the two processes that are installed. Everything in the large box runs inside the API process. Each part carries its state on a fresh installation.</p>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 1080 730" role="img" aria-labelledby="mapTitle mapDesc">
+        <title id="mapTitle">Component map with default states</title>
+        <desc id="mapDesc">The browser reaches the web portal, which calls the API. Inside the API process are parts that are always available, background timers that need the scheduler, and parts that work on request. Below are the readings server, the Oracle databases, PostgreSQL, and Ollama. The scheduler, the agents, the language model, and the knowledge folder scan are off by default.</desc>
+        <defs>
+          <marker id="m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#64748b"></path>
+          </marker>
+        </defs>
+
+        <!-- row 1 -->
+        <rect x="36" y="20" width="300" height="78" rx="12" class="box" stroke="#1d4e89"></rect>
+        <text x="54" y="46" class="title">Operator browser</text>
+        <text x="54" y="65" class="small">Five roles. One session cookie.</text>
+        <rect x="390" y="20" width="300" height="78" rx="12" class="box" stroke="#1d4e89"></rect>
+        <text x="408" y="46" class="title">Web portal</text>
+        <text x="408" y="65" class="small">React, served on port 5173</text>
+        <rect x="408" y="72" width="92" height="18" rx="9" fill="#dff3ef"></rect>
+        <text x="454" y="85" class="pilltext" fill="#0b5a57" text-anchor="middle">ALWAYS ON</text>
+        <rect x="744" y="20" width="300" height="78" rx="12" class="box" stroke="#0f6e6e"></rect>
+        <text x="762" y="46" class="title">API</text>
+        <text x="762" y="65" class="small">FastAPI on port 8000. Hosts every timer.</text>
+        <rect x="762" y="72" width="92" height="18" rx="9" fill="#dff3ef"></rect>
+        <text x="808" y="85" class="pilltext" fill="#0b5a57" text-anchor="middle">ALWAYS ON</text>
+        <path d="M336 59 H390" class="wire" marker-end="url(#m1)"></path>
+        <path d="M690 59 H744" class="wire" marker-end="url(#m1)"></path>
+        <text x="703" y="52" class="label">/api</text>
+        <path d="M894 98 V124" class="wire" marker-end="url(#m1)"></path>
+
+        <!-- API process -->
+        <rect x="36" y="124" width="1008" height="424" rx="14" fill="#f6faf9" stroke="#0f6e6e" stroke-width="1.6"></rect>
+        <text x="54" y="150" class="title">Inside the API process</text>
+
+        <!-- lane 1 -->
+        <text x="50" y="178" class="head" fill="#0f6e6e">ALWAYS AVAILABLE</text>
+        <rect x="50" y="188" width="318" height="78" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="64" y="211" class="cell">Sign-in and roles</text>
+        <text x="64" y="229" class="small">Active Directory, a local account, or OIDC</text>
+        <rect x="64" y="238" width="112" height="18" rx="9" fill="#e9edf3"></rect>
+        <text x="120" y="251" class="pilltext" fill="#475569" text-anchor="middle">SET AT INSTALL</text>
+
+        <rect x="50" y="274" width="318" height="78" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="64" y="297" class="cell">Database registry</text>
+        <text x="64" y="315" class="small">Register by TNS alias, test, remove</text>
+        <rect x="64" y="324" width="92" height="18" rx="9" fill="#dff3ef"></rect>
+        <text x="110" y="337" class="pilltext" fill="#0b5a57" text-anchor="middle">ALWAYS ON</text>
+
+        <rect x="50" y="360" width="318" height="78" rx="10" class="box" stroke="#1e40af"></rect>
+        <text x="64" y="383" class="cell">Live database views</text>
+        <text x="64" y="401" class="small">GraphDB, WaitDB, Memory, Storage, Parameter, Alert</text>
+        <rect x="64" y="410" width="130" height="18" rx="9" fill="#e4ecfb"></rect>
+        <text x="129" y="423" class="pilltext" fill="#1d4e89" text-anchor="middle">READS WHEN OPEN</text>
+
+        <rect x="50" y="446" width="318" height="78" rx="10" class="box" stroke="#9f1239" stroke-dasharray="7 5"></rect>
+        <text x="64" y="469" class="cell">Proposals</text>
+        <text x="64" y="487" class="small">Stored and approved. Never run.</text>
+        <rect x="64" y="496" width="150" height="18" rx="9" fill="#fbe3e7"></rect>
+        <text x="139" y="509" class="pilltext" fill="#94233a" text-anchor="middle">EXECUTION FIXED OFF</text>
+
+        <!-- lane 2 -->
+        <text x="381" y="178" class="head" fill="#1e4d3a">BACKGROUND TIMERS</text>
+        <rect x="381" y="188" width="318" height="78" rx="10" fill="#f4faf6" stroke="#1e4d3a" stroke-width="1.6"></rect>
+        <text x="395" y="211" class="cell">Collection scheduler</text>
+        <text x="395" y="229" class="small">Polls every database with six probes</text>
+        <rect x="395" y="238" width="112" height="18" rx="9" fill="#fff0d6"></rect>
+        <text x="451" y="251" class="pilltext" fill="#8a5200" text-anchor="middle">OFF BY DEFAULT</text>
+
+        <rect x="381" y="274" width="318" height="78" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="395" y="297" class="cell">Alert-log poller and rules</text>
+        <text x="395" y="315" class="small">Incidents, compliance, notifications</text>
+        <rect x="395" y="324" width="146" height="18" rx="9" fill="#e9edf3"></rect>
+        <text x="468" y="337" class="pilltext" fill="#475569" text-anchor="middle">WITH THE SCHEDULER</text>
+
+        <rect x="381" y="360" width="318" height="78" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="395" y="383" class="cell">Graph history sampler</text>
+        <text x="395" y="401" class="small">Counter samples every 5 minutes</text>
+        <rect x="395" y="410" width="168" height="18" rx="9" fill="#e2f4e7"></rect>
+        <text x="479" y="423" class="pilltext" fill="#1c6b3e" text-anchor="middle">ON, NEEDS THE SCHEDULER</text>
+
+        <rect x="381" y="446" width="318" height="78" rx="10" class="box" stroke="#a21caf"></rect>
+        <text x="395" y="469" class="cell">Agent timer</text>
+        <text x="395" y="487" class="small">Looks for new critical incidents. Retention.</text>
+        <rect x="395" y="496" width="146" height="18" rx="9" fill="#e9edf3"></rect>
+        <text x="468" y="509" class="pilltext" fill="#475569" text-anchor="middle">WITH THE SCHEDULER</text>
+
+        <!-- lane 3 -->
+        <text x="712" y="178" class="head" fill="#b45309">ON REQUEST</text>
+        <rect x="712" y="188" width="318" height="78" rx="10" class="box" stroke="#b45309"></rect>
+        <text x="726" y="211" class="cell">Copilot and supervisor</text>
+        <text x="726" y="229" class="small">Database, fleet, and incident chat</text>
+        <rect x="726" y="238" width="158" height="18" rx="9" fill="#fff0d6"></rect>
+        <text x="805" y="251" class="pilltext" fill="#8a5200" text-anchor="middle">MODEL OFF BY DEFAULT</text>
+
+        <rect x="712" y="274" width="318" height="78" rx="10" class="box" stroke="#a21caf"></rect>
+        <text x="726" y="297" class="cell">Agent Collector</text>
+        <text x="726" y="315" class="small">Stores a snapshot of fixed readings</text>
+        <rect x="726" y="324" width="112" height="18" rx="9" fill="#fff0d6"></rect>
+        <text x="782" y="337" class="pilltext" fill="#8a5200" text-anchor="middle">OFF BY DEFAULT</text>
+
+        <rect x="712" y="360" width="318" height="78" rx="10" class="box" stroke="#a21caf"></rect>
+        <text x="726" y="383" class="cell">Agent Investigator</text>
+        <text x="726" y="401" class="small">Playbook, finding, Verifier</text>
+        <rect x="726" y="410" width="112" height="18" rx="9" fill="#fff0d6"></rect>
+        <text x="782" y="423" class="pilltext" fill="#8a5200" text-anchor="middle">OFF BY DEFAULT</text>
+
+        <rect x="712" y="446" width="318" height="78" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="726" y="469" class="cell">Knowledge index and search</text>
+        <text x="726" y="487" class="small">Oracle manuals and policy documents</text>
+        <rect x="726" y="496" width="176" height="18" rx="9" fill="#fff0d6"></rect>
+        <text x="814" y="509" class="pilltext" fill="#8a5200" text-anchor="middle">FOLDER SCAN OFF BY DEFAULT</text>
+
+        <!-- outside -->
+        <path d="M156 548 V590" class="wire" marker-end="url(#m1)"></path>
+        <text x="166" y="573" class="label">copilot, agents</text>
+        <path d="M412 548 V590" class="wire" marker-end="url(#m1)"></path>
+        <text x="422" y="573" class="label">fixed SQL</text>
+        <path d="M668 548 V590" class="wire" marker-start="url(#m1)" marker-end="url(#m1)"></path>
+        <text x="678" y="573" class="label">store, read</text>
+        <path d="M924 548 V590" class="wire" marker-start="url(#m1)" marker-end="url(#m1)"></path>
+        <text x="934" y="573" class="label">prompts, vectors</text>
+
+        <rect x="36" y="590" width="240" height="78" rx="12" class="box" stroke="#b45309" stroke-dasharray="7 5"></rect>
+        <text x="52" y="613" class="cell">Readings server (MCP)</text>
+        <text x="52" y="631" class="small">A child process. No listen port.</text>
+        <rect x="52" y="640" width="150" height="18" rx="9" fill="#e4ecfb"></rect>
+        <text x="127" y="653" class="pilltext" fill="#1d4e89" text-anchor="middle">STARTS PER REQUEST</text>
+
+        <rect x="292" y="590" width="240" height="78" rx="12" class="box" stroke="#9a3412"></rect>
+        <text x="308" y="613" class="cell">Oracle databases</text>
+        <text x="308" y="631" class="small">GSYSTEM account, read-only</text>
+        <rect x="308" y="640" width="78" height="18" rx="9" fill="#e9edf3"></rect>
+        <text x="347" y="653" class="pilltext" fill="#475569" text-anchor="middle">EXTERNAL</text>
+
+        <rect x="548" y="590" width="240" height="78" rx="12" class="box" stroke="#1e4d3a"></rect>
+        <text x="564" y="613" class="cell">PostgreSQL + pgvector</text>
+        <text x="564" y="631" class="small">Settings and everything collected</text>
+        <rect x="564" y="640" width="150" height="18" rx="9" fill="#e9edf3"></rect>
+        <text x="639" y="653" class="pilltext" fill="#475569" text-anchor="middle">EXTERNAL, REQUIRED</text>
+
+        <rect x="804" y="590" width="240" height="78" rx="12" class="box" stroke="#4c1d95"></rect>
+        <text x="820" y="613" class="cell">Ollama</text>
+        <text x="820" y="631" class="small">Language and embedding models</text>
+        <rect x="820" y="640" width="150" height="18" rx="9" fill="#e9edf3"></rect>
+        <text x="895" y="653" class="pilltext" fill="#475569" text-anchor="middle">EXTERNAL, OPTIONAL</text>
+
+        <path d="M276 629 H292" class="wire" marker-end="url(#m1)"></path>
+        <text x="36" y="702" class="small">The readings server runs the same fixed statements as the API. The copilot and the agents use it; the scheduler and the live views read Oracle inside the API process.</text>
+      </svg>
+      </div>
+      <figcaption>
+        Out of the box the portal shows registered databases, their live views, incidents already stored, and proposals. It does not poll, answer in sentences, investigate, or scan the manuals folder until an administrator turns those on.
+        <div class="legend">
+          <span><span class="pill p-always">Always on</span> runs whenever the process runs</span>
+          <span><span class="pill p-on">On</span> on by default</span>
+          <span><span class="pill p-off">Off</span> off by default</span>
+          <span><span class="pill p-demand">On request</span> works only when asked</span>
+          <span><span class="pill p-fixed">Fixed off</span> cannot be turned on</span>
+          <span><span class="pill p-ext">External</span> not part of the application</span>
+        </div>
+      </figcaption>
+    </figure>
+  </section>
+
+  <section id="components">
+    <h2>2. Components and default state</h2>
+    <p class="lead">"Default" is the value on a fresh installation with nothing set in <code>.env</code>. Your installation may differ: a value stored in the portal always wins over <code>.env</code>, and the Admin page shows the current one.</p>
+    <div class="tablewrap">
+      <table>
+        <thead>
+          <tr><th>Component</th><th>What it does</th><th>Default</th><th>Switch in the portal</th><th>Takes effect</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Web portal</td>
+            <td>The only screen operators use. A React page served on port 5173 that calls the API.</td>
+            <td><span class="pill p-always">Always on</span></td>
+            <td>None. It runs while its process runs.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>API</td>
+            <td>All logic, every route, and every background timer, in one process on port 8000.</td>
+            <td><span class="pill p-always">Always on</span></td>
+            <td>None. It will not start if PostgreSQL is unreachable or the schema is behind.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Readings server (MCP)</td>
+            <td>A child process the API starts to run one named, fixed reading on one database. It takes a TNS alias and never SQL, then exits. It has no listen port.</td>
+            <td><span class="pill p-demand">On request</span></td>
+            <td>None. It runs whenever the copilot or an agent needs a reading.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Collection scheduler<small>the polling of registered databases</small></td>
+            <td>Polls every enabled database on a timer with six probes (connectivity, instance, storage, recovery area, resources, configuration) and stores the metrics in PostgreSQL. No model is involved.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>Admin › Configuration › Collection › <code>scheduler_enabled</code></td>
+            <td>After the API restarts</td>
+          </tr>
+          <tr>
+            <td>Alert-log poller, rules, incidents</td>
+            <td>Reads new alert-log lines every 120 seconds, evaluates rules and compliance, opens incidents, and raises notifications.</td>
+            <td><span class="pill p-ext">With the scheduler</span></td>
+            <td>The scheduler switch. Interval: Alerts › <code>alert_poll_interval_seconds</code></td>
+            <td>After the API restarts</td>
+          </tr>
+          <tr>
+            <td>Graph history sampler</td>
+            <td>Stores counter samples of every database every 5 minutes so GraphDB and WaitDB open with their meters and charts filled.</td>
+            <td><span class="pill p-on">On</span> but only runs with the scheduler</td>
+            <td>Admin › Configuration › Graph history › <code>graph_history_enabled</code>, interval, retention</td>
+            <td>Within 30 seconds</td>
+          </tr>
+          <tr>
+            <td>Agent Collector<small>the collector agent</small></td>
+            <td>When asked, reads a pack of fixed readings from one database on one logon and stores them as a snapshot. It never runs on its own and uses no model.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>Admin › Configuration › Agents › <code>agents_enabled</code>. Then the Collect snapshot button on a database's Overview, or Collect fleet snapshot on the Agents page.</td>
+            <td>At once</td>
+          </tr>
+          <tr>
+            <td>Agent Investigator</td>
+            <td>Works through a playbook for one incident or database, saves a finding with its evidence, and a Verifier rejects a cause the evidence does not support.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>The same <code>agents_enabled</code>. Then the Investigate button on an incident or a database.</td>
+            <td>At once</td>
+          </tr>
+          <tr>
+            <td>Automatic investigation</td>
+            <td>Investigates a new critical incident once, without anyone pressing a button.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>Admin › Configuration › Agents › <code>agent_auto_investigate</code>. Agents and the scheduler must also be on.</td>
+            <td>Within 60 seconds</td>
+          </tr>
+          <tr>
+            <td>Agent timer</td>
+            <td>Checks every 60 seconds for a new critical incident to investigate, and deletes snapshots older than 14 days once an hour.</td>
+            <td><span class="pill p-ext">With the scheduler</span></td>
+            <td>No switch of its own. It does nothing while agents are off.</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Language model<small>for copilot answers and findings</small></td>
+            <td>Writes copilot answers from the evidence and, for agents, the cause in a finding. Without it the copilot still returns the readings and the cited passages.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>Admin › Configuration › Language model › <code>ai_enabled</code> = true, <code>ai_provider</code> = local, <code>ai_model_name</code></td>
+            <td>On the next question</td>
+          </tr>
+          <tr>
+            <td>Copilot supervisor</td>
+            <td>On a database chat, one model call chooses which specialist answers. With no model the fixed patterns choose.</td>
+            <td><span class="pill p-on">On</span> but needs the language model</td>
+            <td>Admin › Configuration › Language model › <code>ai_supervisor_enabled</code></td>
+            <td>On the next question</td>
+          </tr>
+          <tr>
+            <td>Answers from snapshots</td>
+            <td>A database question is answered from an agent snapshot up to 15 minutes old instead of reading Oracle again.</td>
+            <td><span class="pill p-on">On</span> but needs agents and a snapshot</td>
+            <td>Admin › Configuration › Language model › <code>ai_snapshot_max_age_seconds</code>. 0 always reads live.</td>
+            <td>On the next question</td>
+          </tr>
+          <tr>
+            <td>Knowledge folder scan</td>
+            <td>Looks in the knowledge folders every 5 minutes and indexes a new or changed manual or policy file.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>Admin › Configuration › Knowledge › <code>knowledge_enabled</code></td>
+            <td>After the API restarts</td>
+          </tr>
+          <tr>
+            <td>Knowledge indexing on request</td>
+            <td>Indexes the knowledge folders now. A file whose content and embedding model are unchanged is skipped.</td>
+            <td><span class="pill p-demand">On request</span></td>
+            <td>Knowledge page › reindex and upload, administrator only. Or the Phase 24 launcher with <code>-ReindexOnly</code>.</td>
+            <td>At once</td>
+          </tr>
+          <tr>
+            <td>Embedding model</td>
+            <td>Turns passages and questions into vectors so the manuals are searched by meaning.</td>
+            <td><span class="pill p-off">Word hashing</span> no model</td>
+            <td>Admin › Configuration › Knowledge › <code>embedding_provider</code> = ollama, <code>embedding_ollama_model</code></td>
+            <td>On the next search. Stored files are embedded again on the next index run.</td>
+          </tr>
+          <tr>
+            <td>Email notifications</td>
+            <td>Sends an email for a new incident.</td>
+            <td><span class="pill p-off">Off</span></td>
+            <td>Admin › Configuration › Mail › <code>smtp_enabled</code>, host, recipients</td>
+            <td>On the next notification</td>
+          </tr>
+          <tr>
+            <td>Portal notifications</td>
+            <td>The bell in the top bar.</td>
+            <td><span class="pill p-always">Always on</span></td>
+            <td>None</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Live database views</td>
+            <td>GraphDB, WaitDB, MemoryDB, StorageDB, ParameterDB, and AlertDB read Oracle while the tab is open.</td>
+            <td><span class="pill p-demand">On request</span> refresh every 30 seconds</td>
+            <td>The refresh selector in the top bar: off, 15 seconds, 30 seconds, or a minute. It is kept per browser.</td>
+            <td>At once</td>
+          </tr>
+          <tr>
+            <td>Sign-in</td>
+            <td>Active Directory, a local account, or OIDC, and the five roles.</td>
+            <td><span class="pill p-off">Off</span> in development; required in production</td>
+            <td><span class="pill p-fixed">Fixed</span> set <code>AUTH_REQUIRED</code> in <code>.env</code></td>
+            <td>After the API restarts</td>
+          </tr>
+          <tr>
+            <td>Proposals</td>
+            <td>A fixed tablespace change can be stored, approved, or rejected.</td>
+            <td><span class="pill p-always">Always on</span> stored only</td>
+            <td>None</td>
+            <td>—</td>
+          </tr>
+          <tr>
+            <td>Privileged execution</td>
+            <td>A reserved placeholder. The routes answer 501 and nothing is sent to Oracle.</td>
+            <td><span class="pill p-fixed">Fixed off</span></td>
+            <td>Cannot be turned on from the portal</td>
+            <td>—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The scheduler is the master for three timers. With <code>scheduler_enabled</code> off, there is no polling, no alert-log reading, no stored graph history, and no automatic investigation, whatever their own switches say.</p>
+  </section>
+
+  <section id="switch">
+    <h2>3. Changing a switch in the portal</h2>
+    <p class="lead">Only an administrator sees the Admin link. Every change is written to the audit trail.</p>
+    <ol class="steps">
+      <li><strong>Open Admin</strong><span>The Admin link in the top bar. Scroll to Configuration.</span></li>
+      <li><strong>Show the section</strong><span>Sections are closed. Press Show on Collection, Agents, Language model, Knowledge, Graph history, or Mail.</span></li>
+      <li><strong>Edit and Save</strong><span>Press Edit, change the value, press Save. A value out of range is refused with a message.</span></li>
+      <li><strong>Restart if needed</strong><span>Only <code>scheduler_enabled</code> and <code>knowledge_enabled</code> need the API restarted. The rest apply as the table says.</span></li>
+    </ol>
+    <h3>Where the value lives</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Rule</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td>Stored in PostgreSQL</td><td>A saved value is kept in the <code>app_config</code> table and survives a restart.</td></tr>
+          <tr><td>The stored value wins</td><td>At start the API copies a setting from <code>.env</code> into the table only if it is not stored yet. After that the stored value is used, so changing <code>.env</code> has no effect on a setting the portal already holds.</td></tr>
+          <tr><td>Fixed settings</td><td>A row marked Fixed can be read and not saved. These are set in <code>.env</code> before the first start.</td></tr>
+          <tr><td>Secrets</td><td>Passwords and keys are never listed and never stored by the portal.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The top of the Admin page states the current position in words, for example "Scheduler disabled. Knowledge scans disabled." Check it after a restart.</p>
+  </section>
+
+  <section id="background">
+    <h2>4. What runs in the background</h2>
+    <p class="lead">These are the only things that read a database or write to PostgreSQL without anyone asking. Nothing else polls.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Timer</th><th>How often</th><th>Reads Oracle</th><th>Writes to PostgreSQL</th><th>Runs when</th></tr></thead>
+        <tbody>
+          <tr><td>Collection probes</td><td>60 seconds to 30 minutes, per probe</td><td>Yes, fixed statements</td><td>Metrics, health, poll runs</td><td>Scheduler on</td></tr>
+          <tr><td>Alert-log poller and rules</td><td>Every 120 seconds</td><td>Yes, new alert lines</td><td>Events, incidents, notifications, compliance results</td><td>Scheduler on</td></tr>
+          <tr><td>Graph history sampler</td><td>Every 5 minutes</td><td>Yes, five counter readings</td><td>One sample per database, kept 24 hours</td><td>Scheduler on and graph history on</td></tr>
+          <tr><td>Agent timer</td><td>Every 60 seconds; retention hourly</td><td>Only if it starts an investigation</td><td>Runs and findings; deletes old snapshots</td><td>Scheduler on. Investigates only with agents and automatic investigation on</td></tr>
+          <tr><td>Knowledge folder scan</td><td>Every 5 minutes</td><td>No</td><td>Documents and passages</td><td>Knowledge scan on</td></tr>
+          <tr><td>Retention</td><td>Hourly</td><td>No</td><td>Deletes metrics older than 30 days</td><td>Scheduler on</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">The agents are not a background poller. The Agent Collector stores a snapshot only when someone presses Collect snapshot or when an investigation needs evidence. The continuous polling is the collection scheduler, which uses no model.</p>
+  </section>
+
+  <section id="recipes">
+    <h2>5. Turning on a capability</h2>
+    <p class="lead">Each list is the shortest path from a fresh installation. All settings are under Admin › Configuration.</p>
+    <div class="cards">
+      <article>
+        <h3>Continuous monitoring</h3>
+        <ol>
+          <li>Register at least one database (Fleet page, Register).</li>
+          <li>Collection › <code>scheduler_enabled</code> = true.</li>
+          <li>Restart the API.</li>
+          <li>Health, incidents, and forecasts fill in. Graph history starts by itself.</li>
+        </ol>
+      </article>
+      <article>
+        <h3>Copilot that answers in sentences</h3>
+        <ol>
+          <li>Have Ollama running with a model pulled.</li>
+          <li>Language model › <code>ai_enabled</code> = true.</li>
+          <li>Language model › <code>ai_provider</code> = local, and <code>ai_model_name</code>.</li>
+          <li>Ask on a database. The supervisor is already on.</li>
+        </ol>
+      </article>
+      <article>
+        <h3>Agents: snapshots and investigations</h3>
+        <ol>
+          <li>Agents › <code>agents_enabled</code> = true.</li>
+          <li>Open a database: Collect snapshot, or Investigate.</li>
+          <li>Optional: <code>agent_auto_investigate</code> = true, with the scheduler on.</li>
+          <li>A written cause needs the local language model. Without it a finding shows the evidence.</li>
+        </ol>
+      </article>
+      <article>
+        <h3>Manuals searched by meaning</h3>
+        <ol>
+          <li>Put the PDFs in <code>knowledge-intake\ora-19c-manual</code>.</li>
+          <li>Run the Phase 24 launcher with <code>-ReindexOnly</code>. It selects the embedding model and indexes once.</li>
+          <li>Optional: Knowledge › <code>knowledge_enabled</code> = true and restart, to pick up new files by itself.</li>
+          <li>Ollama must be running for a search by meaning.</li>
+        </ol>
+      </article>
+    </div>
+  </section>
+
+  <section id="database">
+    <h2>6. Controls for one database</h2>
+    <p class="lead">Most switches apply to the whole system. These apply to one registered database.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Control</th><th>Where</th><th>Who</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td>Register and test</td><td>Fleet page › Register</td><td>DBA, administrator</td><td>A database that the monitoring account cannot reach is not registered.</td></tr>
+          <tr><td>Remove</td><td>Fleet page › Remove on the row</td><td>DBA, administrator</td><td>Deregisters the database. Oracle is not changed.</td></tr>
+          <tr><td>Automatic disable</td><td>No control</td><td>—</td><td>A database that stays unreachable for 7 days is disabled and an incident asks for its removal.</td></tr>
+          <tr><td>Agents for this database</td><td>Database › Overview › Snapshot panel</td><td>Administrator</td><td>A database can opt out of agents, or have its own packs, retention, minimum gap, and automatic investigation. It cannot opt in while the system switch is off.</td></tr>
+          <tr><td>Snapshot now</td><td>Database › Overview › Collect snapshot</td><td>Operator, DBA, administrator</td><td>One logon, up to 15 fixed readings stored.</td></tr>
+          <tr><td>Investigate</td><td>Incident page, or Database › Overview</td><td>Operator, DBA, administrator</td><td>One run, with its steps shown as they happen.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="note">There is no button to pause polling for one database. Removing it stops all polling for it. Polling frequency per database follows its environment: production is polled twice as often.</p>
+  </section>
+
+  <section id="fixed">
+    <h2>7. What the portal cannot change</h2>
+    <p class="lead">These are shown in Admin as Fixed, or are not settings at all. They are decided at installation.</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Item</th><th>Value</th><th>Why it is fixed</th></tr></thead>
+        <tbody>
+          <tr><td>Sign-in required, directory, OIDC</td><td><code>.env</code></td><td>An administrator must not be able to switch off sign-in from inside the portal.</td></tr>
+          <tr><td>Privileged execution</td><td>Off</td><td>Nothing in this release sends a changing statement to Oracle.</td></tr>
+          <tr><td>Synthetic mode</td><td>Off</td><td>It replaces every Oracle reading with test data.</td></tr>
+          <tr><td>Embedding model address</td><td>This computer</td><td>Document text must not be sent to another machine.</td></tr>
+          <tr><td>Remote embeddings</td><td>Off</td><td>They need an approval and a privacy statement made at installation.</td></tr>
+          <tr><td>Knowledge folder path, TNS folder, Oracle account name</td><td><code>.env</code></td><td>They point at files and an account on the server.</td></tr>
+          <tr><td>Readings, statements, and roles</td><td>In the code</td><td>No operator and no model can add a statement or a reading.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Related: <a href="architecture_v2.html">architecture_v2.html</a> (data flow and implementation), <a href="architecture.md">architecture.md</a>, <a href="operations-runbook.md">operations-runbook.md</a>, <a href="api-contracts.md">api-contracts.md</a>, <a href="oracle-permissions.md">oracle-permissions.md</a>.
+  </footer>
+</main>
+</body>
+</html>

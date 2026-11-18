@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { CircleAlert, Copy, Database, HardDrive, Layers3, MessageSquare, Search, Send, Sparkles, Square, SquarePen } from 'lucide-react'
+import { Activity, BookOpen, CircleAlert, Code2, Copy, Database, HardDrive, Hourglass, Layers3, Lightbulb, MessageSquare, Network, Search, Send, ShieldCheck, Sparkles, Square, SquarePen } from 'lucide-react'
 import { ApiError, createChatThread, getFleet, getTarget, sendChatMessage } from './api'
 import { ActiveDatabase } from './components/ActiveDatabase'
 import { Markdown } from './components/Markdown'
@@ -202,8 +202,8 @@ const SCOPE_TEXT: Record<ChatThread['scope_type'], { eyebrow: string; title: str
   database: {
     eyebrow: 'DATABASE COPILOT',
     title: 'Database copilot',
-    lead: 'Ask about this database: files, memory, sessions, SQL, waits, backups, errors, and jobs. Answers use fixed read-only readings, collected metrics, and approved documents. The copilot does not run SQL on Oracle.',
-    empty: 'Ask about files, memory, sessions, backups, jobs, storage, incidents, or runbooks. Pick a guided question above or type in plain language.',
+    lead: 'Ask about this database, about Oracle in general, or about company policy. A supervisor sends each question to the right specialist. The copilot does not run SQL on Oracle.',
+    empty: 'Type a question in plain language.',
     placeholder: 'Ask in plain language. SQL is not accepted.',
   },
   incident: {
@@ -213,6 +213,98 @@ const SCOPE_TEXT: Record<ChatThread['scope_type'], { eyebrow: string; title: str
     empty: 'Ask what happened before the incident, whether it happened before, or what the runbook says. Pick a guided question above or type in plain language.',
     placeholder: 'Ask about this incident in plain language. SQL is not accepted.',
   },
+}
+
+/** Who can answer on a database chat. Each card names the source the answer is allowed to use. */
+const SPECIALISTS = [
+  { name: 'This database', icon: Database, text: 'Files, tablespaces, memory, sessions, errors, and the alert log, from fixed read-only readings.' },
+  { name: 'Oracle knowledge', icon: BookOpen, text: 'Concepts, parameters, and error codes, explained with pages from the Oracle manuals.' },
+  { name: 'Company policy', icon: ShieldCheck, text: 'What the organisation requires, only from approved policy documents.' },
+  { name: 'SQL draft', icon: Code2, text: 'A read-only query written for you. It is shown, never run.' },
+] as const
+
+/** A few questions to show the kind of thing that can be asked. Choosing one puts it in the box to edit or send. */
+export const SAMPLE_QUESTIONS = [
+  'How full are the tablespaces, and which one will fill first?',
+  'Where are the datafiles and how big is each one?',
+  'How is memory split between the SGA and the PGA on this database?',
+  'Are there any ORA errors in the alert log today?',
+  'What does ORA-01555 mean and how do I avoid it?',
+  'Does this database meet our archive log policy?',
+] as const
+
+const ROUTE_TONE: Record<string, string> = {
+  'This database': 'database',
+  'Oracle knowledge': 'knowledge',
+  'Company policy': 'policy',
+  'SQL draft': 'sql',
+  'Change request': 'change',
+  General: 'general',
+}
+
+function routedBy(value: string | undefined): string {
+  if (value === 'supervisor') return 'Chosen by the supervisor'
+  if (value === 'catalog') return 'A fixed question'
+  if (value === 'patterns') return 'Chosen by fixed patterns'
+  return ''
+}
+
+function DatabaseWelcome({
+  targetId,
+  targetName,
+  sending,
+  onPick,
+}: {
+  targetId: string
+  targetName: string
+  sending: boolean
+  onPick: (question: string) => void
+}) {
+  return (
+    <div className="copilot-welcome">
+      <div className="copilot-welcome-head">
+        <span className="copilot-empty-icon" aria-hidden="true"><Sparkles size={18} /></span>
+        <div>
+          <h2>Ask anything about {targetName}</h2>
+          <p>Write the question the way you would ask a colleague. A supervisor reads it and sends it to the specialist that can answer.</p>
+        </div>
+      </div>
+      <ul className="copilot-specialists" aria-label="Who answers">
+        {SPECIALISTS.map((item) => (
+          <li key={item.name}>
+            <span className={`copilot-specialist-icon copilot-route-${ROUTE_TONE[item.name]}`} aria-hidden="true"><item.icon size={15} /></span>
+            <span><strong>{item.name}</strong><small>{item.text}</small></span>
+          </li>
+        ))}
+      </ul>
+      <SampleQuestions sending={sending} onPick={onPick} />
+      <div className="copilot-see-also">
+        <span>Prefer a picture?</span>
+        <a className="copilot-view-link" href={`#/graph/databases/${encodeURIComponent(targetId)}`}><Network size={14} /> GraphDB <small>memory, processes, storage</small></a>
+        <a className="copilot-view-link" href={`#/wait/databases/${encodeURIComponent(targetId)}`}><Hourglass size={14} /> WaitDB <small>waits, locks, I/O</small></a>
+        <a className="copilot-view-link" href={`#/memory/databases/${encodeURIComponent(targetId)}`}>MemoryDB</a>
+        <a className="copilot-view-link" href={`#/storage/databases/${encodeURIComponent(targetId)}`}>StorageDB</a>
+        <a className="copilot-view-link" href={`#/parameters/databases/${encodeURIComponent(targetId)}`}>ParameterDB</a>
+        <a className="copilot-view-link" href={`#/alerts/databases/${encodeURIComponent(targetId)}`}>AlertDB</a>
+        <a className="copilot-view-link" href={`#/databases/${encodeURIComponent(targetId)}`}><Activity size={14} /> Overview <small>health, snapshots, findings</small></a>
+      </div>
+    </div>
+  )
+}
+
+function SampleQuestions({ sending, onPick }: { sending: boolean; onPick: (question: string) => void }) {
+  return (
+    <div className="copilot-hints">
+      <span className="copilot-section-label"><Lightbulb size={12} aria-hidden="true" /> Sample questions</span>
+      <ul aria-label="Sample questions">
+        {SAMPLE_QUESTIONS.map((question) => (
+          <li key={question}>
+            <button type="button" className="copilot-hint" disabled={sending} onClick={() => onPick(question)}>{question}</button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
 }
 
 const FLEET_EXAMPLES = [
@@ -328,7 +420,9 @@ export function CopilotPage({
   const [modelChoice, setModelChoice] = useState<string | null>(null)
   const [databases, setDatabases] = useState<Target[]>([])
   const [target, setTarget] = useState<TargetDetails | null>(null)
+  const [showHints, setShowHints] = useState(false)
   const transcriptRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const threadRequest = useRef(0)
   const modelTouched = useRef(false)
 
@@ -417,6 +511,14 @@ export function CopilotPage({
     }
   }
 
+  /** A sample question is a hint: it goes into the box, where it can be edited before it is sent. */
+  function pickSample(question: string) {
+    setDraft(question)
+    setFormError('')
+    setShowHints(false)
+    inputRef.current?.focus()
+  }
+
   function onSubmit(event: FormEvent) {
     event.preventDefault()
     const question = draft.trim()
@@ -457,6 +559,8 @@ export function CopilotPage({
   const scopedDatabase = scopeType === 'database' ? scopeId ?? '' : ''
   const text = SCOPE_TEXT[scopeType]
   const fleetScope = scopeType === 'fleet'
+  // A database chat shows a few sample questions as hints. The fleet and incident chats keep their question shelf.
+  const databaseScope = scopeType === 'database'
 
   return (
     <main className={fleetScope ? 'page-shell copilot-page copilot-page-fleet' : 'page-shell copilot-page'}>
@@ -548,7 +652,7 @@ export function CopilotPage({
 
       <section className="panel copilot-panel">
         <p className="copilot-disclosure"><Sparkles size={13} aria-hidden="true" /> {disclosure}</p>
-        {commands.length > 0 && (
+        {!databaseScope && commands.length > 0 && (
           <QuestionShelf
             commands={commands}
             openGroup={openGroup}
@@ -560,7 +664,15 @@ export function CopilotPage({
         {fleetScope && <FleetFinder sending={sending} onAsk={(prompt) => { void ask(prompt) }} />}
 
         <div className="copilot-transcript" ref={transcriptRef} role="log" aria-live="polite" aria-relevant="additions">
-          {turns.length === 0 && (
+          {turns.length === 0 && databaseScope && (
+            <DatabaseWelcome
+              targetId={scopeId ?? ''}
+              targetName={target?.display_name ?? 'this database'}
+              sending={sending}
+              onPick={pickSample}
+            />
+          )}
+          {turns.length === 0 && !databaseScope && (
             <div className="copilot-empty">
               <span className="copilot-empty-icon" aria-hidden="true"><MessageSquare size={18} /></span>
               <div>
@@ -585,6 +697,13 @@ export function CopilotPage({
               <div className="copilot-answer-card">
                 <div className="copilot-answer-head">
                   <h2>Answer</h2>
+                  {(parts.routes?.length ?? 0) > 0 && (
+                    <ul className="copilot-routes" aria-label="Answered by" title={routedBy(parts.routed_by)}>
+                      {parts.routes?.map((route) => (
+                        <li key={route} className={`copilot-route copilot-route-${ROUTE_TONE[route] ?? 'general'}`}>{route}</li>
+                      ))}
+                    </ul>
+                  )}
                   {turn.answer.provider_status && (
                     <span className={`copilot-status copilot-status-${turn.answer.provider_status}`}>{statusLabel(turn.answer.provider_status)}</span>
                   )}
@@ -631,6 +750,7 @@ export function CopilotPage({
                   </section>
                 )}
                 {parts.citation_note && <p className="copilot-note">{parts.citation_note}</p>}
+                {parts.source_note && <p className="copilot-note copilot-source-note">{parts.source_note}</p>}
                 {parts.evidence_lines.length > 0 && (
                   <section className="copilot-section copilot-section-collected">
                     <h3>Collected evidence</h3>
@@ -699,11 +819,23 @@ export function CopilotPage({
         </div>
 
         <div className="copilot-composer">
+        {databaseScope && turns.length > 0 && (
+          <div className="copilot-hint-bar">
+            <button
+              type="button" className="text-button copilot-hint-toggle" aria-expanded={showHints}
+              onClick={() => setShowHints((value) => !value)}
+            >
+              <Lightbulb size={13} aria-hidden="true" /> {showHints ? 'Hide sample questions' : 'Sample questions'}
+            </button>
+            {showHints && <SampleQuestions sending={sending} onPick={pickSample} />}
+          </div>
+        )}
         <form className="copilot-form" onSubmit={onSubmit}>
           <label className="copilot-query">
             <MessageSquare size={15} aria-hidden="true" />
             <span className="sr-only">Ask the copilot</span>
             <input
+              ref={inputRef}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               aria-label="Ask the copilot"

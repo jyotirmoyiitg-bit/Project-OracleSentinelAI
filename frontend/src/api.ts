@@ -659,6 +659,153 @@ export function getGraphWaits(id: string, signal?: AbortSignal): Promise<GraphWa
   return request(`/api/v1/databases/${encodeURIComponent(id)}/graph/waits`, signal)
 }
 
+export interface SgaComponent {
+  pool: string
+  name: string
+  bytes: number
+  display: string
+}
+
+export interface SgaPool {
+  name: string
+  bytes: number
+  display: string
+  used_bytes: number
+  free_bytes: number
+  used_percent: number | null
+}
+
+export interface SgaBreakdown {
+  pools: SgaPool[]
+  components: SgaComponent[]
+  shared_pool: SgaComponent[]
+  total_bytes: number
+  total_display: string
+  collected_at: string
+  limitation: string | null
+  caption: string
+}
+
+/** MemoryDB: how the SGA is divided between its pools. */
+export function getMemorySga(id: string, signal?: AbortSignal): Promise<SgaBreakdown> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/memory/sga`, signal)
+}
+
+export interface TablespaceRow {
+  name: string
+  contents: string
+  status: string
+  total_bytes: number | null
+  free_bytes: number | null
+  used_bytes: number | null
+  used_percent: number | null
+  fragments: number | null
+}
+
+export interface TablespaceUtilization {
+  tablespaces: TablespaceRow[]
+  total_bytes: number
+  used_bytes: number
+  total_display: string
+  used_display: string
+  collected_at: string
+  limitation: string | null
+  caption: string
+}
+
+/** StorageDB: size, free space, and fragments of every tablespace. */
+export function getStorageTablespaces(id: string, signal?: AbortSignal): Promise<TablespaceUtilization> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/storage/tablespaces`, signal)
+}
+
+export interface DatabaseParameter {
+  name: string
+  value: string
+  is_default: boolean
+  sys_modifiable: string
+  description: string
+  restricted: boolean
+}
+
+export interface ParameterList {
+  version: string
+  parameters: DatabaseParameter[]
+  total: number
+  changed: number
+  collected_at: string
+  limitation: string | null
+  detail: boolean
+  detail_note: string | null
+  caption: string
+}
+
+/** ParameterDB: the initialization parameters in effect. */
+export function getDatabaseParameters(id: string, signal?: AbortSignal): Promise<ParameterList> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/parameters`, signal)
+}
+
+export interface AlertLine {
+  at: string
+  text: string
+  severity: 'info' | 'warning' | 'error' | string
+  codes: string[]
+}
+
+export interface AlertTail {
+  lines: AlertLine[]
+  errors: number
+  warnings: number
+  collected_at: string
+  limitation: string | null
+  detail: boolean
+  detail_note: string | null
+  window: string
+  caption: string
+}
+
+/** AlertDB: the most recent lines of the database alert log. */
+export function getDatabaseAlertLog(id: string, signal?: AbortSignal): Promise<AlertTail> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/alert-log`, signal)
+}
+
+export interface GraphHistorySample {
+  taken_at: string
+  age_seconds: number
+  counters: Array<{ name: string; value: number | null }>
+  events: GraphWaitEvent[]
+  cpu_micro: number | null
+  io: Array<{ name: string; value: number | null }>
+  files: { reads: number | null; writes: number | null; read_time_cs: number | null; write_time_cs: number | null }
+}
+
+export interface GraphHistory {
+  samples: GraphHistorySample[]
+  enabled: boolean
+  interval_seconds: number
+  caption: string
+}
+
+/** Stored counter samples from PostgreSQL. Never fails the page: a problem returns no samples. */
+export async function getGraphHistory(id: string, signal?: AbortSignal, minutes = 60): Promise<GraphHistory> {
+  const empty: GraphHistory = { samples: [], enabled: false, interval_seconds: 0, caption: '' }
+  try {
+    const result = await request<GraphHistory>(
+      `/api/v1/databases/${encodeURIComponent(id)}/graph/history?minutes=${minutes}`, signal,
+    )
+    if (!result || !Array.isArray(result.samples)) return empty
+    return {
+      samples: result.samples.filter((item) => item && typeof item.age_seconds === 'number'
+        && Array.isArray(item.counters) && Array.isArray(item.events) && Array.isArray(item.io) && item.files != null),
+      enabled: Boolean(result.enabled),
+      interval_seconds: Number(result.interval_seconds) || 0,
+      caption: typeof result.caption === 'string' ? result.caption : '',
+    }
+  } catch (reason) {
+    if (reason instanceof DOMException && reason.name === 'AbortError') throw reason
+    return empty
+  }
+}
+
 export interface WaitLock {
   name: string
   gets: number | null
@@ -775,5 +922,201 @@ export function changeOwnPassword(currentPassword: string, newPassword: string):
   return request('/api/v1/auth/password', undefined, {
     method: 'POST',
     body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  })
+}
+
+// ---- Agents: snapshots, investigations, findings, and per-database settings
+
+export interface AgentStatus {
+  enabled: boolean
+  can_run: boolean
+  can_configure: boolean
+  model_writes_findings: boolean
+  model: string
+  open_findings: number
+  packs: { name: string; label: string; readings: string[] }[]
+  limits: { max_steps: number; max_model_calls: number; run_timeout_seconds: number }
+}
+
+export interface AgentEvidence {
+  ref: string
+  source: string
+  text: string
+}
+
+export interface AgentFinding {
+  id: string
+  run_id: string
+  target_id: string | null
+  target_name: string
+  incident_id: string | null
+  severity: string
+  title: string
+  summary: string
+  next_steps: string[]
+  evidence: AgentEvidence[]
+  confidence: string
+  verified: boolean
+  verifier_note: string
+  written_by: string
+  restricted: boolean
+  hidden: boolean
+  decision: 'open' | 'accepted' | 'dismissed'
+  decided_by: string
+  decided_at: string | null
+  decision_note: string
+  created_at: string | null
+}
+
+export interface AgentStep {
+  seq: number
+  kind: string
+  title: string
+  outcome: string
+  duration_ms: number
+  lines: string[]
+  restricted_hidden: boolean
+}
+
+export interface AgentRun {
+  id: string
+  agent: string
+  trigger: string
+  scope_type: string
+  target_id: string | null
+  target_name: string
+  incident_id: string | null
+  goal: string
+  playbook: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'stopped'
+  principal: string
+  llm_used: boolean
+  model: string
+  steps_used: number
+  model_calls: number
+  note: string
+  created_at: string | null
+  started_at: string | null
+  finished_at: string | null
+  steps?: AgentStep[]
+  finding?: AgentFinding | null
+}
+
+export interface SnapshotReading {
+  kind: string
+  label: string
+  pack: string
+  taken_at: string
+  status: string
+  row_count: number
+  restricted: boolean
+  hidden: boolean
+  previous_at: string | null
+  changes: string[]
+}
+
+export interface DatabaseSnapshots {
+  target_id: string
+  target_name: string
+  enabled: boolean
+  can_collect: boolean
+  last_taken_at: string | null
+  snapshot_count: number
+  retention_days: number
+  packs: string[]
+  readings: SnapshotReading[]
+  changed: number
+}
+
+export interface SnapshotResult {
+  run_id: string
+  batch_id: string
+  taken_at: string
+  answered: number
+  readings: { kind: string; label: string; status: string; row_count: number; restricted: boolean; note: string }[]
+  left_out: string[]
+}
+
+export interface AgentSettingItem {
+  key: string
+  label: string
+  system_value: boolean | number | string
+  database_value: boolean | number | string | null
+  overridden: boolean
+  value: boolean | number | string
+}
+
+export interface DatabaseAgentSettings {
+  target_id: string
+  system_enabled: boolean
+  editable: boolean
+  items: AgentSettingItem[]
+}
+
+export function getAgentStatus(signal?: AbortSignal): Promise<AgentStatus> {
+  return request('/api/v1/agents/status', signal)
+}
+
+export function getDatabaseSnapshots(id: string, signal?: AbortSignal): Promise<DatabaseSnapshots> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/snapshots`, signal)
+}
+
+export function collectSnapshot(id: string): Promise<SnapshotResult> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/snapshots`, undefined, { method: 'POST', body: JSON.stringify({}) })
+}
+
+export function collectFleetSnapshot(): Promise<{ status: string }> {
+  return request('/api/v1/agents/snapshots/fleet', undefined, { method: 'POST' })
+}
+
+export function startInvestigation(scope: { incidentId?: string; targetId?: string; goal?: string }): Promise<AgentRun> {
+  return request('/api/v1/agents/investigations', undefined, {
+    method: 'POST',
+    body: JSON.stringify({ incident_id: scope.incidentId ?? null, target_id: scope.targetId ?? null, goal: scope.goal ?? '' }),
+  })
+}
+
+export function listAgentRuns(
+  filter: { incidentId?: string; targetId?: string; limit?: number } = {}, signal?: AbortSignal,
+): Promise<{ items: AgentRun[] }> {
+  const query = new URLSearchParams()
+  if (filter.incidentId) query.set('incident_id', filter.incidentId)
+  if (filter.targetId) query.set('target_id', filter.targetId)
+  query.set('limit', String(filter.limit ?? 30))
+  return request(`/api/v1/agents/runs?${query.toString()}`, signal)
+}
+
+export function getAgentRun(id: string, signal?: AbortSignal): Promise<AgentRun> {
+  return request(`/api/v1/agents/runs/${encodeURIComponent(id)}`, signal)
+}
+
+export function listAgentFindings(
+  filter: { decision?: 'open' | 'accepted' | 'dismissed' | 'all'; incidentId?: string; targetId?: string } = {},
+  signal?: AbortSignal,
+): Promise<{ items: AgentFinding[] }> {
+  const query = new URLSearchParams()
+  query.set('decision', filter.decision ?? 'open')
+  if (filter.incidentId) query.set('incident_id', filter.incidentId)
+  if (filter.targetId) query.set('target_id', filter.targetId)
+  return request(`/api/v1/agents/findings?${query.toString()}`, signal)
+}
+
+export function decideFinding(id: string, decision: 'accepted' | 'dismissed', note = ''): Promise<AgentFinding> {
+  return request(`/api/v1/agents/findings/${encodeURIComponent(id)}/decision`, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ decision, note }),
+  })
+}
+
+export function getDatabaseAgentSettings(id: string, signal?: AbortSignal): Promise<DatabaseAgentSettings> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/agent-settings`, signal)
+}
+
+export function setDatabaseAgentSetting(
+  id: string, key: string, value: boolean | number | string | null,
+): Promise<DatabaseAgentSettings> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/agent-settings`, undefined, {
+    method: 'PUT',
+    body: JSON.stringify({ key, value }),
   })
 }

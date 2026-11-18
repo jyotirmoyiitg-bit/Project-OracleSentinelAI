@@ -32,11 +32,25 @@ A pasted SQL statement is refused. The operator can ask for the same information
 
 The selected database in the browser is scope. It does not grant authorization. Database and document permissions are checked on the request.
 
+### Supervisor
+
+On a database or incident chat the model is first asked which specialist should answer: this database, Oracle knowledge, SQL draft, company policy, change request, or general. It returns route names and up to three reading names as JSON and is given no tool. The server keeps a route only when it is listed and a reading only when it is approved and the operator's role may read it. A pasted statement is refused before the supervisor is asked, a catalog question does not ask it, and an explicit change phrase is a change request whatever it chose. A question the fixed patterns recognise as being about the selected database keeps its reading. With the model off, or when its reply cannot be used, the routing table above is applied by the fixed patterns. `AI_SUPERVISOR_ENABLED=false` turns the supervisor off. The routing step is recorded and is not evidence.
+
+A question that opens like a question and has no statement terminator is not a pasted statement only because it names a command. "Explain what an object grant is" is answered. "grant dba to scott" is refused.
+
+Which users and schemas exist in the selected database, and which of them are application schemas, is read from the database with the user reading. It is not explained from memory. That reading is limited to an administrator, so anyone else who asks is told so, whichever specialist the supervisor chose. "What is a schema?" stays an explanation.
+
+### An earlier answer is not an answer
+
+The model is sent the last messages of the chat so that it understands what the operator refers to. They are not evidence. Before an answer from a turn that took no reading is accepted, its opening is compared with the earlier answers of the chat. An answer that repeats an earlier answer to a different question is asked for again, first with the repeat pointed out and then without the earlier messages. Asking the same question twice may give the same answer.
+
+An Oracle-knowledge answer that used no manual passage is shown as low confidence and says that it is the model's general knowledge without a source. One that used a passage keeps the model's confidence and lists the passage.
+
 ## Retrieval
 
 Retrieved passages are used only when they support the specific claim. Unrelated matches are ignored. Oracle manuals, company policies, and runbooks stay different kinds of documents. An uploaded PDF does not become an enforceable company policy by being present in the folder.
 
-Company-policy retrieval is mandatory. Live measurements come from tools. For a diagnosis, tools supply the observations and documents may help interpret them.
+A company-policy question searches policy documents only, and a manual passage is never evidence of a company requirement. Company-policy retrieval is mandatory. Live measurements come from tools. For a diagnosis, tools supply the observations and documents may help interpret them.
 
 ## Answer contents
 
@@ -88,3 +102,13 @@ These instructions are sent with each model call. Authorization and the refusal 
 ## Fleet questions
 
 A fleet chat answers a question about every registered database. Incidents, compliance results, tablespace percent, and health come from stored monitoring data. Connected programs and datafile sizes are read live from each enabled database with a fixed aggregate reading. A program name or a size from the question only filters the rows that came back. The model writes the answer from those rows and may not add a database, a program, a size, or a policy that is not in them. A database that could not be read is unknown, not clean.
+
+## Agents
+
+- An agent reads Oracle only through the fixed readings. A goal, an incident text, and a model reply are never placed in a statement.
+- The model chooses from lists the server gives it: a playbook name, or reading names. A name that is not on the list is dropped.
+- Evidence is sent only to the local model. With no local model, a finding lists the evidence with no written cause.
+- A written cause is shown only after the Verifier passes it. Otherwise the finding says the conclusion was rejected and shows the evidence.
+- A run has the role of whoever started it. Stored readings that hold SQL text, user names, or configuration are read by an admin operator only, and a finding that cites them is hidden from other roles.
+- An automatic run acts as an operator.
+- A finding is advice. Accepting it records a decision. It does not change an incident or a database.

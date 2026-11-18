@@ -170,6 +170,7 @@ def reindex_documents(
         indexed=report.indexed,
         updated=report.updated,
         unchanged=report.unchanged,
+        reembedded=report.reembedded,
         deleted=report.deleted,
         quarantined=report.quarantined,
         skipped=report.skipped,

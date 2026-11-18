@@ -76,6 +76,7 @@ class ScanReport:
     indexed: int = 0
     updated: int = 0
     unchanged: int = 0
+    reembedded: int = 0
     deleted: int = 0
     quarantined: int = 0
     skipped: int = 0

@@ -154,6 +154,11 @@ class StructuredAnswer:
     citation_note: str = ""
     evidence_lines: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    # Which specialists answered, and whether the supervisor or the fixed patterns chose them.
+    routes: list[str] = field(default_factory=list)
+    routed_by: str = ""
+    # Said when a database reading came from a stored snapshot instead of a live read.
+    source_note: str = ""
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -167,6 +172,9 @@ class StructuredAnswer:
             "citation_note": self.citation_note,
             "evidence_lines": list(self.evidence_lines),
             "notes": list(self.notes),
+            "routes": list(self.routes),
+            "routed_by": self.routed_by,
+            "source_note": self.source_note,
         }
 
 

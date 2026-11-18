@@ -67,6 +67,11 @@ _SQL_SHAPE = re.compile(
 _SQL_LEADING = re.compile(
     r"(?is)^(select|with|insert|update|delete|merge|alter|drop|create|truncate|grant|revoke|commit|rollback)\b",
 )
+# A message that opens like a question and has no statement terminator is asking about a command, not issuing it.
+_QUESTION_FORM = re.compile(
+    r"(?is)^\s*(?:what|why|how|when|where|which|who|explain|describe|define|can|could|does|do|is|are|should|"
+    r"tell me|difference)\b",
+)
 SQL_PROMPT_REFUSAL = (
     "SQL cannot be entered in the prompt. Ask for the reading in plain language, "
     "such as who is logged on or list the datafiles."
@@ -93,7 +98,9 @@ def omit_unexecuted_sql(value: str, *, keep_select: bool) -> str:
 def sql_in_prompt(value: str) -> bool:
     """Reject a statement typed by the operator. Plain-language questions stay allowed."""
     text = value.strip()
-    if _SQL_SELECT.search(text) or _SQL_SHAPE.search(text):
+    if _SQL_SELECT.search(text):
+        return True
+    if _SQL_SHAPE.search(text) and not (_QUESTION_FORM.match(text) and ";" not in text):
         return True
     leading = _SQL_LEADING.match(text)
     if leading is None:

@@ -28,6 +28,7 @@ import {
   LayoutDashboard,
   Plus,
   X,
+  Bot,
 } from 'lucide-react'
 import { ApiError, checkFleetStatus, deleteDatabase, getFleet, getFleetSummary, getMetricHistory, getSession, getTarget, logout, type AuthSession } from './api'
 import { formatBytes, formatDate, formatMetric, relativeTime } from './format'
@@ -50,8 +51,15 @@ import { CopilotPage } from './CopilotPage'
 import { LoginPage } from './LoginPage'
 import { OperationsPage } from './OperationsPage'
 import { AdminPage } from './AdminPage'
+import { AgentsPage } from './AgentsPage'
+import { SnapshotPanel } from './components/SnapshotPanel'
+import { InvestigationPanel } from './components/InvestigationPanel'
 import { AuditPage } from './AuditPage'
 import { GraphPage } from './GraphPage'
+import { AlertPage } from './AlertPage'
+import { MemoryPage } from './MemoryPage'
+import { ParameterPage } from './ParameterPage'
+import { StoragePage } from './StoragePage'
 import { WaitPage } from './WaitPage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
 
@@ -78,11 +86,28 @@ type Route =
   | { page: 'copilot-incident'; id: string }
   | { page: 'operations' }
   | { page: 'admin' }
+  | { page: 'agents' }
   | { page: 'audit' }
   | { page: 'graph' }
   | { page: 'graph-database'; id: string }
   | { page: 'wait' }
   | { page: 'wait-database'; id: string }
+  | { page: 'memory-database'; id: string }
+  | { page: 'storage-database'; id: string }
+  | { page: 'parameters-database'; id: string }
+  | { page: 'alerts-database'; id: string }
+
+type SectionPage = 'memory-database' | 'storage-database' | 'parameters-database' | 'alerts-database'
+const SECTION_TAB: Record<SectionPage, DatabaseTab> = {
+  'memory-database': 'memory',
+  'storage-database': 'storage',
+  'parameters-database': 'parameters',
+  'alerts-database': 'alerts',
+}
+
+function isSection(page: string): page is SectionPage {
+  return page in SECTION_TAB
+}
 
 function parseHash(hash: string): Route {
   if (hash === '#/register') return { page: 'register' }
@@ -101,6 +126,7 @@ function parseHash(hash: string): Route {
   if (hash.match(/^#\/copilot\/?$/)) return { page: 'copilot' }
   if (hash.match(/^#\/operations\/?$/)) return { page: 'operations' }
   if (hash.match(/^#\/admin\/?$/)) return { page: 'admin' }
+  if (hash.match(/^#\/agents\/?$/)) return { page: 'agents' }
   if (hash.match(/^#\/audit\/?$/)) return { page: 'audit' }
   match = hash.match(/^#\/graph\/databases\/([^/]+)$/)
   if (match) return { page: 'graph-database', id: decodeURIComponent(match[1]) }
@@ -108,6 +134,9 @@ function parseHash(hash: string): Route {
   match = hash.match(/^#\/wait\/databases\/([^/]+)$/)
   if (match) return { page: 'wait-database', id: decodeURIComponent(match[1]) }
   if (hash.match(/^#\/wait\/?$/)) return { page: 'wait' }
+  // The four sections added beside GraphDB and WaitDB are always opened on one database.
+  match = hash.match(/^#\/(memory|storage|parameters|alerts)\/databases\/([^/]+)$/)
+  if (match) return { page: `${match[1]}-database` as SectionPage, id: decodeURIComponent(match[2]) }
   return { page: 'fleet' }
 }
 
@@ -137,11 +166,15 @@ function usePageNavigation() {
     navigateToIncidentCopilot: (id: string) => navigate(`#/copilot/incidents/${encodeURIComponent(id)}`),
     navigateToOperations: () => navigate('#/operations'),
     navigateToAdmin: () => navigate('#/admin'),
+    navigateToAgents: () => navigate('#/agents'),
     navigateToAudit: () => navigate('#/audit'),
     navigateToGraph: () => navigate('#/graph'),
     navigateToGraphDatabase: (id: string) => navigate(`#/graph/databases/${encodeURIComponent(id)}`),
     navigateToWait: () => navigate('#/wait'),
     navigateToWaitDatabase: (id: string) => navigate(`#/wait/databases/${encodeURIComponent(id)}`),
+    navigateToSection: (section: 'memory' | 'storage' | 'parameters' | 'alerts', id: string) => (
+      navigate(`#/${section}/databases/${encodeURIComponent(id)}`)
+    ),
   }
 }
 
@@ -186,6 +219,7 @@ function AppHeader({
   onOpenCopilot,
   onOpenOperations,
   onOpenAdmin,
+  onOpenAgents,
   onOpenAudit,
   showOperations,
   showAdmin,
@@ -209,6 +243,7 @@ function AppHeader({
   onOpenCopilot: () => void
   onOpenOperations: () => void
   onOpenAdmin: () => void
+  onOpenAgents: () => void
   onOpenAudit: () => void
   showOperations: boolean
   showAdmin: boolean
@@ -238,6 +273,7 @@ function AppHeader({
         <button className="nav-link" aria-label="Incidents" title="Incidents" aria-current={currentPage === 'incidents' || currentPage === 'incident' ? 'page' : undefined} onClick={onOpenIncidents}><ShieldCheck size={15} /><span className="nav-label">Incidents</span></button>
         <button className="nav-link" aria-label="Copilot" title="Copilot" aria-current={currentPage === 'copilot' || currentPage === 'copilot-database' || currentPage === 'copilot-incident' ? 'page' : undefined} onClick={onOpenCopilot}><MessageSquare size={15} /><span className="nav-label">Copilot</span></button>
         <button className="nav-link" aria-label="Knowledge" title="Knowledge" aria-current={currentPage === 'knowledge' ? 'page' : undefined} onClick={onOpenKnowledge}><BookOpen size={15} /><span className="nav-label">Knowledge</span></button>
+        <button className="nav-link" aria-label="Agents" title="Agents" aria-current={currentPage === 'agents' ? 'page' : undefined} onClick={onOpenAgents}><Bot size={15} /><span className="nav-label">Agents</span></button>
         {(showOperations || showAudit || showAdmin) && <span className="nav-divider" aria-hidden="true" />}
         {showOperations && <button className="nav-link" aria-label="Proposals" title="Proposals" aria-current={currentPage === 'operations' ? 'page' : undefined} onClick={onOpenOperations}><ClipboardList size={15} /><span className="nav-label">Proposals</span></button>}
         {showAudit && <button className="nav-link" aria-label="Audit" title="Audit" aria-current={currentPage === 'audit' ? 'page' : undefined} onClick={onOpenAudit}><ScrollText size={15} /><span className="nav-label">Audit</span></button>}
@@ -721,6 +757,9 @@ function DetailPage({
         <MetricCard label="Critical incidents" value={detail.critical_incident_count ?? '—'} detail={detail.critical_incident_count == null ? 'The incident count was not returned' : 'Open critical incidents'} icon={<CircleAlert size={18} />} tone="default" />
       </section>
 
+      <SnapshotPanel targetId={detail.id} />
+      <InvestigationPanel targetId={detail.id} />
+
       <div className="detail-grid">
         <section className="panel history-panel">
           <div className="panel-heading detail-panel-heading">
@@ -829,11 +868,13 @@ export default function App() {
     navigateToIncidentCopilot,
     navigateToOperations,
     navigateToAdmin,
+    navigateToAgents,
     navigateToAudit,
     navigateToGraph,
     navigateToGraphDatabase,
     navigateToWait,
     navigateToWaitDatabase,
+    navigateToSection,
   } = usePageNavigation()
   const [refreshSeconds, setRefreshSeconds] = useRefreshPreference()
   const [refreshing, setRefreshing] = useState(false)
@@ -861,13 +902,16 @@ export default function App() {
     })
     return () => controller.abort()
   }, [sessionAttempt])
-  const databaseId = route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database'
-    || route.page === 'graph-database' || route.page === 'wait-database' ? route.id : null
+  const inWorkspace = route.page === 'database' || route.page === 'database-events' || route.page === 'copilot-database'
+    || route.page === 'graph-database' || route.page === 'wait-database' || isSection(route.page)
+  const databaseId = inWorkspace && 'id' in route ? route.id : null
   const activeTab: DatabaseTab = route.page === 'graph-database' ? 'graph' : route.page === 'wait-database' ? 'wait'
+    : isSection(route.page) ? SECTION_TAB[route.page]
     : route.page === 'database-events' ? 'events' : route.page === 'copilot-database' ? 'copilot' : 'overview'
   const openTab = (tab: DatabaseTab, id: string) => {
     if (tab === 'graph') navigateToGraphDatabase(id)
     else if (tab === 'wait') navigateToWaitDatabase(id)
+    else if (tab === 'memory' || tab === 'storage' || tab === 'parameters' || tab === 'alerts') navigateToSection(tab, id)
     else if (tab === 'events') navigateToDatabaseEvents(id)
     else if (tab === 'copilot') navigateToDatabaseCopilot(id)
     else navigateToDatabase(id)
@@ -914,6 +958,7 @@ export default function App() {
         onOpenCopilot={navigateToCopilot}
         onOpenOperations={navigateToOperations}
         onOpenAdmin={navigateToAdmin}
+        onOpenAgents={navigateToAgents}
         onOpenAudit={navigateToAudit}
         showOperations={canReadProposals(session.role)}
         showAdmin={canAdminister(session.role)}
@@ -993,6 +1038,8 @@ export default function App() {
         <AdminPage onOpenRegistry={navigateToRegistration} onRefreshStatus={registerRefresh} currentUser={session.principal} />
       ) : route.page === 'audit' ? (
         <AuditPage onRefreshStatus={registerRefresh} />
+      ) : route.page === 'agents' ? (
+        <AgentsPage onOpenIncident={navigateToIncident} onOpenTarget={navigateToDatabase} onRefreshStatus={registerRefresh} />
       ) : route.page === 'graph' || route.page === 'graph-database' ? (
         <GraphPage
           key={route.page === 'graph-database' ? route.id : 'choose'}
@@ -1013,6 +1060,14 @@ export default function App() {
           onOpenDatabase={navigateToDatabase}
           onRefreshStatus={registerRefresh}
         />
+      ) : route.page === 'memory-database' ? (
+        <MemoryPage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'storage-database' ? (
+        <StoragePage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'parameters-database' ? (
+        <ParameterPage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'alerts-database' ? (
+        <AlertPage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
       ) : route.page === 'knowledge' ? (
         <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} role={session.role} />
       ) : route.page === 'copilot' || route.page === 'copilot-database' || route.page === 'copilot-incident' ? (

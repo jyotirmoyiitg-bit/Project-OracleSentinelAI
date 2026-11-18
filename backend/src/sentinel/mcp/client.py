@@ -36,6 +36,88 @@ async def ask_reading(settings: Settings, tool_name: str, alias: str) -> tuple[s
             await process.wait()
 
 
+async def ask_readings(
+    settings: Settings, tool_names: list[str], alias: str,
+) -> dict[str, tuple[str, list[dict[str, str]], str]]:
+    """Ask the readings server for several fixed readings in one call, on one Oracle logon.
+
+    A snapshot uses this. A reading with no answer is reported as unavailable; it never fails the others.
+    """
+    names = list(dict.fromkeys(tool_names))
+    results: dict[str, tuple[str, list[dict[str, str]], str]] = {}
+    if not names:
+        return results
+    env = os.environ.copy()
+    env["SENTINEL_MCP_SYNTHETIC"] = "1" if settings.synthetic_mode else "0"
+    env["PYTHONPATH"] = str(_SRC) + os.pathsep + env.get("PYTHONPATH", "")
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-m", "sentinel.mcp",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+        cwd=str(_BACKEND),
+        env=env,
+        limit=8 * 1024 * 1024,
+    )
+    try:
+        results = await asyncio.wait_for(_exchange_many(process, names, alias), timeout=60 + 20 * len(names))
+    except (TimeoutError, ValueError, TypeError, json.JSONDecodeError):
+        results = {}
+    finally:
+        if process.returncode is None:
+            process.kill()
+            await process.wait()
+    missing = ("unavailable", [], "The readings server did not answer in time.")
+    return {name: results.get(name, missing) for name in names}
+
+
+async def _exchange_many(
+    process: asyncio.subprocess.Process, names: list[str], alias: str,
+) -> dict[str, tuple[str, list[dict[str, str]], str]]:
+    if process.stdin is None or process.stdout is None:
+        return {}
+    await _send(process, {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "oracle-sentinel", "version": "1"},
+        },
+    })
+    await _read(process.stdout)
+    await _send(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+    await _send(process, {
+        "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+        "params": {"name": "collect_snapshot", "arguments": {"alias": alias, "readings": names}},
+    })
+    while True:
+        message = await _read(process.stdout, limit=6_000_000)
+        if message.get("id") == 2:
+            break
+    result = message.get("result")
+    if not isinstance(result, dict) or result.get("isError") is True:
+        return {}
+    content = result.get("content")
+    if not isinstance(content, list) or not content or not isinstance(content[0], dict):
+        return {}
+    parsed = json.loads(str(content[0].get("text") or "{}"))
+    readings = parsed.get("readings") if isinstance(parsed, dict) else None
+    if not isinstance(readings, dict):
+        return {}
+    answers: dict[str, tuple[str, list[dict[str, str]], str]] = {}
+    for name, value in readings.items():
+        if not isinstance(value, dict):
+            continue
+        rows = value.get("rows")
+        clean = [
+            {str(key): str(cell) for key, cell in row.items()}
+            for row in rows
+            if isinstance(row, dict)
+        ] if isinstance(rows, list) else []
+        answers[str(name)] = (str(value.get("status") or "unavailable"), clean, str(value.get("note") or ""))
+    return answers
+
+
 async def _exchange(
     process: asyncio.subprocess.Process, tool_name: str, alias: str,
 ) -> tuple[str, list[dict[str, str]], str]:
@@ -69,13 +151,13 @@ async def _send(process: asyncio.subprocess.Process, payload: dict[str, Any]) ->
     await process.stdin.drain()
 
 
-async def _read(stdout: asyncio.StreamReader) -> dict[str, Any]:
+async def _read(stdout: asyncio.StreamReader, limit: int = 1_000_000) -> dict[str, Any]:
     line = await stdout.readline()
     while line and not line.strip():
         line = await stdout.readline()
     if not line:
         raise ValueError("readings server closed")
-    if len(line) > 1_000_000:
+    if len(line) > limit:
         raise ValueError("readings response is too large")
     payload = json.loads(line)
     if not isinstance(payload, dict):

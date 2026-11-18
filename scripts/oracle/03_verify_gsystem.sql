@@ -99,7 +99,7 @@ FROM v$archived_log WHERE rownum <= 1;
 
 SELECT name, value FROM v$dataguard_stats WHERE rownum <= 1;
 
-SELECT username, account_status, lock_date, expiry_date
+SELECT username, account_status, lock_date, expiry_date, oracle_maintained
 FROM dba_users WHERE rownum <= 1;
 
 SELECT owner, object_type, object_name, status FROM dba_objects WHERE rownum <= 1;

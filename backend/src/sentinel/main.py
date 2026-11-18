@@ -13,6 +13,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from sentinel.api.v1.admin import router as admin_router
+from sentinel.api.v1.agents import router as agents_router
 from sentinel.api.v1.audit import router as audit_router
 from sentinel.api.v1.auth import router as auth_router
 from sentinel.api.v1.chat import router as chat_router
@@ -133,6 +134,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 raise RuntimeError("Phase 8 schema missing; run alembic upgrade head before starting")
             if not inspect(conn).has_table("app_config"):
                 raise RuntimeError("Configuration table missing; run alembic upgrade head before starting")
+            if not inspect(conn).has_table("evidence_snapshots"):
+                raise RuntimeError("Agent tables missing; run alembic upgrade head before starting")
             if settings.auth_required and not inspect(conn).has_table("operator_accounts"):
                 raise RuntimeError("Sign-in schema missing; run alembic upgrade head before starting")
         with sessions.begin() as session:
@@ -163,7 +166,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception:
                 logger.exception("Knowledge scheduler failed to start")
                 knowledge_scheduler = None
+        agent_scheduler = None
+        if settings.scheduler_enabled:
+            from sentinel.agents.scheduler import AgentScheduler
+
+            try:
+                agent_scheduler = AgentScheduler(settings, sessions)
+                agent_scheduler.start()
+            except Exception:
+                logger.exception("Agent scheduler failed to start")
+                agent_scheduler = None
+        graph_sampler = None
+        if settings.scheduler_enabled:
+            from sentinel.graph.sampler import GraphHistorySampler
+
+            try:
+                graph_sampler = GraphHistorySampler(settings, sessions)
+                graph_sampler.start()
+            except Exception:
+                logger.exception("Graph history sampler failed to start")
+                graph_sampler = None
         app.state.collector_scheduler = scheduler
+        app.state.graph_sampler = graph_sampler
+        app.state.agent_scheduler = agent_scheduler
         app.state.session_factory = sessions
         app.state.knowledge_scheduler = knowledge_scheduler
         try:
@@ -173,6 +198,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 await asyncio.to_thread(scheduler.stop)
             if knowledge_scheduler:
                 await asyncio.to_thread(knowledge_scheduler.stop)
+            if agent_scheduler:
+                await asyncio.to_thread(agent_scheduler.stop)
+            if graph_sampler:
+                await asyncio.to_thread(graph_sampler.stop)
     finally:
         engine.dispose()
 
@@ -198,6 +227,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(privileged_router)
     app.include_router(audit_router)
     app.include_router(admin_router)
+    app.include_router(agents_router)
     app.include_router(graph_router)
     app.include_router(database_graph_router)
     app.add_middleware(MetricsMiddleware)

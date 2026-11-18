@@ -277,6 +277,8 @@ Each picture endpoint opens one Oracle session for the request and runs every fi
 
 `GET /api/v1/databases/{id}/graph/memory` returns `sga`, `pga`, `background_processes`, `hit_ratio`, `shared_pool_used`, `in_memory`, `memory_management`, `data_guard`, `result_cache`, `collected_at`, `limitations`, and `snapshot`. SGA bars come from `V$SGAINFO`. The SGA target caption comes from `sga_target` and `sga_max_size`. The buffer-cache hit ratio is `(consistent gets + db block gets - physical reads) / (consistent gets + db block gets)` from `V$SYSSTAT`, captioned since instance startup. A missing statistic leaves that meter at `Not collected.` Shared-pool used percent is the shared-pool size minus free memory from `V$SGASTAT`. Until that grant works, the size meter stays and the used meter says `V$SGASTAT` is not granted. An in-memory row with no bytes says the in-memory area is not in use. `sga_target` and `memory_target` say whether Automatic Shared Memory Management and Automatic Memory Management are on. Result cache stays `Not collected.` PGA comes from `V$PGASTAT` and `pga_aggregate_target`. Background processes come from `V$SESSION` where `TYPE` is `BACKGROUND`. The page shows the database writer, recovery writer, redo log writer, and archiver as pills named from the session program, and keeps the full list below. Data Guard stats come from `V$DATAGUARD_STATS`; no rows means `Not a Data Guard database.` Sizes are labeled in MB or GB. A missing grant is named on that card and the other cards stay. The response does not include SQL. A missing or disabled database returns 404. `V$BGPROCESS` and `V$PROCESS` are not queried.
 
+`GET /api/v1/databases/{id}/graph/history?minutes=60` returns `samples`, `enabled`, `interval_seconds`, and `caption`. It needs `dashboard.read` and reads PostgreSQL only. `minutes` is 5 to 1440 and at most 120 samples are returned, oldest first. Each sample has `taken_at`, `age_seconds`, `counters`, `events`, `cpu_micro`, `io`, and `files`, in the shapes of the live pictures. Samples are stored by the scheduler every `graph_history_interval_seconds` and kept `graph_history_retention_hours`. `enabled` is `false` when the scheduler or the setting is off. A disabled or unknown database returns 404. GraphDB uses the latest sample as the baseline of its rate meters. WaitDB replays the samples to draw its charts. Both pages read again 3 seconds after they open.
+
 ## WaitDB
 
 WaitDB is a page for one registered database. `#/wait` asks for that database. `#/wait/databases/{id}` opens it. Every signed-in role can read it. The page does not change Oracle.
@@ -316,6 +318,54 @@ The copilot tool list adds `get_redo_logs`, `list_control_files`, `get_largest_s
 On a fleet thread a question about incidents, connected programs, datafile sizes, tablespace percent, policy violations, or health runs a fleet tool: `get_fleet_incidents`, `find_fleet_programs`, `find_fleet_datafiles`, `get_fleet_tablespaces`, `get_fleet_compliance`, or `get_fleet_health`. Incidents, compliance, tablespace percent, and health come from stored rows. Programs and datafile sizes are read from every enabled database with one fixed aggregate statement each, at most `AI_FLEET_MAX_DATABASES` databases per question, `AI_FLEET_CONCURRENCY` at a time, each within `AI_FLEET_DATABASE_TIMEOUT_SECONDS`. A program name or a size in the question filters the returned rows and is never part of a statement. A database that could not be read is listed as not known.
 
 The answer has `answer.kind` `fleet`. `answer.summary` is written by the model from the tool rows, or is the tool summaries when no model answers. `answer.reading` holds one line per matching database in the form `Database: finding`, then the databases with no match, then those not read. `answer.limitations` states which facts are stored and which are live. When the fixed router has no match and a model is available, the model may nominate one fleet tool; the function list then shows `route_question`. An explanation, a document question, a SQL draft, and a change request on a fleet thread do not run a fleet tool.
+
+## Phase 22 agents
+
+Agents are off until `AGENTS_ENABLED` is set in Admin. While they are off, the routes that start work return 409.
+
+| Route | Permission | Behaviour |
+|---|---|---|
+| `GET /api/v1/agents/status` | `dashboard.read` | Whether agents are on, whether the caller may run them, whether the local model writes findings, the open finding count, the packs, and the run limits. |
+| `POST /api/v1/databases/{id}/snapshots` | `agent.run` | Body `{"packs": ["core"]}` or `{}` for the database's packs. Collects now and returns the batch id, the time, and each reading's status and row count. 403 for the configuration pack unless the caller is an admin operator. 409 when agents are off for the database or a collection is running. 429 inside the minimum gap. |
+| `GET /api/v1/databases/{id}/snapshots` | `dashboard.read` | The newest stored reading of each kind with its time, status, row count, and what changed against the one before. A restricted reading has `hidden: true` and no changes for a caller who is not an admin operator. |
+| `POST /api/v1/agents/snapshots/fleet` | `agent.run` | 202. Collects the default packs from every enabled database in the background and stores one Collector run. |
+| `POST /api/v1/agents/investigations` | `agent.run` | Body `{"incident_id": "..."}` or `{"target_id": "...", "goal": "..."}`. 202 with the queued run. The run continues after the response. 409 when agents are off for the database or an investigation of it is running. |
+| `GET /api/v1/agents/runs` | `dashboard.read` | Recent runs. Filters `target_id`, `incident_id`, `limit`. |
+| `GET /api/v1/agents/runs/{id}` | `dashboard.read` | The run, its steps, and its finding. Restricted step lines are returned to an admin operator only; `restricted_hidden` says some were left out. |
+| `GET /api/v1/agents/findings` | `dashboard.read` | Filters `decision` (`open`, `accepted`, `dismissed`, `all`), `incident_id`, `target_id`. A restricted finding is returned without its summary, steps, and evidence to a caller who is not an admin operator. |
+| `POST /api/v1/agents/findings/{id}/decision` | `agent.run` | Body `{"decision": "accepted" or "dismissed", "note": "..."}`. Audited. It does not change the incident or the database. |
+| `GET /api/v1/databases/{id}/agent-settings` | `dashboard.read` | Each overridable setting with the system value, the database value, and the value that applies. |
+| `PUT /api/v1/databases/{id}/agent-settings` | `config.write` | Body `{"key": "...", "value": ...}`. A null value removes the database value. 422 for a setting that cannot be overridden or a value outside its range. Audited. |
+
+A finding has `written_by` (`model` or `rules`), `verified`, `verifier_note`, `confidence`, `next_steps`, and `evidence` as a list of `{ref, source, text}`. Times are UTC with a `Z`.
+
+The readings server (`python -m sentinel.mcp`) has one more tool, `collect_snapshot`, with arguments `alias` and `readings`. Each reading must be a name from the server's own tool list. It runs them on one logon and returns each result. It accepts no other argument.
+
+## Phase 25 database sections
+
+Four sections of one database sit beside GraphDB and WaitDB. Each route needs `dashboard.read`, opens one Oracle session, runs fixed readings, and returns 404 for a disabled or unknown database. A reading that is not granted returns HTTP 200 with a `limitation`. No response contains SQL or a view name.
+
+`GET /api/v1/databases/{id}/memory/sga` returns `pools` (`name`, `bytes`, `display`, `used_bytes`, `free_bytes`, `used_percent`), `components` (the 60 largest: `pool`, `name`, `bytes`, `display`), `shared_pool` (its 25 largest areas), `total_bytes`, `total_display`, `collected_at`, `limitation`, and `caption`. Entries without a pool are grouped as `buffer cache` or `other`.
+
+`GET /api/v1/databases/{id}/storage/tablespaces` returns `tablespaces` (`name`, `contents`, `status`, `total_bytes`, `free_bytes`, `used_bytes`, `used_percent`, `fragments`), `total_bytes`, `used_bytes`, `total_display`, `used_display`, `collected_at`, `limitation`, and `caption`. `fragments` is null for a temporary tablespace.
+
+`GET /api/v1/databases/{id}/parameters` returns `version`, `parameters` (`name`, `value`, `is_default`, `sys_modifiable`, `description`, `restricted`), `total`, `changed`, `collected_at`, `limitation`, `detail`, `detail_note`, and `caption`. For a caller who is not an administrator, a value that holds a file path or a network address is replaced by `Shown to an administrator.` with `restricted: true`, and `detail` is `false`.
+
+`GET /api/v1/databases/{id}/alert-log` returns `lines` (`at`, `text`, `severity`, `codes`), `errors`, `warnings`, `window`, `collected_at`, `limitation`, `detail`, `detail_note`, and `caption`. It holds at most the 300 most recent lines of the last 7 days, oldest first. `severity` is `error`, `warning`, or `info`. For a caller who is not an administrator, a file path inside a line is replaced by `(path shown to an administrator)`.
+
+Portal routes: `#/memory/databases/{id}`, `#/storage/databases/{id}`, `#/parameters/databases/{id}`, `#/alerts/databases/{id}`.
+
+## Phase 24 copilot supervisor and embeddings
+
+The `answer` object of a chat message has three more fields. `routes` lists the specialists that answered: `This database`, `Oracle knowledge`, `Company policy`, `SQL draft`, `Change request`, or `General`. `routed_by` is `supervisor`, `patterns`, or `catalog`. `source_note` is set when a database reading came from a stored agent snapshot, for example `From the snapshot stored 5 minutes ago. Ask for the value now to read the database again.`
+
+On a database or incident chat the tool list may start with `route_question`. Its summary names the supervisor's choice and its payload holds `routes` and `nominated`. The step is stored in `tool_executions`. It is not sent to the model as evidence. The fleet chat is routed as in Phase 21.
+
+`POST /api/v1/knowledge/reindex` also returns `reembedded`: files whose content is unchanged and whose stored passages were embedded again because the embedding model changed. A file whose content and embedding model are both unchanged is counted in `unchanged`.
+
+`GET /api/v1/knowledge/documents` already returned `embedding_provider` and `embedding_model` for each document. After the one-time indexing they are `ollama` and the model name. Search compares only passages of the current provider and model, and uses keyword search alone when the embedding model does not answer.
+
+Settings in Admin: `ai_supervisor_enabled`, `ai_snapshot_max_age_seconds` (Language model), `embedding_provider`, `embedding_ollama_model`, `embedding_batch_size`, `embedding_timeout_seconds` (Knowledge). `embedding_local_url` and the remote embedding keys are fixed for the deployment.
 
 ## Operation proposals
 

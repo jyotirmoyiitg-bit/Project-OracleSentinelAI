@@ -99,7 +99,7 @@ describe('Multi-database workspace', () => {
     expect(within(sidebar).getByLabelText('DEVELOPMENT: Unknown / stale')).toHaveClass('sidebar-health-unknown')
     expect(within(sidebar).getByRole('button', { name: 'Select FINANCE' })).toHaveAttribute('aria-current', 'page')
     const tabs = screen.getByRole('tablist', { name: 'Database views' })
-    expect(within(tabs).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'GraphDB', 'WaitDB', 'Events', 'Copilot'])
+    expect(within(tabs).getAllByRole('tab').map((tab) => tab.textContent)).toEqual(['Overview', 'GraphDB', 'WaitDB', 'MemoryDB', 'StorageDB', 'ParameterDB', 'AlertDB', 'Events', 'Copilot'])
     expect(within(tabs).getByRole('tab', { name: 'Overview' })).toHaveAttribute('aria-selected', 'true')
 
     await user.click(within(sidebar).getByRole('button', { name: 'Select REPORTING' }))

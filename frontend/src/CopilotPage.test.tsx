@@ -169,7 +169,7 @@ describe('Copilot page', () => {
     expect(screen.getByText('Answered')).toBeInTheDocument()
   })
 
-  it('shows the active database, offers each question once, and drops the question id from the verdict', async () => {
+  it('shows the active database, offers sample questions as hints, and says which specialist answered', async () => {
     window.location.hash = '#/copilot/databases/target-1'
     const database = {
       id: 'target-1', display_name: 'FINANCE-PRD', tns_alias: 'finance-prd', enabled: true, environment: 'production',
@@ -200,6 +200,8 @@ describe('Copilot page', () => {
         verdict: { label: 'Identity', status: 'OK', health: 'HEALTHY' },
         reading: ['Database ORCL12C open_mode READ WRITE role PRIMARY'],
         citation_note: '', evidence_lines: [], notes: [],
+        routes: ['This database', 'Oracle knowledge'], routed_by: 'supervisor',
+        source_note: 'From the snapshot stored 5 minutes ago. Ask for the value now to read the database again.',
       },
       provider_status: 'answered',
       citations: [],
@@ -230,24 +232,45 @@ describe('Copilot page', () => {
     expect(active).toHaveTextContent('finance-prd')
     expect(active.querySelector('.health-badge')).toBeTruthy()
     expect(screen.getByRole('option', { name: '● FINANCE-PRD (active)' })).toBeInTheDocument()
-    // Five offered, one repeated prompt dropped: the same prompt is never shown twice.
-    expect(screen.getByText('4 available')).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: 'Common' })).toHaveTextContent('2')
-    expect(screen.getByRole('tab', { name: 'Sessions' })).toHaveTextContent('1')
-    await user.click(screen.getByRole('tab', { name: 'Sessions' }))
-    expect(screen.getAllByRole('button', { name: 'Blocking' })).toHaveLength(1)
-    expect(screen.getByRole('button', { name: 'Blocking' })).toHaveAttribute('title', 'Are any sessions blocking other sessions?')
-    await user.click(screen.getByRole('tab', { name: 'Common' }))
-    expect(screen.getAllByRole('button', { name: 'Blocking' })).toHaveLength(1)
+    // The shelf of shortcut buttons is gone from a database chat, although the API still lists them.
+    expect(screen.queryByText('Guided questions')).not.toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Sessions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Blocking' })).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Ask anything about FINANCE-PRD' })).toBeInTheDocument()
+    const specialists = within(screen.getByRole('list', { name: 'Who answers' })).getAllByRole('listitem')
+    expect(specialists.map((item) => item.querySelector('strong')?.textContent)).toEqual([
+      'This database', 'Oracle knowledge', 'Company policy', 'SQL draft',
+    ])
+    const samples = within(screen.getByRole('list', { name: 'Sample questions' })).getAllByRole('button')
+    expect(samples).toHaveLength(6)
+    expect(screen.getByRole('link', { name: /GraphDB/ })).toHaveAttribute('href', '#/graph/databases/target-1')
+    expect(screen.getByRole('link', { name: /WaitDB/ })).toHaveAttribute('href', '#/wait/databases/target-1')
 
-    await user.click(screen.getByRole('tab', { name: 'Health' }))
-    await user.click(screen.getByRole('button', { name: 'Identity' }))
+    // A sample is a hint. It fills the box and is sent only when the operator sends it.
+    await user.click(samples[2])
+    const box = screen.getByRole('textbox', { name: 'Ask the copilot' })
+    expect(box).toHaveValue('How is memory split between the SGA and the PGA on this database?')
+    expect(box).toHaveFocus()
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/messages'))).toBe(false)
+    await user.click(screen.getByRole('button', { name: 'Send' }))
     const verdict = await screen.findByText('Identity', { selector: '.copilot-verdict strong' })
     expect(verdict.parentElement).toHaveTextContent('Statusok')
     expect(verdict.parentElement).toHaveTextContent('Healthhealthy')
     expect(screen.queryByText(/Q02/)).not.toBeInTheDocument()
     expect(screen.getByText('Database ORCL12C open_mode READ WRITE role PRIMARY')).toBeInTheDocument()
     expect(screen.getByText('Oracle version is not part of this reading.')).toBeInTheDocument()
+    const routes = within(screen.getByRole('list', { name: 'Answered by' })).getAllByRole('listitem')
+    expect(routes.map((item) => item.textContent)).toEqual(['This database', 'Oracle knowledge'])
+    expect(screen.getByRole('list', { name: 'Answered by' })).toHaveAttribute('title', 'Chosen by the supervisor')
+    expect(screen.getByText('From the snapshot stored 5 minutes ago. Ask for the value now to read the database again.')).toBeInTheDocument()
+
+    // After an answer the samples wait behind a toggle.
+    expect(screen.queryByRole('heading', { name: 'Ask anything about FINANCE-PRD' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('list', { name: 'Sample questions' })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Sample questions' }))
+    await user.click(within(screen.getByRole('list', { name: 'Sample questions' })).getAllByRole('button')[0])
+    expect(screen.getByRole('textbox', { name: 'Ask the copilot' })).toHaveValue('How full are the tablespaces, and which one will fill first?')
+    expect(screen.queryByRole('list', { name: 'Sample questions' })).not.toBeInTheDocument()
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Database scope' }), '')
     expect(window.location.hash).toBe('#/copilot')

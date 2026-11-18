@@ -2,7 +2,8 @@
 
 **Phase:** 21
 **Status:** Implemented
-**Prerequisites:** [Phase 20 — Security, navigation, and copilot coverage](Phase_20_Security_Navigation_Copilot.md)
+**Prerequisites:** [Phase 20 — Security, navigation, and copilot coverage](Phase_20_Security_Navigation_Copilot.md)  
+**Next phase:** [Phase 22 — Agents](Phase_22_Agents.md)
 
 ## 1. Overview
 

@@ -1,5 +1,9 @@
 """Plain-language lines for the extended database readings."""
 
+# The common read-only account. It is not maintained by Oracle, so it is named in the user list.
+MONITORING_ACCOUNT = "GSYSTEM"
+_NAMES_PER_LINE = 12
+
 
 def present_reading(kind: str, rows: list[dict[str, str]]) -> tuple[str, list[str]]:
     handler = _HANDLERS.get(kind, _generic)
@@ -349,16 +353,42 @@ def _dataguard(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
 
 
 def _database_users(rows: list[dict[str, str]]) -> tuple[str, list[str]]:
+    """Users are schemas in Oracle. Rows that carry the Oracle-maintained flag are listed in two groups."""
     accounts = _source(rows, "dba_users")
-    lines = [
-        f"{row.get('username') or 'unknown'} {row.get('account_status') or ''}".strip()
-        for row in accounts
-    ]
-    if not lines:
+    if not accounts:
         return "No database users were returned.", ["No database users were returned."]
-    if len(lines) >= 80:
-        lines.append("The list stops at 80 users.")
-    return f"{len(accounts)} database users.", lines
+
+    def line(row: dict[str, str]) -> str:
+        text = f"{row.get('username') or 'unknown'} {row.get('account_status') or ''}".strip()
+        if (row.get("username") or "").upper() == MONITORING_ACCOUNT:
+            text += " (the Sentinel monitoring account)"
+        return text
+
+    flagged = [row for row in accounts if (row.get("oracle_maintained") or "").upper() in {"Y", "N"}]
+    if len(flagged) != len(accounts):
+        # A stored reading from before the flag was read: one plain list.
+        lines = [line(row) for row in accounts]
+        summary = f"{len(accounts)} database users."
+    else:
+        own = [row for row in accounts if (row.get("oracle_maintained") or "").upper() == "N"]
+        system = [row for row in accounts if (row.get("oracle_maintained") or "").upper() == "Y"]
+        lines = [f"Application schemas, not maintained by Oracle: {len(own)}"]
+        lines.extend(line(row) for row in own)
+        lines.append(f"Schemas maintained by Oracle (system schemas): {len(system)}")
+        # A database has thirty or more of these. They are grouped by status so the whole list stays in view.
+        by_status: dict[str, list[str]] = {}
+        for row in system:
+            by_status.setdefault(row.get("account_status") or "unknown", []).append(row.get("username") or "unknown")
+        for status, names in by_status.items():
+            for start in range(0, len(names), _NAMES_PER_LINE):
+                lines.append(f"{status}: {', '.join(names[start:start + _NAMES_PER_LINE])}")
+        summary = (
+            f"{len(accounts)} database users: {len(own)} application schemas "
+            f"and {len(system)} maintained by Oracle."
+        )
+    if len(accounts) >= 80:
+        lines.append("The list stops at 80 users. Application schemas are listed first.")
+    return summary, lines
 
 
 def _security(rows: list[dict[str, str]]) -> tuple[str, list[str]]:

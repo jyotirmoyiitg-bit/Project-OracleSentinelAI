@@ -41,7 +41,11 @@ def knowledge_search(context: ToolContext, arguments: dict[str, object]) -> Tool
     text = query.strip() if isinstance(query, str) else ""
     if not text:
         return ToolOutcome("search_knowledge", "allowed", "No document query was provided.", [], {"items": []})
-    passages = search(context.session, context.settings, sanitize_untrusted(text, 300), context.caller, limit=5)
+    category = arguments.get("category")
+    passages = search(
+        context.session, context.settings, sanitize_untrusted(text, 300), context.caller, limit=5,
+        category=category if category in {"Policy", "Knowledge"} else None,
+    )
     items = [
         {
             "document": passage.citation.relative_path,

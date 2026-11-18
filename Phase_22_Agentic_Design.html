@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 22 Agent Design</title>
+<style>
+/* Layout: one reading column in the portal's own palette; diagrams and tables run the full column width. */
+:root {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --ink: #202b40;
+  --text: #2c394f;
+  --muted: #5f6d82;
+  --line: #dde4ee;
+  --accent: #566fe7;
+  --accent-dark: #405bd2;
+  --accent-soft: #edf1ff;
+  --band: #eef2f8;
+  --display: Manrope, 'Segoe UI Semibold', 'Segoe UI', system-ui, sans-serif;
+  --body: 'DM Sans', 'Segoe UI', system-ui, sans-serif;
+  --mono: 'Cascadia Mono', Consolas, 'SF Mono', monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121925; --panel: #1a2333; --ink: #eef2f9; --text: #d3dbe9; --muted: #9ba8be;
+    --line: #2d3950; --accent: #8c9df6; --accent-dark: #adb9f9; --accent-soft: #222c4c; --band: #172032;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121925; --panel: #1a2333; --ink: #eef2f9; --text: #d3dbe9; --muted: #9ba8be;
+  --line: #2d3950; --accent: #8c9df6; --accent-dark: #adb9f9; --accent-soft: #222c4c; --band: #172032;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font-family: var(--body); font-size: 15px; line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+.page {
+  max-width: 1060px; margin: 0 auto; padding-block: 40px 72px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: flex; flex-direction: column; gap: 44px;
+}
+header { display: flex; flex-direction: column; gap: 12px; }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--accent-dark); }
+h1 { margin: 0; font-family: var(--display); font-size: clamp(26px, 4vw, 34px); font-weight: 750; letter-spacing: -.02em; line-height: 1.2; color: var(--ink); text-wrap: balance; }
+h2 { margin: 0; font-family: var(--display); font-size: 21px; font-weight: 750; letter-spacing: -.01em; line-height: 1.3; color: var(--ink); text-wrap: balance; }
+h3 { margin: 0; font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--ink); }
+p { margin: 0; max-width: 72ch; }
+.lead { font-size: 17px; color: var(--text); }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: var(--muted); }
+.meta b { color: var(--text); font-weight: 600; }
+section { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+code { font-family: var(--mono); font-size: .9em; background: var(--band); padding: 1px 5px; border-radius: 4px; }
+ul, ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; max-width: 76ch; }
+li::marker { color: var(--muted); }
+
+.verdict { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 22px 24px; display: flex; flex-direction: column; gap: 12px; }
+.verdict h2 { font-size: 18px; }
+.verdict p { max-width: 80ch; }
+
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.two > div { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+
+figure { margin: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.scroll svg { display: block; width: 100%; min-width: 820px; height: auto; padding: 14px; color: var(--ink); }
+figcaption { font-size: 13px; color: var(--muted); max-width: 90ch; }
+.key { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; border: 1.5px solid var(--muted); background: var(--panel); }
+.key.new { border-color: var(--accent); background: var(--accent-soft); }
+
+/* Diagram marks. Colors come from the page tokens so both themes read. */
+.d-box { fill: var(--panel); stroke: var(--muted); stroke-width: 1.2; }
+.d-new { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.6; }
+.d-band { fill: var(--band); stroke: var(--line); stroke-width: 1.2; stroke-dasharray: 5 4; }
+.d-t { font-family: var(--body); font-size: 13px; font-weight: 700; fill: var(--ink); }
+.d-s { font-family: var(--body); font-size: 11.5px; fill: var(--muted); }
+.d-l { font-family: var(--body); font-size: 11px; font-style: italic; fill: var(--muted); }
+.d-row { font-family: var(--body); font-size: 10px; font-weight: 700; letter-spacing: .1em; fill: var(--muted); }
+.d-arrow { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.d-dash { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-dasharray: 4 4; }
+.d-head { fill: var(--muted); }
+
+.table { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 13.5px; }
+th, td { text-align: left; vertical-align: top; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+th { font-size: 11.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 700; background: var(--band); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { font-weight: 700; color: var(--ink); white-space: nowrap; }
+td.wrap { white-space: normal; }
+
+.timeline { list-style: none; padding: 0; max-width: none; gap: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; }
+.timeline li { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 14px; padding: 12px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.timeline li:last-child { border-bottom: 0; background: var(--accent-soft); border-radius: 0 0 12px 12px; }
+.timeline .step { font-weight: 700; color: var(--ink); }
+.timeline .step small { display: block; font-weight: 500; color: var(--muted); font-size: 11.5px; }
+.note { font-size: 13px; color: var(--muted); }
+.tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.tag.on { border-color: var(--accent); color: var(--accent-dark); background: var(--accent-soft); }
+@media (max-width: 560px) {
+  .timeline li { grid-template-columns: 1fr; gap: 4px; }
+  .verdict { padding: 18px 16px; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <span class="eyebrow">Oracle Sentinel AI · Phase 22 · design proposal</span>
+  <h1>Agents that collect evidence, investigate incidents, and brief the operator</h1>
+  <p class="lead">Today the copilot answers one question at a time and keeps nothing. Phase 22 adds agents that work toward a goal over several steps, store what they read from Oracle in PostgreSQL, and hand the operator a finding with its evidence.</p>
+  <div class="meta">
+    <span><b>Status</b> Phase 22 built (Collector, Investigator, Verifier, settings); Fleet analyst and Advisor not built</span>
+    <span><b>Builds on</b> Phase 20 routing and audit, Phase 21 fleet tools</span>
+    <span><b>Model</b> local, qwen2.5-coder:14b</span>
+    <span><b>Access to Oracle</b> read-only, unchanged</span>
+  </div>
+</header>
+
+<section class="verdict">
+  <h2>Recommendation</h2>
+  <p>Your idea is the right foundation, with one change. Fetching rows from Oracle does not need a language model, so the poll should be a plain collection tool that agents call. It runs the existing fixed readings and stores the rows in PostgreSQL as a snapshot. The agents then reason over stored snapshots.</p>
+  <p>Build one supervisor and four narrow agents: a <b>Collector</b> (your idea), an <b>Investigator</b> for incidents, a <b>Fleet analyst</b> for the daily picture, and an <b>Advisor</b> that drafts a proposal for a person to approve. A <b>Verifier</b> checks every finding against its evidence before the operator sees it. No agent writes SQL and no agent changes a database.</p>
+</section>
+
+<section>
+  <h2>What stored snapshots change</h2>
+  <p>The scheduled collectors already store six probes: connectivity, instance, storage, recovery area, resource limits, and configuration. The 28 copilot readings (sessions, blocking, top SQL, memory, redo, jobs, backups, alert log and the rest) run live and their rows are thrown away after the answer. That is the gap your idea closes.</p>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 228" role="img" aria-label="Today a live reading is discarded after the answer. In Phase 22 the Collector stores a snapshot in PostgreSQL that agents, the copilot, and change comparisons all read.">
+        <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <text class="d-row" x="14" y="48">TODAY</text>
+        <rect class="d-box" x="120" y="18" width="170" height="52" rx="8"/>
+        <text class="d-t" x="205" y="40" text-anchor="middle">Operator question</text>
+        <text class="d-s" x="205" y="57" text-anchor="middle">one question, one turn</text>
+        <path class="d-arrow" d="M290 44 H328" marker-end="url(#a3)"/>
+        <rect class="d-box" x="330" y="18" width="170" height="52" rx="8"/>
+        <text class="d-t" x="415" y="40" text-anchor="middle">Live reading</text>
+        <text class="d-s" x="415" y="57" text-anchor="middle">one Oracle logon</text>
+        <path class="d-arrow" d="M500 44 H538" marker-end="url(#a3)"/>
+        <rect class="d-box" x="540" y="18" width="170" height="52" rx="8"/>
+        <text class="d-t" x="625" y="40" text-anchor="middle">Answer</text>
+        <text class="d-s" x="625" y="57" text-anchor="middle">shown in the chat</text>
+        <path class="d-dash" d="M710 44 H766" marker-end="url(#a3)"/>
+        <text class="d-l" x="776" y="48">rows are discarded</text>
+
+        <text class="d-row" x="14" y="166">PHASE 22</text>
+        <rect class="d-box" x="120" y="132" width="170" height="60" rx="8"/>
+        <text class="d-t" x="205" y="157" text-anchor="middle">Invoke</text>
+        <text class="d-s" x="205" y="175" text-anchor="middle">operator, incident or timer</text>
+        <path class="d-arrow" d="M290 162 H328" marker-end="url(#a3)"/>
+        <rect class="d-new" x="330" y="132" width="170" height="60" rx="8"/>
+        <text class="d-t" x="415" y="157" text-anchor="middle">Collector</text>
+        <text class="d-s" x="415" y="175" text-anchor="middle">one logon, many readings</text>
+        <path class="d-arrow" d="M500 162 H538" marker-end="url(#a3)"/>
+        <text class="d-l" x="519" y="152" text-anchor="middle">stores</text>
+        <rect class="d-new" x="540" y="132" width="170" height="60" rx="8"/>
+        <text class="d-t" x="625" y="157" text-anchor="middle">Snapshot</text>
+        <text class="d-s" x="625" y="175" text-anchor="middle">kept in PostgreSQL</text>
+        <path class="d-arrow" d="M710 162 L768 123" marker-end="url(#a3)"/>
+        <path class="d-arrow" d="M710 162 H768" marker-end="url(#a3)"/>
+        <path class="d-arrow" d="M710 162 L768 201" marker-end="url(#a3)"/>
+        <rect class="d-box" x="770" y="108" width="196" height="30" rx="6"/>
+        <text class="d-s" x="868" y="127" text-anchor="middle">Investigator and Fleet analyst</text>
+        <rect class="d-box" x="770" y="147" width="196" height="30" rx="6"/>
+        <text class="d-s" x="868" y="166" text-anchor="middle">Copilot and fleet questions</text>
+        <rect class="d-box" x="770" y="186" width="196" height="30" rx="6"/>
+        <text class="d-s" x="868" y="205" text-anchor="middle">What changed, and trends</text>
+      </svg>
+    </div>
+    <figcaption><span class="key new"></span>New in Phase 22. One collection feeds three uses, and the evidence stays available after the moment has passed.</figcaption>
+  </figure>
+  <div class="two">
+    <div>
+      <h3>What the operator gains</h3>
+      <ul>
+        <li>"What changed on this database since yesterday" becomes a stored comparison.</li>
+        <li>A fleet question can be answered from the latest snapshot with its age shown. Today each program or datafile question logs on to every database.</li>
+        <li>Evidence from before an incident is still there when the database is down or the session has gone.</li>
+        <li>Sessions, memory, and redo activity get a history, which the app does not have now.</li>
+        <li>Every sentence in a finding can point at a stored row.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>What it costs, and the control for each</h3>
+      <ul>
+        <li>Storage grows. Keep snapshots for 14 days by default, then delete them. Runs and findings stay, with the figures they cite.</li>
+        <li>Each collection is load on Oracle. Allow one collection per database at a time, with a minimum gap between them.</li>
+        <li>Snapshots hold session user names and SQL text. Store those only in the admin-only pack and filter by role on every read.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Architecture</h2>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 1004 648" role="img" aria-label="Three triggers start a run in the supervisor. The supervisor dispatches one of five agents. Agents call allowlisted read-only tools, which read Oracle live and read and write PostgreSQL. The supervisor asks the local model for a plan or a written finding. The portal shows the stored results.">
+        <defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+
+        <text class="d-row" x="14" y="51">TRIGGERS</text>
+        <rect class="d-box" x="120" y="20" width="260" height="54" rx="8"/>
+        <text class="d-t" x="250" y="43" text-anchor="middle">Operator</text>
+        <text class="d-s" x="250" y="61" text-anchor="middle">Investigate · Collect snapshot · from the copilot</text>
+        <rect class="d-box" x="410" y="20" width="260" height="54" rx="8"/>
+        <text class="d-t" x="540" y="43" text-anchor="middle">New incident</text>
+        <text class="d-s" x="540" y="61" text-anchor="middle">raised by the existing rule engine</text>
+        <rect class="d-box" x="700" y="20" width="260" height="54" rx="8"/>
+        <text class="d-t" x="830" y="43" text-anchor="middle">Schedule</text>
+        <text class="d-s" x="830" y="61" text-anchor="middle">daily fleet brief (later phase)</text>
+        <path class="d-arrow" d="M250 74 V110" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M540 74 V110" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M830 74 V110" marker-end="url(#a1)"/>
+        <text class="d-l" x="258" y="96">on demand</text>
+        <text class="d-l" x="548" y="96">on event</text>
+        <text class="d-l" x="838" y="96">on a timer</text>
+
+        <text class="d-row" x="14" y="147">CONTROL</text>
+        <rect class="d-new" x="120" y="112" width="840" height="62" rx="8"/>
+        <text class="d-t" x="540" y="137" text-anchor="middle">Supervisor: the run controller</text>
+        <text class="d-s" x="540" y="157" text-anchor="middle">plans from a playbook, runs one step, checks the result, repeats · step, time and logon budgets · every step saved and audited</text>
+
+        <path class="d-arrow" d="M196 174 V216" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M368 174 V216" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M540 174 V216" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M712 174 V216" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M884 174 V216" marker-end="url(#a1)"/>
+        <text class="d-l" x="204" y="199">dispatches</text>
+
+        <text class="d-row" x="14" y="261">AGENTS</text>
+        <rect class="d-new" x="120" y="218" width="152" height="78" rx="8"/>
+        <text class="d-t" x="196" y="242" text-anchor="middle">Collector</text>
+        <text class="d-s" x="196" y="262" text-anchor="middle">pulls a snapshot pack</text>
+        <text class="d-s" x="196" y="278" text-anchor="middle">no model call</text>
+        <rect class="d-new" x="292" y="218" width="152" height="78" rx="8"/>
+        <text class="d-t" x="368" y="242" text-anchor="middle">Investigator</text>
+        <text class="d-s" x="368" y="262" text-anchor="middle">one incident, one</text>
+        <text class="d-s" x="368" y="278" text-anchor="middle">database, likely cause</text>
+        <rect class="d-new" x="464" y="218" width="152" height="78" rx="8"/>
+        <text class="d-t" x="540" y="242" text-anchor="middle">Fleet analyst</text>
+        <text class="d-s" x="540" y="262" text-anchor="middle">drift, growth, outliers</text>
+        <text class="d-s" x="540" y="278" text-anchor="middle">across the fleet</text>
+        <rect class="d-new" x="636" y="218" width="152" height="78" rx="8"/>
+        <text class="d-t" x="712" y="242" text-anchor="middle">Advisor</text>
+        <text class="d-s" x="712" y="262" text-anchor="middle">drafts a proposal</text>
+        <text class="d-s" x="712" y="278" text-anchor="middle">for a person to approve</text>
+        <rect class="d-new" x="808" y="218" width="152" height="78" rx="8"/>
+        <text class="d-t" x="884" y="242" text-anchor="middle">Verifier</text>
+        <text class="d-s" x="884" y="262" text-anchor="middle">checks every claim</text>
+        <text class="d-s" x="884" y="278" text-anchor="middle">against the evidence</text>
+
+        <path class="d-arrow" d="M196 296 V330" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M368 296 V330" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M540 296 V330" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M712 296 V330" marker-end="url(#a1)"/>
+        <path class="d-arrow" d="M884 296 V330" marker-end="url(#a1)"/>
+        <text class="d-l" x="204" y="318">calls a tool</text>
+
+        <text class="d-row" x="14" y="382">TOOLS</text>
+        <rect class="d-band" x="120" y="332" width="840" height="92" rx="8"/>
+        <text class="d-s" x="134" y="351">Allowlisted, read-only, filtered by the operator's role. The server validates each call.</text>
+        <rect class="d-box" x="132" y="360" width="192" height="52" rx="6"/>
+        <text class="d-t" x="228" y="381" text-anchor="middle">Fixed readings</text>
+        <text class="d-s" x="228" y="399" text-anchor="middle">28 statements, MCP server</text>
+        <rect class="d-box" x="340" y="360" width="192" height="52" rx="6"/>
+        <text class="d-t" x="436" y="381" text-anchor="middle">Stored data</text>
+        <text class="d-s" x="436" y="399" text-anchor="middle">metrics, incidents, policy</text>
+        <rect class="d-box" x="548" y="360" width="192" height="52" rx="6"/>
+        <text class="d-t" x="644" y="381" text-anchor="middle">Knowledge search</text>
+        <text class="d-s" x="644" y="399" text-anchor="middle">runbooks and policy</text>
+        <rect class="d-new" x="756" y="360" width="192" height="52" rx="6"/>
+        <text class="d-t" x="852" y="381" text-anchor="middle">Snapshot store</text>
+        <text class="d-s" x="852" y="399" text-anchor="middle">save, read, compare, trend</text>
+
+        <path class="d-arrow" d="M250 424 V476" marker-end="url(#a1)"/>
+        <text class="d-l" x="258" y="455">reads live</text>
+        <path class="d-arrow" d="M540 424 V476" marker-end="url(#a1)"/>
+        <text class="d-l" x="548" y="455">reads, and stores snapshots and findings</text>
+
+        <text class="d-row" x="14" y="514">SYSTEMS</text>
+        <rect class="d-box" x="120" y="478" width="260" height="64" rx="8"/>
+        <text class="d-t" x="250" y="502" text-anchor="middle">Oracle fleet</text>
+        <text class="d-s" x="250" y="519" text-anchor="middle">registered databases</text>
+        <text class="d-s" x="250" y="533" text-anchor="middle">GSYSTEM account, read-only</text>
+        <rect class="d-new" x="410" y="478" width="260" height="64" rx="8"/>
+        <text class="d-t" x="540" y="502" text-anchor="middle">PostgreSQL</text>
+        <text class="d-s" x="540" y="519" text-anchor="middle">new: agent_runs, agent_steps,</text>
+        <text class="d-s" x="540" y="533" text-anchor="middle">evidence_snapshots, agent_findings</text>
+        <rect class="d-box" x="700" y="478" width="260" height="64" rx="8"/>
+        <text class="d-t" x="830" y="502" text-anchor="middle">Local model</text>
+        <text class="d-s" x="830" y="519" text-anchor="middle">Ollama, qwen2.5-coder:14b</text>
+        <text class="d-s" x="830" y="533" text-anchor="middle">is given no tool to call</text>
+
+        <path class="d-arrow" d="M960 143 H982 V510 H962" marker-end="url(#a1)"/>
+        <text class="d-l" x="996" y="326" text-anchor="middle" transform="rotate(-90 996 326)">asks for a plan or a written finding, JSON only</text>
+
+        <path class="d-arrow" d="M540 542 V582" marker-end="url(#a1)"/>
+        <text class="d-l" x="548" y="567">shown in</text>
+
+        <text class="d-row" x="14" y="614">PORTAL</text>
+        <rect class="d-box" x="120" y="584" width="840" height="52" rx="8"/>
+        <text class="d-t" x="540" y="605" text-anchor="middle">What the operator sees</text>
+        <text class="d-s" x="540" y="623" text-anchor="middle">run timeline · finding on the incident · what changed · fleet brief · draft proposal waiting for approval</text>
+      </svg>
+    </div>
+    <figcaption><span class="key new"></span>New in Phase 22. <span class="key"></span>Already in the app. Agents never touch Oracle or the model directly. Every reading goes through the same allowlist the copilot uses, and the model only returns JSON that the server checks.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>The agents</h2>
+  <div class="table">
+    <table>
+      <thead><tr><th>Agent</th><th>Job</th><th>Starts when</th><th>Uses the model for</th><th>Writes</th></tr></thead>
+      <tbody>
+        <tr><td>Supervisor</td><td class="wrap">Runs one agent toward one goal. Holds the budget, saves every step, stops the run when the goal is met or the budget is spent.</td><td class="wrap">Any trigger</td><td class="wrap">Choosing the next step from a fixed playbook list</td><td class="wrap"><code>agent_runs</code>, <code>agent_steps</code>, audit rows</td></tr>
+        <tr><td>Collector</td><td class="wrap">Reads a snapshot pack from one database or the fleet with the fixed readings and stores the rows. This is your idea.</td><td class="wrap">Operator presses Collect snapshot, or another agent needs fresh evidence</td><td class="wrap">Nothing</td><td class="wrap"><code>evidence_snapshots</code></td></tr>
+        <tr><td>Investigator</td><td class="wrap">For one incident or one operator goal: collects, compares with the last snapshot and stored trend, looks up the runbook and policy, and states the likely cause with evidence.</td><td class="wrap">Operator presses Investigate; optionally a new critical incident</td><td class="wrap">The plan, and the written cause</td><td class="wrap"><code>agent_findings</code> linked to the incident</td></tr>
+        <tr><td>Fleet analyst</td><td class="wrap">Compares snapshots across the fleet: parameters that changed, new datafiles, growth and days to full, databases that differ from the rest.</td><td class="wrap">Daily timer, or on demand</td><td class="wrap">Wording the brief from computed rows</td><td class="wrap">A fleet brief and findings</td></tr>
+        <tr><td>Advisor</td><td class="wrap">Turns an accepted finding into a draft in the existing operation proposal queue, with the runbook cited. Nothing is executed.</td><td class="wrap">Operator accepts a finding and asks for a proposal</td><td class="wrap">The impact and risk text</td><td class="wrap"><code>operation_proposals</code> (pending)</td></tr>
+        <tr><td>Verifier</td><td class="wrap">Checks that every database name, number, and ORA code in a finding appears in the evidence rows, and that it contains no SQL. A finding that fails is shown as evidence only.</td><td class="wrap">Before any finding is saved</td><td class="wrap">Nothing; it is plain code</td><td class="wrap">Pass or fail on the step</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">Snapshot packs reuse existing readings. <b>Core</b>: availability, sessions, programs, blocking, memory, tablespaces, datafile sizes, redo logs, jobs, backups, recovery, alert log errors. <b>Performance</b>: performance, SQL workload, top SQL. <b>Configuration and security</b> (admin only): memory configuration, security, database users, control files, datafiles, segments, Data Guard.</p>
+</section>
+
+<section>
+  <h2>One investigation, step by step</h2>
+  <figure>
+    <div class="scroll">
+      <svg viewBox="0 0 980 296" role="img" aria-label="An investigation runs seven steps: trigger, plan, collect, compare, look up, conclude, verify. Only plan and conclude call the model. Conclude can loop back to collect for more evidence. A verified finding goes to the operator, who can accept it and ask the Advisor for a draft proposal.">
+        <defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="d-head" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+
+        <path class="d-arrow" d="M762 62 V34 H354 V60" marker-end="url(#a2)"/>
+        <text class="d-l" x="558" y="26" text-anchor="middle">needs more evidence, within the step budget</text>
+
+        <rect class="d-box" x="26" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="82" y="87" text-anchor="middle">Trigger</text>
+        <text class="d-s" x="82" y="107" text-anchor="middle">incident opens,</text>
+        <text class="d-s" x="82" y="123" text-anchor="middle">or operator asks</text>
+        <path class="d-arrow" d="M138 104 H160" marker-end="url(#a2)"/>
+
+        <rect class="d-new" x="162" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="218" y="87" text-anchor="middle">Plan</text>
+        <text class="d-s" x="218" y="107" text-anchor="middle">model picks steps</text>
+        <text class="d-s" x="218" y="123" text-anchor="middle">from a playbook</text>
+        <path class="d-arrow" d="M274 104 H296" marker-end="url(#a2)"/>
+
+        <rect class="d-box" x="298" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="354" y="87" text-anchor="middle">Collect</text>
+        <text class="d-s" x="354" y="107" text-anchor="middle">snapshot pack,</text>
+        <text class="d-s" x="354" y="123" text-anchor="middle">one Oracle logon</text>
+        <path class="d-arrow" d="M410 104 H432" marker-end="url(#a2)"/>
+
+        <rect class="d-box" x="434" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="490" y="87" text-anchor="middle">Compare</text>
+        <text class="d-s" x="490" y="107" text-anchor="middle">with last snapshot</text>
+        <text class="d-s" x="490" y="123" text-anchor="middle">and stored trend</text>
+        <path class="d-arrow" d="M546 104 H568" marker-end="url(#a2)"/>
+
+        <rect class="d-box" x="570" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="626" y="87" text-anchor="middle">Look up</text>
+        <text class="d-s" x="626" y="107" text-anchor="middle">runbook for the</text>
+        <text class="d-s" x="626" y="123" text-anchor="middle">ORA code, policy</text>
+        <path class="d-arrow" d="M682 104 H704" marker-end="url(#a2)"/>
+
+        <rect class="d-new" x="706" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="762" y="87" text-anchor="middle">Conclude</text>
+        <text class="d-s" x="762" y="107" text-anchor="middle">model writes the</text>
+        <text class="d-s" x="762" y="123" text-anchor="middle">cause, citing rows</text>
+        <path class="d-arrow" d="M818 104 H840" marker-end="url(#a2)"/>
+
+        <rect class="d-box" x="842" y="62" width="112" height="84" rx="8"/>
+        <text class="d-t" x="898" y="87" text-anchor="middle">Verify</text>
+        <text class="d-s" x="898" y="107" text-anchor="middle">claims match</text>
+        <text class="d-s" x="898" y="123" text-anchor="middle">the evidence</text>
+
+        <path class="d-arrow" d="M898 146 V198" marker-end="url(#a2)"/>
+        <rect class="d-box" x="742" y="200" width="212" height="56" rx="8"/>
+        <text class="d-t" x="848" y="224" text-anchor="middle">Finding on the incident</text>
+        <text class="d-s" x="848" y="242" text-anchor="middle">cause, evidence, confidence</text>
+        <path class="d-arrow" d="M742 228 H684" marker-end="url(#a2)"/>
+        <rect class="d-box" x="432" y="200" width="250" height="56" rx="8"/>
+        <text class="d-t" x="557" y="224" text-anchor="middle">Operator reviews</text>
+        <text class="d-s" x="557" y="242" text-anchor="middle">accept · dismiss · ask for a proposal</text>
+        <path class="d-arrow" d="M432 228 H354" marker-end="url(#a2)"/>
+        <text class="d-l" x="393" y="220" text-anchor="middle">if accepted</text>
+        <rect class="d-box" x="26" y="200" width="326" height="56" rx="8"/>
+        <text class="d-t" x="189" y="224" text-anchor="middle">Advisor drafts an operation proposal</text>
+        <text class="d-s" x="189" y="242" text-anchor="middle">existing approval queue; nothing is executed</text>
+
+        <text class="d-s" x="490" y="284" text-anchor="middle">Each step is saved to agent_steps, each reading to evidence_snapshots, and the run to the audit trail.</text>
+      </svg>
+    </div>
+    <figcaption><span class="key new"></span>A model call. Everything else is plain code. With the model off, the run follows the default playbook and returns the evidence and the comparison without a written cause.</figcaption>
+  </figure>
+
+  <h3>What the operator would see</h3>
+  <p class="note">An illustrative run on an invented incident. The names and figures are examples, not data from your fleet.</p>
+  <ol class="timeline">
+    <li><span class="step">Trigger<small>incident</small></span><span>Critical incident on FINANCE-PRD: ORA-00257, archiver error.</span></li>
+    <li><span class="step">Plan<small>model, 1 call</small></span><span>Playbook "archive destination full": collect the core pack, compare the recovery area and redo activity, look up the runbook.</span></li>
+    <li><span class="step">Collect<small>1 logon, 12 readings</small></span><span>Snapshot stored. Recovery area 97 percent used. Last successful backup job three days ago.</span></li>
+    <li><span class="step">Compare<small>stored data</small></span><span>Recovery area was 71 percent in yesterday's snapshot. Redo switches are 41 an hour against a usual 6.</span></li>
+    <li><span class="step">Look up<small>knowledge</small></span><span>Runbook section "Archiver stuck" and the policy that requires archive log mode.</span></li>
+    <li><span class="step">Verify<small>plain code</small></span><span>Every figure and name in the draft is present in the snapshot rows. No SQL in the text.</span></li>
+    <li><span class="step">Finding<small>confidence: medium</small></span><span>The recovery area filled because archived logs have not been backed up and removed for three days while redo volume rose. Suggested next step: back up and remove archived logs. <b>Accept</b> · <b>Dismiss</b> · <b>Draft a proposal</b></span></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Guardrails</h2>
+  <div class="two">
+    <div>
+      <h3>Rules that stay as they are</h3>
+      <ul>
+        <li>No operator text and no model text is ever placed in a SQL statement.</li>
+        <li>Only the fixed, read-only readings reach Oracle, through the GSYSTEM account.</li>
+        <li>The model is given no tool to call. It names a step; the server checks the name against the allowlist and the operator's role, then runs it.</li>
+        <li>Privileged execution stays disabled. A proposal waits for a person.</li>
+        <li>AWR, ASH, and ADDM are not queried.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Rules added for agents</h3>
+      <ul>
+        <li>A budget on every run: 6 tool steps, 4 model calls, 3 minutes, one run per database at a time.</li>
+        <li>A run acts with the role of the person or rule that started it. Admin-only packs stay admin-only.</li>
+        <li>Alert log text and SQL text in a snapshot are data. They are sanitized and never read as instructions.</li>
+        <li>A finding that fails the Verifier is never shown as a conclusion.</li>
+        <li>One switch, <code>AGENTS_ENABLED</code>, turns every agent off. It ships off.</li>
+        <li>Fleet rows go only to the local model, as in Phase 21.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="table">
+    <table>
+      <thead><tr><th>Level</th><th>What starts a run</th><th>What the agent may do</th><th>Plan</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td class="wrap">An operator presses a button</td><td class="wrap">Read, store, report</td><td class="wrap"><span class="tag on">Phase 22</span></td></tr>
+        <tr><td>1</td><td class="wrap">A new critical incident, once per incident</td><td class="wrap">Read, store, report</td><td class="wrap"><span class="tag on">Phase 22, off by default</span></td></tr>
+        <tr><td>2</td><td class="wrap">A daily timer</td><td class="wrap">Read, store, report, draft a proposal on request</td><td class="wrap"><span class="tag">Later</span></td></tr>
+        <tr><td>3</td><td class="wrap">Anything</td><td class="wrap">Change a database</td><td class="wrap"><span class="tag">Not planned</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>Settings</h2>
+  <p>Each behaviour is a parameter with a system default. A database can override it. The database value wins; a database with no value of its own uses the system default. Only an administrator changes either, and each change is audited.</p>
+  <div class="table">
+    <table>
+      <thead><tr><th>Setting</th><th>System default</th><th>Per database</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td class="wrap">Agents enabled</td><td class="wrap">Off</td><td class="wrap">Yes</td><td class="wrap">Turn agents on for the system, then leave out a database that must not be touched.</td></tr>
+        <tr><td class="wrap">Snapshot retention</td><td class="wrap">14 days</td><td class="wrap">Yes</td><td class="wrap">1 to 30 days. Older snapshots are deleted.</td></tr>
+        <tr><td class="wrap">Packs collected</td><td class="wrap">Core, Performance</td><td class="wrap">Yes</td><td class="wrap">A busy production database can collect Core only.</td></tr>
+        <tr><td class="wrap">Collect SQL text and session user names</td><td class="wrap">On</td><td class="wrap">Yes</td><td class="wrap">Off means these rows are never stored for that database. When stored, only an administrator can read them. That rule is fixed, not a setting.</td></tr>
+        <tr><td class="wrap">Investigate a new critical incident automatically</td><td class="wrap">Off</td><td class="wrap">Yes</td><td class="wrap">For example on for production, off for development.</td></tr>
+        <tr><td class="wrap">Minimum gap between collections</td><td class="wrap">5 minutes</td><td class="wrap">Yes</td><td class="wrap">Protects a database from repeated collections.</td></tr>
+        <tr><td class="wrap">Run budget</td><td class="wrap">6 steps, 4 model calls, 3 minutes</td><td class="wrap">No</td><td class="wrap">One limit for every run.</td></tr>
+        <tr><td class="wrap">Databases collected at the same time</td><td class="wrap">4</td><td class="wrap">No</td><td class="wrap">Same limit the fleet copilot uses.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="note">System defaults live in the existing configuration table and are edited in Admin, in a new Agents section. Database overrides are edited on the database's own settings and stored in <code>agent_database_settings</code>.</p>
+</section>
+
+<section>
+  <h2>What is added to PostgreSQL</h2>
+  <div class="table">
+    <table>
+      <thead><tr><th>Table</th><th>One row is</th><th>Main columns</th></tr></thead>
+      <tbody>
+        <tr><td><code>agent_runs</code></td><td class="wrap">One run of one agent</td><td class="wrap">agent, trigger, scope, goal, status, started by, role, model, steps used, started and finished, correlation id</td></tr>
+        <tr><td><code>agent_steps</code></td><td class="wrap">One step of a run</td><td class="wrap">run, sequence, kind (plan, tool, compare, conclude, verify), tool name, outcome, duration, tokens</td></tr>
+        <tr><td><code>evidence_snapshots</code></td><td class="wrap">One reading from one database at one time</td><td class="wrap">run, database, pack, reading, taken at, status, row count, rows as JSON, digest, admin-only flag</td></tr>
+        <tr><td><code>agent_findings</code></td><td class="wrap">One conclusion shown to an operator</td><td class="wrap">run, database, incident, severity, title, summary, evidence references, confidence, verified, decision, decided by</td></tr>
+        <tr><td><code>agent_database_settings</code></td><td class="wrap">One overridden setting for one database</td><td class="wrap">database, setting, value, changed by, changed at</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>These five tables need Alembic revision <code>0011</code>. This is a build step, not a setting: without it there is nowhere to store snapshots or database overrides. The Phase 17, 20, and 21 launchers check for head <code>0010</code> exactly, so they are changed to accept a later head in the same phase.</p>
+</section>
+
+<section>
+  <h2>Where it appears in the portal</h2>
+  <ul>
+    <li><b>Incident page.</b> An Investigate button, the run timeline as it happens, and the finding with Accept and Dismiss. Draft a proposal arrives with the Advisor in a later phase.</li>
+    <li><b>Database Overview.</b> Collect snapshot, the time of the last snapshot, What changed since the previous one, and Investigate for the database.</li>
+    <li><b>Copilot</b> (database chat built in Phase 24; fleet later). Fleet answers can come from the latest snapshot with its age shown and a Refresh that reads live. "Investigate this" hands the question to the Investigator.</li>
+    <li><b>Agents page</b> in the top bar. Recent runs and open findings.</li>
+    <li><b>Admin</b>, new Agents section, for the system defaults. <b>Database settings</b> for that database's overrides, each showing whether it is its own value or the system default.</li>
+    <li><b>Fleet page</b> (later phase). The daily brief: what changed, what is growing, what needs attention.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Delivery</h2>
+  <ol>
+    <li><b>Phase 22A: snapshot store and Collector.</b> Revision 0011, snapshot packs, Collect snapshot, What changed, retention, permission <code>agent.run</code>, audit rows. Useful on its own and needs no model.</li>
+    <li><b>Phase 22B: Supervisor, Investigator, Verifier.</b> Playbooks for the common incident types, the run timeline, findings on incidents, and the on-incident trigger behind a setting.</li>
+    <li><b>Later phase: Fleet analyst and Advisor.</b> Drift and growth across the fleet using the existing forecasting module, the daily brief, proposal drafts from accepted findings, and copilot answers from stored snapshots.</li>
+  </ol>
+  <div class="two">
+    <div>
+      <h3>Left out on purpose</h3>
+      <ul>
+        <li>Agents that talk to each other freely. A 14b local model is reliable on one small JSON decision, not on long open conversations.</li>
+        <li>A model call inside the poll. It adds delay and risk and no value.</li>
+        <li>An agent framework dependency. The run loop is small, and writing it in the project keeps every step in the audit trail.</li>
+        <li>Agents that execute changes.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Decided</h3>
+      <ul>
+        <li>Snapshots are kept for 14 days by default and then deleted.</li>
+        <li>Retention, automatic investigation, and collecting SQL text and user names are settings, with a system default and a database override.</li>
+        <li>Revision 0011 is added, because snapshots and database overrides need tables.</li>
+      </ul>
+      <h3>Still to confirm</h3>
+      <ul>
+        <li>Stored SQL text and session user names stay readable by administrators only, with no setting to open them to other roles.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+</div>
+</body>
+</html>

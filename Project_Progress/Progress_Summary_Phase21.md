@@ -7,6 +7,8 @@
 
 Migration head remains `0010`. No Oracle grant was added. Privileged execution stays disabled.
 
+Later work is in [Phase 22 — Agents](./Progress_Summary_Phase22.md), which moves the head to `0011`.
+
 ## What Was Implemented
 
 ### Fleet tools

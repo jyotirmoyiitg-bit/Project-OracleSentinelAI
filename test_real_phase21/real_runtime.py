@@ -103,7 +103,7 @@ def migrate(settings: Settings) -> None:
     config = Config(str(ROOT / "backend" / "alembic.ini"))
     config.attributes["database_url"] = settings.database_url
     command.upgrade(config, "head")
-    print("Application schema upgraded to Alembic head (revision 0010).", flush=True)
+    print("Application schema upgraded to Alembic head (revision 0010 or later).", flush=True)
 
 
 def schema_status(settings: Settings) -> None:
@@ -119,9 +119,9 @@ def schema_status(settings: Settings) -> None:
     finally:
         engine.dispose()
     missing = [name for name in PHASE_TABLES if name not in tables]
-    if str(version) != "0010" or missing or stored != 0:
-        raise ValueError("Schema is not at revision 0010 with an empty privileged table")
-    print(json.dumps({"alembic_head": "0010", "privileged_rows": stored}), flush=True)
+    if str(version) < "0010" or missing or stored != 0:
+        raise ValueError("Schema is not at revision 0010 or later with an empty privileged table")
+    print(json.dumps({"alembic_head": str(version), "privileged_rows": stored}), flush=True)
 
 
 def write_session(settings: Settings, cookie_file: Path) -> None:

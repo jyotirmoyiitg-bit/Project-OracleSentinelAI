@@ -1,6 +1,6 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CircleAlert, Database, MessageSquare } from 'lucide-react'
-import { ApiError, getFleet, getGraphWaits, getTarget, getWaitActivity, type GraphWaits, type WaitActivity, type WaitBlocking, type WaitLock } from './api'
+import { ApiError, getFleet, getGraphHistory, getGraphWaits, getTarget, getWaitActivity, type GraphHistorySample, type GraphWaits, type WaitActivity, type WaitBlocking, type WaitLock } from './api'
 import { ActiveDatabase } from './components/ActiveDatabase'
 import { StatePanel } from './components/StatePanel'
 import type { Target, TargetDetails } from './types'
@@ -10,6 +10,9 @@ import { sampleFrom, waitView, WaitPanel, type WaitPoint, type WaitRow, type Wai
 const NOT_FOUND = 'Database target not found'
 const NEEDS_SAMPLE = 'Needs a second sample.'
 const NOT_COLLECTED = 'Not collected.'
+const LIVE_CAPTION = 'Rates and charts are since the previous sample on this page. This is not a stored history.'
+/** A second reading soon after the page opens, so live rates do not wait for the refresh interval. */
+export const QUICK_SAMPLE_MS = 3000
 const COUNT_ROWS = [
   ['parse count (total)', 'Parse count'],
   ['parse count (hard)', 'Hard parses'],
@@ -129,6 +132,41 @@ function latency(
   return ((currentCs - priorCs) * 10) / (currentCount - priorCount)
 }
 
+type IoPoints = { blocks: Record<string, number>; files: Record<string, number>; delays: Record<string, number> }
+
+/** Rates between two I/O samples of one database. Null when there is no usable earlier sample. */
+function ioPoints(prior: IoSample | null, next: IoSample): IoPoints | null {
+  if (!prior || prior.id !== next.id) return null
+  const gap = (next.at - prior.at) / 1000
+  if (gap < 1) return null
+  return {
+    blocks: Object.fromEntries(BLOCK_SERIES.flatMap(([name, labelName]) => {
+      const rate = changed(next.blocks[name], prior.blocks[name], gap)
+      return rate == null ? [] : [[labelName, rate]]
+    })),
+    files: dropEmpty({
+      'Data file read': changed(next.reads, prior.reads, gap),
+      'Data file write': changed(next.writes, prior.writes, gap),
+    }),
+    delays: dropEmpty({
+      'Data file read': latency(next.readCs, prior.readCs, next.reads, prior.reads),
+      'Data file write': latency(next.writeCs, prior.writeCs, next.writes, prior.writes),
+    }),
+  }
+}
+
+function storedIo(sample: GraphHistorySample, id: string, at: number): IoSample {
+  return {
+    id,
+    at,
+    blocks: namedMap(sample.io),
+    reads: sample.files.reads,
+    writes: sample.files.writes,
+    readCs: sample.files.read_time_cs,
+    writeCs: sample.files.write_time_cs,
+  }
+}
+
 function topPoint(previous: WaitSample | null, next: WaitSample, gap: number): WaitPoint | null {
   if (!previous || previous.id !== next.id || gap < 1) return null
   const values: Record<string, number> = {}
@@ -184,7 +222,10 @@ export function WaitPage({
   const [reloadKey, setReloadKey] = useState(0)
   const [readingKey, setReadingKey] = useState(0)
   const [pending, setPending] = useState(false)
+  const [historyCaption, setHistoryCaption] = useState('')
   const waitSample = useRef<WaitSample | null>(null)
+  const openedId = useRef<string | null>(null)
+  const quickId = useRef<string | null>(null)
   const parseSample = useRef<ParseSample | null>(null)
   const bufferSample = useRef<WaitSample | null>(null)
   const ioSample = useRef<IoSample | null>(null)
@@ -267,10 +308,51 @@ export function WaitPage({
       setLockRates({})
       ioSample.current = null
       lockSample.current = null
+      setHistoryCaption('')
     }
+    // The first reading of a database replays its stored samples, so the charts open filled.
+    const opening = openedId.current !== id
+    let quickTimer: number | undefined
+    const historyPromise = !opening ? Promise.resolve() : getGraphHistory(id, controller.signal)
+      .then((history) => {
+        if (!active || openedId.current === id) return
+        openedId.current = id
+        waitSample.current = null
+        ioSample.current = null
+        const fetchedAt = Date.now()
+        const waits: WaitPoint[] = []
+        const tops: WaitPoint[] = []
+        const blocks: WaitPoint[] = []
+        const files: WaitPoint[] = []
+        const delays: WaitPoint[] = []
+        for (const stored of history.samples) {
+          const at = fetchedAt - stored.age_seconds * 1000
+          const label = clockLabel(at)
+          const sample: WaitSample = { id, at, events: stored.events, cpuMicro: stored.cpu_micro }
+          const previous = waitSample.current
+          const view = waitView(previous, sample)
+          if (view.point) waits.push(view.point)
+          const top = topPoint(previous, sample, previous ? (at - previous.at) / 1000 : 0)
+          if (top) tops.push(top)
+          waitSample.current = sample
+          const ioNext = storedIo(stored, id, at)
+          const io = ioPoints(ioSample.current, ioNext)
+          if (io && Object.keys(io.blocks).length > 0) blocks.push({ label, values: io.blocks })
+          if (io && Object.keys(io.files).length > 0) files.push({ label, values: io.files })
+          if (io && Object.keys(io.delays).length > 0) delays.push({ label, values: io.delays })
+          ioSample.current = ioNext
+        }
+        setWaitPoints(waits.slice(-24))
+        setTopPoints(tops.slice(-24))
+        setBlockPoints(blocks.slice(-24))
+        setFilePoints(files.slice(-24))
+        setLatencyPoints(delays.slice(-24))
+        setHistoryCaption(history.samples.length > 0 ? history.caption : '')
+      })
+      .catch(() => { /* An aborted request leaves the page as it was. */ })
     setPending(true)
-    const eventsPromise = getGraphWaits(id, controller.signal)
-      .then((picture: GraphWaits) => {
+    const eventsPromise = Promise.all([getGraphWaits(id, controller.signal), historyPromise])
+      .then(([picture]: [GraphWaits, void]) => {
         if (!active) return
         const at = Date.now()
         const previous = waitSample.current
@@ -291,8 +373,8 @@ export function WaitPage({
         setTopPoints([])
         setWaitError(reason instanceof ApiError ? reason.message : 'Could not read wait statistics.')
       })
-    const activityPromise = getWaitActivity(id, controller.signal)
-      .then((picture) => {
+    const activityPromise = Promise.all([getWaitActivity(id, controller.signal), historyPromise])
+      .then(([picture]) => {
         if (!active) return
         const at = Date.now()
         const next: ParseSample = {
@@ -323,26 +405,12 @@ export function WaitPage({
           readCs: picture.io.files.read_time_cs,
           writeCs: picture.io.files.write_time_cs,
         }
-        const ioPrior = ioSample.current
-        const ioSame = ioPrior != null && ioPrior.id === id
-        const ioGap = ioSame && ioPrior ? (at - ioPrior.at) / 1000 : 0
-        if (ioSame && ioGap >= 1 && ioPrior) {
+        const io = ioPoints(ioSample.current, ioNext)
+        if (io) {
           const label = clockLabel(at)
-          const blocks = Object.fromEntries(BLOCK_SERIES.flatMap(([name, labelName]) => {
-            const rate = changed(ioNext.blocks[name], ioPrior.blocks[name], ioGap)
-            return rate == null ? [] : [[labelName, rate]]
-          }))
-          const files = dropEmpty({
-            'Data file read': changed(ioNext.reads, ioPrior.reads, ioGap),
-            'Data file write': changed(ioNext.writes, ioPrior.writes, ioGap),
-          })
-          const delays = dropEmpty({
-            'Data file read': latency(ioNext.readCs, ioPrior.readCs, ioNext.reads, ioPrior.reads),
-            'Data file write': latency(ioNext.writeCs, ioPrior.writeCs, ioNext.writes, ioPrior.writes),
-          })
-          if (Object.keys(blocks).length > 0) setBlockPoints((current) => remember(current, { label, values: blocks }))
-          if (Object.keys(files).length > 0) setFilePoints((current) => remember(current, { label, values: files }))
-          if (Object.keys(delays).length > 0) setLatencyPoints((current) => remember(current, { label, values: delays }))
+          if (Object.keys(io.blocks).length > 0) setBlockPoints((current) => remember(current, { label, values: io.blocks }))
+          if (Object.keys(io.files).length > 0) setFilePoints((current) => remember(current, { label, values: io.files }))
+          if (Object.keys(io.delays).length > 0) setLatencyPoints((current) => remember(current, { label, values: io.delays }))
         }
         ioSample.current = ioNext
         const lockPrior = lockSample.current
@@ -390,10 +458,16 @@ export function WaitPage({
         setActivityError(reason instanceof ApiError ? reason.message : 'Could not read wait activity.')
       })
     void Promise.allSettled([eventsPromise, activityPromise]).then(() => {
-      if (active) setPending(false)
+      if (!active) return
+      setPending(false)
+      if (quickId.current !== id) {
+        quickId.current = id
+        quickTimer = window.setTimeout(() => setReadingKey((value) => value + 1), QUICK_SAMPLE_MS)
+      }
     })
     return () => {
       active = false
+      if (quickTimer !== undefined) window.clearTimeout(quickTimer)
       controller.abort()
     }
   }, [target, readingKey])
@@ -501,7 +575,7 @@ export function WaitPage({
             <LockTable locks={activity?.locking.locks ?? []} rates={lockRates} points={lockPoints} caption={activity?.locking.caption ?? ''} limitation={activity?.locking.limitation ?? null} error={activityError} />
           )}
           {tab === 'buffer' && <BufferBoard rows={bufferRows} activity={activity} error={activityError} />}
-          <p className="wait-caption">Rates and charts are since the previous sample on this page. This is not a stored history.</p>
+          <p className="wait-caption">{historyCaption || LIVE_CAPTION}</p>
         </>
       )}
     </main>

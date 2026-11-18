@@ -75,7 +75,7 @@ def test_grants_match_collector_queries_and_capabilities_exactly():
     ("v$librarycache", ["namespace", "gets", "gethits", "reloads", "invalidations"]),
     ("v$archived_log", ["sequence_no", "completion_time", "archived", "status", "backup_count"]),
     ("v$dataguard_stats", ["name", "value"]),
-    ("dba_users", ["username", "account_status", "lock_date", "expiry_date"]),
+    ("dba_users", ["username", "account_status", "lock_date", "expiry_date", "oracle_maintained"]),
     ("dba_objects", ["owner", "object_type", "object_name", "status"]),
     ("dba_role_privs", ["grantee", "granted_role"]),
     ("dba_scheduler_job_run_details", ["owner", "job_name", "status", "log_date"]),

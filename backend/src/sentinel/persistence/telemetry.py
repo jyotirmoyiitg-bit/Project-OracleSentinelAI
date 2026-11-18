@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session
 from sentinel.domain.models import Observation as DomainObservation
 from sentinel.persistence.models import CollectorCheckpoint, CurrentObservation, Observation
 
+GRAPH_SAMPLE_METRIC = "activity.sample"
+
 
 def save_batch(session: Session, target_id: uuid.UUID, probe: str, observations: list[DomainObservation]) -> None:
     session.execute(delete(CurrentObservation).where(
@@ -58,6 +60,9 @@ def history(
     )
     if metric_name:
         stmt = stmt.where(Observation.metric_name == metric_name)
+    else:
+        # Stored GraphDB counter samples are JSON rows with their own endpoint; keep them out of metric lists.
+        stmt = stmt.where(Observation.metric_name != GRAPH_SAMPLE_METRIC)
     if quality:
         stmt = stmt.where(Observation.quality == quality)
     # Select the newest bounded window, then return it in chart order.

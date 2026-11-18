@@ -98,9 +98,9 @@ def schema_status(settings: Settings) -> None:
     finally:
         engine.dispose()
     missing = [name for name in PHASE8_TABLES if name not in tables]
-    if str(version) != "0010" or missing or stored != 0:
-        raise ValueError("Phase 8 schema is not at revision 0010 with an empty privileged table")
-    print(json.dumps({"alembic_head": "0010", "privileged_rows": stored}), flush=True)
+    if str(version) < "0010" or missing or stored != 0:
+        raise ValueError("Phase 8 schema is not at revision 0010 or later with an empty privileged table")
+    print(json.dumps({"alembic_head": str(version), "privileged_rows": stored}), flush=True)
 
 
 def write_session(settings: Settings, cookie_file: Path) -> None:

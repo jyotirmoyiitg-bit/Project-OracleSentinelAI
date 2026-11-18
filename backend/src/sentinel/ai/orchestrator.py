@@ -1,14 +1,17 @@
-"""Copilot workflow. A fixed router chooses the tools.
+"""Copilot workflow.
 
-When the fixed router has no match on a database chat, the model may nominate up to three
-read-only readings from the allowlist. The server validates each name, applies the role rule,
-and fixes the database. The model is never given a tool to call and never runs SQL.
+On a database chat a supervisor chooses which specialist answers: Oracle knowledge, a SQL draft, the
+selected database, company policy, or a change request. The supervisor is one model call that returns
+route names and up to three read-only reading names. The server validates each name, applies the role
+rule, and fixes the database. With the model off, or when its reply is not usable, the fixed patterns
+decide as before. The model is never given a tool to call and never runs SQL.
 """
 
 import json
 import logging
 import re
 import uuid
+from difflib import SequenceMatcher
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -37,6 +40,14 @@ from sentinel.ai.safety import (
     sanitize_untrusted,
     sql_in_prompt,
 )
+from sentinel.ai.stored import stored_reading
+from sentinel.ai.supervisor import (
+    SUPERVISOR_SCHEMA,
+    Decision,
+    parse_decision,
+    route_labels,
+    supervisor_messages,
+)
 from sentinel.ai.tools.context import ToolContext
 from sentinel.ai.tools.registry import execute_tool
 from sentinel.ai.types import (
@@ -44,6 +55,7 @@ from sentinel.ai.types import (
     Answer,
     Assessment,
     EvidenceCitation,
+    ModelReply,
     ProviderError,
     StructuredAnswer,
     ToolOutcome,
@@ -174,6 +186,21 @@ class Orchestrator:
         self.gateway = gateway
 
     async def answer(self, session: Session, thread: ChatThread, caller: Caller, content: str) -> Answer:
+        """Answer one message, then record which specialists answered it."""
+        routing: dict[str, object] = {}
+        result = await self._answer(session, thread, caller, content, routing)
+        routes = routing.get("routes")
+        if isinstance(routes, list) and routes:
+            result.structured["routes"] = routes
+            result.structured["routed_by"] = str(routing.get("by") or "")
+        notes = routing.get("notes")
+        if isinstance(notes, list) and notes:
+            result.structured["source_note"] = " ".join(str(note) for note in notes)
+        return result
+
+    async def _answer(
+        self, session: Session, thread: ChatThread, caller: Caller, content: str, routing: dict[str, object],
+    ) -> Answer:
         correlation_id = str(uuid.uuid4())
         intent = _intent(content, thread.scope_type)
         clean_question = sanitize_untrusted(content, 2000)
@@ -205,15 +232,53 @@ class Orchestrator:
             if fleet_answer is not None:
                 return fleet_answer
         catalog_hit = None if "sql" in claims or "change" in claims else match_catalog(clean_question)
+        decision: Decision | None = None
+        lead: list[ToolOutcome] = []
+        if catalog_hit is None and thread.scope_type != "fleet":
+            decision = await self._supervise(clean_question, caller, target_id is not None, correlation_id)
+        chosen_readings: list[str] = []
+        if decision is not None:
+            claims, chosen_readings, kept = merge_decision(
+                decision, claims, clean_question, is_admin_operator(caller.role), target_id is not None,
+            )
+            intent = "operation_proposal" if "change" in claims else (
+                "question" if intent == "operation_proposal" else intent
+            )
+            names = [TOOL_NAMES[kind] for kind in chosen_readings]
+            chosen = ", ".join(route_labels(claims, target_id is not None))
+            summary = f"The supervisor chose: {chosen}." + (f" Readings: {', '.join(names)}." if names else "")
+            if kept:
+                summary += " The fixed patterns recognised a question about this database and added its reading."
+            lead.append(ToolOutcome(
+                "route_question", "allowed", summary, [], {"routes": list(decision.routes), "nominated": names},
+            ))
+        routing["routes"] = route_labels(claims, target_id is not None)
+        routing["by"] = "catalog" if catalog_hit is not None else ("supervisor" if decision is not None else "patterns")
+        if decision is not None and claims == {"other"}:
+            outcomes = [*_denied_from_text(clean_question, "instructions in the question cannot call tools"), *lead]
+            text, llm_used, status, prompt_tokens, completion_tokens, structured = await self._compose(
+                clean_question, intent, outcomes, [], correlation_id, "other", history=history,
+            )
+            return self._finish(
+                session, thread, caller, target_id, correlation_id, outcomes, text,
+                llm_used, status, prompt_tokens, completion_tokens, intent, structured=structured,
+            )
         if catalog_hit is None and claims & {"change", "sql", "policy", "concept"}:
             routed = await self._route_claim(
                 session, thread, caller, target_id, incident_id, correlation_id, clean_question, intent, claims, history,
+                lead=lead,
             )
             if routed is not None:
                 return routed
-        activity = catalog_hit.reading if catalog_hit is not None else (
-            None if intent == "operation_proposal" else match_activity(clean_question)
-        )
+        if catalog_hit is not None:
+            activity = catalog_hit.reading
+        elif decision is not None:
+            # The supervisor's readings come first. With none, the fixed patterns may still name one for a database question.
+            activity = chosen_readings[0] if chosen_readings else (
+                match_activity(clean_question) if claims & {"live", "diagnosis"} else None
+            )
+        else:
+            activity = None if intent == "operation_proposal" else match_activity(clean_question)
         if activity is None and "diagnosis" in claims and "concept" not in claims and target_id is not None and intent != "health":
             activity = "performance"
         if activity == "database_users" and not is_admin_operator(caller.role):
@@ -228,17 +293,25 @@ class Orchestrator:
                 session, thread, caller, target_id, correlation_id, [denial],
                 LISTING_DENIAL, False, "denied", 0, 0, intent,
             )
-        nominated: list[str] = []
+        nominated: list[str] = list(chosen_readings)
+        if decision is not None and nominated and claims & {"live", "diagnosis"}:
+            # A phrasing the fixed patterns know keeps its reading, after the supervisor's own choices.
+            known = match_activity(clean_question)
+            if (
+                known and known not in nominated
+                and (is_admin_operator(caller.role) or known not in ADMIN_ONLY_READINGS)
+            ):
+                nominated = [*nominated, known][: min(3, self.settings.ai_max_tool_calls)]
         if (
-            activity is None and catalog_hit is None and target_id is not None
+            decision is None and activity is None and catalog_hit is None and target_id is not None
             and intent == "question" and not (claims & {"sql", "change", "policy"})
         ):
             nominated = await self._nominate(clean_question, caller, correlation_id)
             if nominated:
                 activity = nominated[0]
         context = ToolContext(session, self.settings, caller, target_id, incident_id)
-        outcomes = _denied_from_text(clean_question, "instructions in the question cannot call tools")
-        if nominated:
+        outcomes = [*_denied_from_text(clean_question, "instructions in the question cannot call tools"), *lead]
+        if nominated and decision is None:
             names = [TOOL_NAMES[kind] for kind in nominated]
             outcomes.append(ToolOutcome(
                 "route_question", "allowed",
@@ -259,7 +332,9 @@ class Orchestrator:
         elif activity and target_id is not None:
             target = session.get(DatabaseTarget, target_id)
             alias = target.tns_alias if target and target.tns_alias else ""
-            context.activity = _for_role(await prepare_reading(self.settings, alias, activity), caller)
+            context.activity = await self._reading(
+                session, target_id, alias, activity, caller, clean_question, routing, stored=catalog_hit is None,
+            )
         if catalog_hit is not None and target_id is None and activity is None:
             outcomes.append(ToolOutcome(
                 catalog_hit.tool, "denied",
@@ -287,7 +362,9 @@ class Orchestrator:
             scoped = session.get(DatabaseTarget, target_id)
             scoped_alias = scoped.tns_alias if scoped and scoped.tns_alias else ""
             for kind in nominated[1:]:
-                context.activity = _for_role(await prepare_reading(self.settings, scoped_alias, kind), caller)
+                context.activity = await self._reading(
+                    session, target_id, scoped_alias, kind, caller, clean_question, routing,
+                )
                 outcomes.append(execute_tool(TOOL_NAMES[kind], {}, context))
         outcomes.extend(_denied_from_evidence(outcomes))
         if activity == "ora_errors" and "concept" not in claims:
@@ -419,6 +496,54 @@ class Orchestrator:
                 kinds.append(kind)
         return kinds[: min(3, self.settings.ai_max_tool_calls)]
 
+    async def _supervise(
+        self, question: str, caller: Caller, has_database: bool, correlation_id: str,
+    ) -> Decision | None:
+        """Ask the model which specialist answers. None means the fixed patterns decide."""
+        if not self.settings.ai_supervisor_enabled or not self.gateway.available:
+            return None
+        generate = getattr(self.gateway, "generate_structured", None)
+        if generate is None:
+            return None
+        admin = is_admin_operator(caller.role)
+        allowed = {tool: kind for kind, tool in TOOL_NAMES.items() if admin or kind not in ADMIN_ONLY_READINGS}
+        descriptions = {tool: TOOL_DESCRIPTIONS.get(tool, "") for tool in allowed}
+        try:
+            reply = await generate(
+                supervisor_messages(question, descriptions, has_database),
+                schema=SUPERVISOR_SCHEMA, correlation_id=correlation_id,
+            )
+            parsed = _load_model_json(reply.content)
+        except Exception:  # noqa: BLE001 -- a failed routing call must not fail the answer
+            return None
+        decision = parse_decision(parsed, allowed, has_database)
+        if decision is None:
+            return None
+        limit = min(3, self.settings.ai_max_tool_calls)
+        return Decision(decision.routes, decision.readings[:limit], decision.diagnose)
+
+    async def _reading(
+        self,
+        session: Session,
+        target_id: uuid.UUID,
+        alias: str,
+        kind: str,
+        caller: Caller,
+        question: str,
+        routing: dict[str, object],
+        *,
+        stored: bool = True,
+    ) -> ActivityReading:
+        """One reading of the selected database: a recent agent snapshot when there is one, else a live read."""
+        if stored:
+            snapshot = stored_reading(session, self.settings, target_id, kind, caller, question)
+            if snapshot is not None:
+                notes = routing.setdefault("notes", [])
+                if isinstance(notes, list) and snapshot.note not in notes:
+                    notes.append(snapshot.note)
+                return _for_role(snapshot, caller)
+        return _for_role(await prepare_reading(self.settings, alias, kind), caller)
+
     def _finish(
         self,
         session: Session,
@@ -476,10 +601,11 @@ class Orchestrator:
         intent: str,
         claims: set[str],
         history: list[dict[str, str]] | None = None,
+        lead: list[ToolOutcome] | None = None,
     ) -> Answer | None:
         """Route a concept, draft, policy, or change without letting one rule block the others."""
         context = ToolContext(session, self.settings, caller, target_id, incident_id)
-        outcomes = _denied_from_text(question, "instructions in the question cannot call tools")
+        outcomes = [*_denied_from_text(question, "instructions in the question cannot call tools"), *(lead or [])]
         if "change" in claims:
             outcomes.append(ToolOutcome(
                 "execute_sql", "denied", "Database changes are not executed from the copilot.",
@@ -501,7 +627,10 @@ class Orchestrator:
                 llm_used, status, prompt_tokens, completion_tokens, intent, structured=structured,
             )
         if "policy" in claims and "concept" not in claims:
-            outcomes.append(execute_tool("search_knowledge", {"query": _knowledge_query(question)}, context))
+            # Only a policy document can state a company requirement. The manuals are not searched here.
+            outcomes.append(execute_tool(
+                "search_knowledge", {"query": _knowledge_query(question), "category": "Policy"}, context,
+            ))
             if target_id is not None:
                 outcomes.append(execute_tool("get_compliance", {}, context))
             outcomes.extend(_denied_from_evidence(outcomes))
@@ -511,7 +640,7 @@ class Orchestrator:
                     False, "answered", 0, 0, intent,
                 )
             text, llm_used, status, prompt_tokens, completion_tokens, structured = await self._compose(
-                question, intent, outcomes, _citations(outcomes), correlation_id, None, history=history,
+                question, intent, outcomes, _citations(outcomes), correlation_id, "policy", history=history,
             )
             return self._finish(
                 session, thread, caller, target_id, correlation_id, outcomes, text,
@@ -540,41 +669,40 @@ class Orchestrator:
         advice: str | None,
         history: list[dict[str, str]] | None = None,
     ) -> tuple[str, bool, str, int, int, StructuredAnswer]:
+        # A policy answer falls back to its cited evidence, like a monitoring answer.
+        guided = advice if advice != "policy" else None
         if not self.gateway.available:
-            if advice:
-                structured = _advice_structured(advice)
+            if guided:
+                structured = _advice_structured(guided)
                 return structured.summary, False, "disabled", 0, 0, structured
             structured = _fallback_structured(intent, citations)
             return structured.summary, False, "disabled", 0, 0, structured
-        messages = [
-            {"role": "system", "content": _advice_prompt(advice) if advice else _system_prompt()},
-            *(history or []),
-            {"role": "user", "content": _evidence_prompt(question, outcomes, citations, self.settings.ai_max_context_tokens)},
-        ]
-        assessment: Assessment | None = None
-        reply = None
-        for attempt in range(2):
-            try:
-                reply = await self.gateway.generate(messages, tools=None, correlation_id=correlation_id)
-                parsed = _load_model_json(reply.content)
-                if isinstance(parsed, dict) and parsed.get("tool_calls"):
-                    raise ProviderError("model_requested_tools")
-                assessment = Assessment.model_validate(parsed)
-                break
-            except ProviderError:
-                assessment = None
-                break
-            except (ValidationError, json.JSONDecodeError, TypeError):
-                if attempt == 0:
-                    messages = [
-                        *messages,
-                        {"role": "user", "content": "Return only valid JSON matching this schema, with no surrounding text: " + json.dumps(_SCHEMA)},
-                    ]
-                    continue
-                assessment = None
+        system = {"role": "system", "content": _advice_prompt(advice) if advice else _system_prompt()}
+        evidence = {
+            "role": "user",
+            "content": _evidence_prompt(question, outcomes, citations, self.settings.ai_max_context_tokens),
+        }
+        assessment, reply = await self._assess([system, *(history or []), evidence], correlation_id)
+        # An answer copied from an earlier turn is not an answer to this question. It is asked again, first
+        # with the copy pointed out, then without the conversation. Only a turn that took no reading of its
+        # own is checked: the same reading asked for twice may honestly give the same answer.
+        took_reading = any(
+            item.decision == "allowed" and (item.name in ACTIVITY_TOOLS or item.name in FLEET_TOOLS)
+            for item in outcomes
+        )
+        if history and not took_reading:
+            for attempt in range(2):
+                if assessment is None or reply is None or not repeats_earlier(assessment.assessment, question, history):
+                    break
+                messages = [system, evidence] if attempt else [
+                    system, *history, evidence,
+                    {"role": "assistant", "content": json.dumps({"assessment": assessment.assessment})},
+                    {"role": "user", "content": _REPEAT_NOTICE},
+                ]
+                assessment, reply = await self._assess(messages, correlation_id)
         if assessment is None or reply is None:
-            if advice:
-                structured = _advice_structured(advice)
+            if guided:
+                structured = _advice_structured(guided)
                 return structured.summary, False, "unavailable", 0, 0, structured
             structured = _fallback_structured(intent, citations)
             return structured.summary, False, "unavailable", 0, 0, structured
@@ -583,19 +711,130 @@ class Orchestrator:
         else:
             summary = omit_unexecuted_sql(neutralize(assessment.assessment), keep_select=advice == "sql")
         limitations = neutralize(assessment.limitations) if assessment.limitations else ""
-        note = _turn_note(advice, outcomes)
+        confidence = assessment.confidence
+        uncited = advice == "concept" and not any(item.kind == "document" for item in citations)
+        if uncited:
+            confidence = "low"
+        note = _turn_note(advice, outcomes, cited=not uncited)
         if note:
             limitations = f"{limitations} {note}".strip()
         steps = [neutralize(step) for step in assessment.next_steps]
         citation_note = ""
-        if self.settings.ai_require_citations and not citations and not advice:
+        if self.settings.ai_require_citations and not citations and not guided:
             citation_note = "No source citation was available, so this assessment stays limited."
         structured = StructuredAnswer(
-            kind="model", summary=summary, confidence=assessment.confidence,
+            kind="model", summary=summary, confidence=confidence,
             limitations=limitations, next_steps=steps, citation_note=citation_note,
         )
         text = _render_text(summary, limitations, steps, citation_note)
         return text, True, "answered", reply.prompt_tokens, reply.completion_tokens, structured
+
+    async def _assess(
+        self, messages: list[dict[str, str]], correlation_id: str,
+    ) -> tuple[Assessment | None, ModelReply | None]:
+        """One assessment from the model. A reply that is not valid JSON is asked for once more."""
+        reply = None
+        for attempt in range(2):
+            try:
+                reply = await self.gateway.generate(messages, tools=None, correlation_id=correlation_id)
+                parsed = _load_model_json(reply.content)
+                if isinstance(parsed, dict) and parsed.get("tool_calls"):
+                    raise ProviderError("model_requested_tools")
+                return Assessment.model_validate(parsed), reply
+            except ProviderError:
+                return None, reply
+            except (ValidationError, json.JSONDecodeError, TypeError):
+                if attempt == 0:
+                    messages = [
+                        *messages,
+                        {"role": "user", "content": "Return only valid JSON matching this schema, with no surrounding text: " + json.dumps(_SCHEMA)},
+                    ]
+        return None, reply
+
+
+_REPEAT_NOTICE = (
+    "That reply repeats an earlier answer in this conversation, which answered a different question. "
+    "Answer the current question in the evidence message. Use the earlier messages only to understand what "
+    "the operator refers to. If the question asks for a fact about the selected database and this turn has no "
+    "reading for it, say that no reading was taken, and do not reuse a figure from an earlier answer. "
+    "Return JSON with assessment, confidence, limitations, and next_steps."
+)
+_REPEAT_MINIMUM = 24
+_REPEAT_COMPARED = 300
+_REPEAT_RATIO = 0.9
+
+
+def _folded(text: str) -> str:
+    return " ".join(text.lower().split())
+
+
+def repeats_earlier(answer: str, question: str, history: list[dict[str, str]]) -> bool:
+    """True when the answer is a copy of an earlier answer in this conversation to a different question.
+
+    An earlier answer is stored as its summary followed by limitations, next steps, and the reading, so the
+    start of each one is compared with the start of the new answer. Asking the same question again is not
+    counted: the same answer is then expected.
+    """
+    new = _folded(answer)[:_REPEAT_COMPARED]
+    if len(new) < _REPEAT_MINIMUM:
+        return False
+    asked = _folded(question)
+    earlier_question = ""
+    for item in history:
+        content = _folded(item.get("content", ""))
+        if item.get("role") == "user":
+            earlier_question = content
+            continue
+        if earlier_question == asked:
+            continue
+        old = content[: len(new)]
+        if old == new or (len(old) >= _REPEAT_MINIMUM and SequenceMatcher(None, new, old).ratio() >= _REPEAT_RATIO):
+            return True
+    return False
+
+
+# Wording that asks for an explanation rather than for this database's own value.
+_EXPLAIN = re.compile(
+    r"(?i)\b(?:understand|purpose of|(?:is|are|used) for|stands? for|means?|meaning|describe|overview|concept|"
+    r"in general|tell me about|teach me|learn about|why (?:does|do|is|are|would|should) (?:oracle|an?|the)\b)",
+)
+
+
+def merge_decision(
+    decision: Decision, fixed_claims: set[str], question: str, admin: bool, has_database: bool,
+) -> tuple[set[str], list[str], bool]:
+    """Combine the supervisor's choice with two fixed rules. Returns the claims, the readings, and whether a reading was added.
+
+    An explicit change phrase is always a change request. A question the fixed patterns recognise as being
+    about this database, and not as an explanation, keeps its reading even when the supervisor chose another
+    specialist, so a known phrasing never loses the answer it had. The operator is looking at one database:
+    when the supervisor chose Oracle knowledge alone for a question that names something the patterns can
+    read and does not ask for an explanation, the reading is added and both specialists answer.
+    """
+    claims = decision.claims()
+    readings = list(decision.readings)
+    if _CHANGE.search(question):
+        claims.add("change")
+        claims.discard("other")
+    added = False
+    recognised = "live" in fixed_claims and "concept" not in fixed_claims
+    leaning = claims == {"concept"} and "concept" not in fixed_claims and not _EXPLAIN.search(question)
+    known = match_activity(question) if has_database and not (claims & {"sql", "change"}) else None
+    explained = "concept" in fixed_claims or bool(_EXPLAIN.search(question))
+    if (
+        known == "database_users" and not admin and not explained
+        and claims <= {"live", "diagnosis", "concept", "other"}
+    ):
+        # Which users and schemas exist is a listing this caller may not read. The question gets the refusal
+        # for that listing, as it does when the patterns route alone. It is not answered from another
+        # reading or from a general explanation, either of which would look like an answer about this database.
+        return {"live"}, [known], True
+    if known and "live" not in claims and (recognised or leaning) and (admin or known not in ADMIN_ONLY_READINGS):
+        claims.add("live")
+        claims.discard("other")
+        readings = [known]
+        added = True
+    return claims, readings, added
 
 
 def _claims(content: str) -> set[str]:
@@ -633,9 +872,14 @@ def _knowledge_query(content: str) -> str:
 
 
 def _policy_evidence(outcomes: list[ToolOutcome]) -> bool:
+    """A passage from a policy document, or a stored compliance result. A manual passage is not policy."""
     for outcome in outcomes:
-        if outcome.name == "search_knowledge" and outcome.citations:
-            return True
+        if outcome.name == "search_knowledge":
+            items = outcome.payload.get("items")
+            if isinstance(items, list) and any(
+                isinstance(item, dict) and item.get("authoritative_policy") is True for item in items
+            ):
+                return True
         if outcome.name == "get_compliance":
             results = outcome.payload.get("results")
             if isinstance(results, list) and results:
@@ -643,16 +887,23 @@ def _policy_evidence(outcomes: list[ToolOutcome]) -> bool:
     return False
 
 
-def _turn_note(advice: str | None, outcomes: list[ToolOutcome]) -> str:
+def _turn_note(advice: str | None, outcomes: list[ToolOutcome], *, cited: bool = True) -> str:
     if advice == "concept":
+        if cited:
+            return (
+                "This explanation is general Oracle guidance, with the manual passages it used listed as sources. "
+                "The selected database was not queried."
+            )
         return (
-            "This explanation is general Oracle guidance. An empty document search does not remove it. "
-            "The selected database was not queried."
+            "No manual passage was found for this question, so this is the model's general Oracle knowledge "
+            "without a source. The selected database was not queried."
         )
     if advice == "sql":
         return "The example statement was not executed. The selected database was not queried."
     if advice == "change":
         return "No statement was sent to Oracle."
+    if advice == "other":
+        return "This is a general answer. The selected database was not queried."
     if advice == "mixed":
         note = "The concept is general Oracle guidance."
         if not any(item.name in ACTIVITY_TOOLS for item in outcomes):
@@ -941,7 +1192,9 @@ _ASSISTANT_POLICY = (
 def _system_prompt() -> str:
     return _ASSISTANT_POLICY + (
         " This turn includes monitoring evidence. A database measurement or a company requirement "
-        "must come from that evidence. A possible cause remains a hypothesis."
+        "must come from that evidence. A possible cause remains a hypothesis. "
+        "When the question asks which items match, or asks for a list, name every matching row in the reading "
+        "and say how many there are. Do not give one example in place of the list."
     )
 
 
@@ -950,7 +1203,9 @@ def _advice_prompt(kind: str) -> str:
         "concept": (
             " This turn is a general Oracle explanation. Retrieved passages are optional. "
             "An empty or unrelated search must not prevent the explanation. "
-            "Do not state a current database fact or a company requirement."
+            "Do not state a current database fact or a company requirement. "
+            "Earlier messages only show what the operator refers to. Answer the current question. "
+            "Do not repeat an earlier answer, and do not reuse a figure from one: it was read for another question."
         ),
         "sql": (
             " Draft one read-only SELECT and explain it. State that it was not executed. "
@@ -964,6 +1219,19 @@ def _advice_prompt(kind: str) -> str:
         "diagnosis": (
             " Use the tool rows as observations. Manual passages may help interpret them. "
             "A possible cause is a hypothesis."
+        ),
+        "policy": (
+            " This turn asks what the company requires. State a requirement only from a passage marked "
+            "authoritative_policy, and name that policy document. A stored compliance result may be reported as the "
+            "result of its rule. If no policy passage states the requirement, say it could not be established. "
+            "Do not present Oracle guidance, a manual passage, or your own view as a company requirement."
+        ),
+        "other": (
+            " This message is not for a specialist. If it is a greeting or asks what you can do, answer in two "
+            "or three sentences: you explain Oracle from the manuals, read approved measurements of the selected "
+            "database, cite company policy, and draft SQL that is not run. If it is a general technical question, "
+            "answer briefly and say it is general guidance. Do not state a database fact or a company requirement. "
+            "Earlier messages only show what the operator refers to. Do not repeat an earlier answer."
         ),
         "fleet": (
             " This turn is about the whole fleet of registered databases. Answer only from the fleet tool rows. "
@@ -1001,7 +1269,8 @@ def _evidence_prompt(
             readings.extend(str(line) for line in lines[:30])
     evidence = {
         "question": question,
-        "tools": [item.as_dict() for item in outcomes],
+        # The routing step is not evidence, so the model is not shown it.
+        "tools": [item.as_dict() for item in outcomes if item.name != "route_question"],
         "citations": [item.as_dict() for item in citations],
         "database_reading": readings,
         "schema": _SCHEMA,

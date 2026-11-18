@@ -9,3 +9,5 @@ Drop approved reference files here. The indexer scans `ora-19c-manual/` and `Pol
 Other extensions are left in place and skipped. Scanned PDFs are quarantined because OCR is disabled. Embeddings are generated locally unless remote embeddings are explicitly approved with a privacy disclosure.
 
 Reindex from the Knowledge page, or `POST /api/v1/knowledge/reindex` with the administrator role. Search works when no language model is configured.
+
+Since Phase 24 the files are embedded by a model on this computer. Index them once with `.\test_real_phase24\Verify_Phase24_Real.ps1 -ReindexOnly`, and run it again after adding, replacing, or removing a file. A file whose content has not changed is skipped.

@@ -553,7 +553,8 @@ async def test_structured_answer_survives_a_semicolon_step_and_repairs_bad_json(
         answer = await orchestrator.answer(session, stored, Caller("operator", "reader"), "What is the Oracle architecture?")
     assert model.calls == 2
     assert answer.structured["kind"] == "model"
-    assert answer.structured["confidence"] == "high"
+    # No manual passage was cited, so the explanation is not shown with the model's own "high" (Phase 26).
+    assert answer.structured["confidence"] == "low"
     assert answer.structured["summary"].startswith("Limitations: none in the data.")
     assert answer.structured["next_steps"][0] == "Free space; then recheck"
     assert answer.structured["limitations"].startswith("Latest reading only.")

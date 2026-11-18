@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, CircleAlert, Database, MessageSquare } from 'lucide-react'
-import { ApiError, getFleet, getGraphActivity, getGraphMemory, getGraphShell, getGraphStorage, getTarget, type GraphActivity, type GraphMemory, type GraphMeter, type GraphStorage, type StorageFile } from './api'
+import { ApiError, getFleet, getGraphActivity, getGraphHistory, getGraphMemory, getGraphShell, getGraphStorage, getTarget, type GraphActivity, type GraphMemory, type GraphMeter, type GraphStorage, type StorageFile } from './api'
 import { ActiveDatabase } from './components/ActiveDatabase'
 import { HealthBadge } from './components/HealthBadge'
 import { StatePanel } from './components/StatePanel'
@@ -12,6 +12,8 @@ const LOADING = 'Loading the current snapshot…'
 const NEEDS_SAMPLE = 'Rate needs a second sample.'
 const RATE_NOT_COLLECTED = 'Not collected.'
 const RATE_CAPTION = 'Since the previous refresh on this page.'
+/** A second reading soon after the page opens, so a live rate does not wait for the refresh interval. */
+export const QUICK_SAMPLE_MS = 3000
 const RATE_COUNTERS = [
   ['physical reads', 'Physical reads', 'blks/s'],
   ['redo entries', 'Redo entries', 'redo ents/s'],
@@ -29,7 +31,7 @@ const SGA_BACK = ['java pool size', 'large pool size', 'redo buffers', 'redo buf
 const PROGRAM_NAME = /\(([A-Z0-9_]+)\)/i
 
 type RateMeter = { label: string; unit: string; text: string; perSecond: number | null }
-type RateSample = { id: string; at: number; values: Record<string, number | null> }
+type RateSample = { id: string; at: number; values: Record<string, number | null>; stored?: boolean }
 
 function needsSample(): RateMeter[] {
   return RATE_COUNTERS.map(([, label, unit]) => ({ label, unit, text: NEEDS_SAMPLE, perSecond: null }))
@@ -97,6 +99,7 @@ export function GraphPage({
   const [activity, setActivity] = useState<GraphActivity | null>(null)
   const [activityError, setActivityError] = useState('')
   const [rates, setRates] = useState<RateMeter[]>(needsSample)
+  const [rateSince, setRateSince] = useState<number | null>(null)
   const [readingsPending, setReadingsPending] = useState(false)
   const [loading, setLoading] = useState(true)
   const [forbidden, setForbidden] = useState(false)
@@ -173,6 +176,23 @@ export function GraphPage({
       setStorageError('')
       setActivityError('')
       setRates(needsSample())
+      setRateSince(null)
+    }
+    // The first reading of a database also asks for the stored sample, and is followed by a quick second reading.
+    const opening = rateSample.current === null || rateSample.current.id !== id
+    let quickTimer: number | undefined
+    const applyActivity = (picture: GraphActivity) => {
+      const previous = rateSample.current
+      const sample: RateSample = {
+        id,
+        at: Date.now(),
+        values: Object.fromEntries((picture.counters ?? []).map((item) => [item.name, item.value])),
+      }
+      setRates(rateMeters(previous, sample))
+      setRateSince(previous && previous.id === id && previous.stored ? previous.at : null)
+      rateSample.current = sample
+      setActivity(picture)
+      setActivityError('')
     }
     setReadingsPending(true)
     const memoryPromise = getGraphMemory(id, controller.signal)
@@ -189,18 +209,28 @@ export function GraphPage({
         setStorage(null)
         setStorageError(reason instanceof ApiError ? reason.message : 'Could not read disk storage.')
       })
-    const activityPromise = getGraphActivity(id, controller.signal)
-      .then((picture) => {
+    const historyPromise = opening ? getGraphHistory(id, controller.signal) : Promise.resolve(null)
+    const activityPromise = Promise.all([getGraphActivity(id, controller.signal), historyPromise])
+      .then(([picture, history]) => {
         if (!active) return
-        const sample: RateSample = {
-          id,
-          at: Date.now(),
-          values: Object.fromEntries((picture.counters ?? []).map((item) => [item.name, item.value])),
+        const stored = history?.samples[history.samples.length - 1]
+        // A stored sample only seconds old would give a noisy average; the quick reading covers that case.
+        if (stored && stored.age_seconds >= 10 && (rateSample.current === null || rateSample.current.id !== id)) {
+          rateSample.current = {
+            id,
+            at: Date.now() - stored.age_seconds * 1000,
+            values: Object.fromEntries(stored.counters.map((item) => [item.name, item.value])),
+            stored: true,
+          }
         }
-        setRates(rateMeters(rateSample.current, sample))
-        rateSample.current = sample
-        setActivity(picture)
-        setActivityError('')
+        applyActivity(picture)
+        if (opening) {
+          quickTimer = window.setTimeout(() => {
+            getGraphActivity(id, controller.signal)
+              .then((next) => { if (active) applyActivity(next) })
+              .catch(() => { /* The regular refresh takes the next sample. */ })
+          }, QUICK_SAMPLE_MS)
+        }
       })
       .catch((reason: unknown) => {
         if (!active || (reason instanceof DOMException && reason.name === 'AbortError')) return
@@ -213,6 +243,7 @@ export function GraphPage({
     })
     return () => {
       active = false
+      if (quickTimer !== undefined) window.clearTimeout(quickTimer)
       controller.abort()
     }
   }, [target, readingKey])
@@ -306,7 +337,7 @@ export function GraphPage({
             </div>
             <ServerProcesses memory={memory} error={memoryError} activity={activity} activityError={activityError} />
             <div className="graph-column">
-              <RateStrip meters={rates} />
+              <RateStrip meters={rates} since={rateSince} />
               <SgaCard memory={memory} error={memoryError} />
             </div>
             <BackgroundCard memory={memory} error={memoryError} />
@@ -456,9 +487,14 @@ function ServerProcesses({
   )
 }
 
-function RateStrip({ meters }: { meters: RateMeter[] }) {
+function RateStrip({ meters, since }: { meters: RateMeter[]; since: number | null }) {
   const widest = Math.max(0, ...meters.map((item) => item.perSecond ?? 0))
   const measured = meters.some((item) => item.perSecond != null)
+  const caption = !measured
+    ? 'Rates come from two refreshes of this page.'
+    : since != null
+      ? `Average since the stored sample at ${new Date(since).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}. A live rate follows.`
+      : RATE_CAPTION
   return (
     <section className="panel graph-card rate-strip" aria-label="Rate meters">
       <ul>
@@ -476,7 +512,7 @@ function RateStrip({ meters }: { meters: RateMeter[] }) {
           )
         })}
       </ul>
-      <p>{measured ? RATE_CAPTION : 'Rates come from two refreshes of this page.'}</p>
+      <p>{caption}</p>
     </section>
   )
 }

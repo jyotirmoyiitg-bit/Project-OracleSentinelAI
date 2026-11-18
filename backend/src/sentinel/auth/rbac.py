@@ -9,15 +9,15 @@ CANONICAL_ROLES = frozenset({"viewer", "operator", "dba", "platform_admin", "sec
 _ALIASES = {"admin": "platform_admin", "auditor": "security_auditor"}
 _PERMISSIONS: dict[str, frozenset[str]] = {
     "viewer": frozenset({"dashboard.read"}),
-    "operator": frozenset({"dashboard.read", "incident.acknowledge", "proposal.read", "privileged.read"}),
+    "operator": frozenset({"dashboard.read", "incident.acknowledge", "proposal.read", "privileged.read", "agent.run"}),
     "dba": frozenset({
         "dashboard.read", "incident.acknowledge", "proposal.read", "proposal.create", "proposal.decide",
-        "database.manage", "privileged.read",
+        "database.manage", "privileged.read", "agent.run",
     }),
     "platform_admin": frozenset({
         "dashboard.read", "incident.acknowledge", "proposal.read", "proposal.create", "proposal.decide",
         "database.manage", "audit.read", "provider.read", "role.manage", "credential.rotate", "platform.read",
-        "config.write", "privileged.read", "privileged.execute",
+        "config.write", "privileged.read", "privileged.execute", "agent.run",
     }),
     "security_auditor": frozenset({"dashboard.read", "audit.read", "proposal.read", "privileged.read"}),
 }

@@ -81,6 +81,21 @@ class Settings(BaseSettings):
             "from the allowlist. The server validates each name and fixes the database."
         ),
     )
+    ai_supervisor_enabled: bool = Field(
+        default=True,
+        description=(
+            "On a database chat, let the model choose which specialist answers: Oracle knowledge, SQL draft, "
+            "this database, company policy, or a change request. The server checks every name it returns. "
+            "Off, or with no model, the fixed patterns decide."
+        ),
+    )
+    ai_snapshot_max_age_seconds: int = Field(
+        default=900, ge=0, le=86400,
+        description=(
+            "Answer a database question from an agent snapshot no older than this many seconds, "
+            "instead of reading Oracle again. 0 always reads live."
+        ),
+    )
     ai_fleet_max_databases: int = Field(
         default=25, ge=1, le=200,
         description="Most databases one fleet question reads live. The rest are reported as not read.",
@@ -88,6 +103,49 @@ class Settings(BaseSettings):
     ai_fleet_concurrency: int = Field(default=4, ge=1, le=16, description="Databases read at the same time for a fleet question")
     ai_fleet_database_timeout_seconds: int = Field(default=45, ge=5, le=180, description="Deadline for one database in a fleet question")
     ai_redact_sensitive_telemetry: bool = Field(default=True)
+    # GraphDB and WaitDB history. Stored only while the scheduler runs.
+    graph_history_enabled: bool = Field(
+        default=True,
+        description="Store counter samples so GraphDB and WaitDB open with their charts and meters filled",
+    )
+    graph_history_interval_seconds: int = Field(
+        default=300, ge=60, le=3600, description="Seconds between stored counter samples of one database",
+    )
+    graph_history_retention_hours: int = Field(
+        default=24, ge=1, le=168, description="Hours a stored counter sample is kept before it is deleted",
+    )
+    # Agents. Each of the first six can be overridden for one database.
+    agents_enabled: bool = Field(
+        default=False,
+        description="Turn the agents on. Off means no snapshot is collected and no investigation runs.",
+    )
+    agent_snapshot_packs: str = Field(
+        default="core,performance",
+        description="Snapshot packs collected by default: core, performance, configuration. Comma separated.",
+    )
+    agent_collect_sensitive: bool = Field(
+        default=True,
+        description=(
+            "Store readings that hold SQL text or session user names. "
+            "Stored rows are readable by an admin operator only."
+        ),
+    )
+    agent_snapshot_retention_days: int = Field(
+        default=14, ge=1, le=30, description="Days a snapshot is kept before it is deleted",
+    )
+    agent_snapshot_min_gap_seconds: int = Field(
+        default=300, ge=0, le=86400, description="Shortest time between two snapshot collections of one database",
+    )
+    agent_auto_investigate: bool = Field(
+        default=False, description="Investigate a new critical incident automatically, once per incident",
+    )
+    agent_max_steps: int = Field(default=6, ge=3, le=12, description="Most tool steps in one agent run")
+    agent_max_model_calls: int = Field(default=4, ge=0, le=8, description="Most model calls in one agent run")
+    agent_run_timeout_seconds: int = Field(default=180, ge=30, le=900, description="Deadline for one agent run")
+    agent_sweep_seconds: int = Field(
+        default=60, ge=15, le=3600,
+        description="How often new critical incidents are checked for an automatic investigation",
+    )
     ai_hosted_approved: bool = Field(
         default=False,
         description="Hosted chat stays disabled until this is set with a model, secret reference, and disclosure",
@@ -183,9 +241,10 @@ class Settings(BaseSettings):
     )
     knowledge_enabled: bool = Field(default=False, description="Schedule scans of the knowledge intake folders")
     knowledge_scan_interval_seconds: int = Field(default=300, ge=30, le=86400)
-    knowledge_max_file_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
-    knowledge_max_pages: int = Field(default=800, ge=1)
-    knowledge_parser_timeout_seconds: float = Field(default=30.0, ge=0.01, le=120)
+    knowledge_max_file_bytes: int = Field(default=64 * 1024 * 1024, ge=1)
+    # Oracle reference manuals run to several thousand pages.
+    knowledge_max_pages: int = Field(default=10000, ge=1)
+    knowledge_parser_timeout_seconds: float = Field(default=300.0, ge=0.01, le=900)
     knowledge_min_extracted_chars: int = Field(default=20, ge=1)
     knowledge_chunk_size: int = Field(default=800, ge=40)
     knowledge_chunk_overlap: int = Field(default=120, ge=0)
@@ -193,8 +252,21 @@ class Settings(BaseSettings):
         default="",
         description="Optional scanner executable. It receives the file path as its only argument; exit code 1 quarantines.",
     )
-    embedding_provider: str = Field(default="local", description="local or explicitly approved remote")
+    embedding_provider: str = Field(
+        default="local",
+        description="local (word hashing), ollama (an embedding model on this computer), or an approved remote service",
+    )
     embedding_model: str = Field(default="local-hashing-v1")
+    embedding_ollama_model: str = Field(
+        default="nomic-embed-text",
+        description="Embedding model served by Ollama. Used when embedding_provider is ollama.",
+    )
+    embedding_local_url: str = Field(
+        default="http://127.0.0.1:11434",
+        description="Ollama address for embeddings. It must be on this computer.",
+    )
+    embedding_batch_size: int = Field(default=32, ge=1, le=256, description="Passages sent to the embedding model at once")
+    embedding_timeout_seconds: float = Field(default=120.0, ge=5, le=600)
     embedding_dimensions: int = Field(default=EMBEDDING_DIMENSIONS)
     embedding_remote_url: str = Field(default="")
     embedding_remote_approved: bool = Field(
@@ -219,8 +291,17 @@ class Settings(BaseSettings):
                 "embedding_dimensions is fixed at "
                 f"{EMBEDDING_DIMENSIONS} until a migration changes the pgvector column",
             )
-        if self.embedding_provider not in {"local", "remote"}:
-            raise ValueError("embedding_provider must be local or remote")
+        if self.embedding_provider not in {"local", "ollama", "remote"}:
+            raise ValueError("embedding_provider must be local, ollama, or remote")
+        if self.embedding_provider == "ollama":
+            from urllib.parse import urlparse
+
+            host = (urlparse(self.embedding_local_url).hostname or "").lower()
+            if host not in {"localhost", "127.0.0.1", "::1"}:
+                raise ValueError("embedding_local_url must be on this computer when embedding_provider is ollama")
+            name = self.embedding_ollama_model.strip()
+            if not name or len(name) > 100 or not all(char.isalnum() or char in "._:/-" for char in name):
+                raise ValueError("embedding_ollama_model is not a valid model name")
         if self.knowledge_chunk_overlap >= self.knowledge_chunk_size:
             raise ValueError("knowledge_chunk_overlap must be smaller than knowledge_chunk_size")
         if self.embedding_provider == "remote" and (
@@ -282,6 +363,10 @@ class Settings(BaseSettings):
         if self.app_env.strip().lower() not in {"dev", "test", "production"}:
             raise ValueError("app_env must be dev, test, or production")
         self.app_env = self.app_env.strip().lower()
+        packs = [name.strip().lower() for name in self.agent_snapshot_packs.split(",") if name.strip()]
+        if not packs or set(packs) - {"core", "performance", "configuration"}:
+            raise ValueError("agent_snapshot_packs must list core, performance, or configuration")
+        self.agent_snapshot_packs = ",".join(dict.fromkeys(packs))
         if self.ai_fallback_provider != "disabled":
             raise ValueError("ai_fallback_provider must stay disabled")
         if self.ai_timeout_seconds < 1 or self.ai_timeout_seconds > 120:

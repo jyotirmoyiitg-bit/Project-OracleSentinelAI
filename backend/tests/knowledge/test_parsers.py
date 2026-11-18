@@ -114,12 +114,12 @@ def test_chunks_overlap_and_keep_the_heading() -> None:
 
 
 def test_local_embeddings_are_deterministic_and_closer_for_related_text() -> None:
-    provider = HashingEmbeddingProvider(128, "local-hashing-v1")
+    provider = HashingEmbeddingProvider(768, "local-hashing-v1")
     archivelog = provider.embed_query_sync("archivelog fast recovery area")
     related = provider.embed_query_sync("archivelog fast recovery area is full")
     unrelated = provider.embed_query_sync("unrelated zebra quantum pastry")
     assert provider.embed_query_sync("archivelog fast recovery area") == archivelog
-    assert len(archivelog) == 128
+    assert len(archivelog) == 768
     assert _dot(archivelog, related) > _dot(archivelog, unrelated)
 
 

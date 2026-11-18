@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oracle Sentinel AI — Architecture, version 2</title>
+  <style>
+    :root {
+      --ink: #1c2838;
+      --muted: #5c6b80;
+      --line: #d5deea;
+      --paper: #f3f6fb;
+      --card: #ffffff;
+      --portal: #1d4e89;
+      --api: #0f6e6e;
+      --graph: #1e40af;
+      --mcp: #b45309;
+      --agent: #a21caf;
+      --oracle: #9a3412;
+      --data: #1e4d3a;
+      --model: #4c1d95;
+      --off: #9f1239;
+      --shadow: 0 10px 30px rgba(28, 40, 56, 0.06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 400px at 10% -10%, #e7eef8 0%, transparent 50%),
+        var(--paper);
+      font: 16px/1.5 "Segoe UI", Calibri, sans-serif;
+    }
+    main { max-width: 1120px; margin: 0 auto; padding: 40px 24px 72px; }
+    header h1 { margin: 0 0 4px; font-size: 34px; letter-spacing: -0.03em; }
+    header .version { margin: 0 0 10px; font-size: 14px; font-weight: 650; color: var(--api); }
+    header p { margin: 0; max-width: 780px; color: var(--muted); }
+    nav.toc { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 18px 0 0; font-size: 14px; }
+    nav.toc a { color: var(--portal); text-decoration: none; font-weight: 650; }
+    nav.toc a:hover { text-decoration: underline; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+      padding: 6px 12px; font-size: 13px; font-weight: 650;
+    }
+    .swatch { width: 12px; height: 12px; border-radius: 3px; }
+    section { margin-top: 40px; }
+    h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: -0.02em; }
+    h3 { margin: 22px 0 6px; font-size: 16px; }
+    .lead { margin: 0 0 14px; color: var(--muted); max-width: 840px; }
+    figure {
+      margin: 0; background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; box-shadow: var(--shadow); overflow: hidden;
+    }
+    .scroll { overflow-x: auto; }
+    .scroll svg { min-width: 760px; }
+    figcaption {
+      padding: 14px 18px 16px; color: var(--muted); font-size: 14px;
+      border-top: 1px solid var(--line);
+    }
+    svg { display: block; width: 100%; height: auto; }
+    .box { fill: #fff; stroke-width: 1.6; }
+    .title { font: 700 15px "Segoe UI", sans-serif; fill: var(--ink); }
+    .cell { font: 700 14px "Segoe UI", sans-serif; fill: var(--ink); }
+    .sub { font: 13px "Segoe UI", sans-serif; fill: var(--muted); }
+    .small { font: 12px "Segoe UI", sans-serif; fill: var(--muted); }
+    .label { font: 12px "Segoe UI", sans-serif; fill: #3e4d63; }
+    .head { font: 700 12px "Segoe UI", sans-serif; fill: var(--muted); letter-spacing: 0.06em; }
+    .when { font: 700 11px "Segoe UI", sans-serif; letter-spacing: 0.06em; }
+    .mono { font: 12px Consolas, "Cascadia Mono", monospace; fill: #3e4d63; }
+    .wire { stroke: #64748b; stroke-width: 1.6; fill: none; }
+    .tablewrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 9px 14px; border-bottom: 1px solid var(--line); }
+    th { font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: #f8fafc; }
+    tr:last-child td { border-bottom: 0; }
+    td code, p code, li code, figcaption code {
+      font: 13px Consolas, "Cascadia Mono", monospace; background: #eef2f7; border-radius: 4px; padding: 1px 5px;
+    }
+    td:first-child { font-weight: 650; white-space: nowrap; }
+    .principles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 14px; }
+    .principles article {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px;
+    }
+    .principles h3 { margin: 0 0 4px; font-size: 15px; }
+    .principles p { margin: 0; color: var(--muted); font-size: 14px; }
+    footer { margin-top: 36px; color: var(--muted); font-size: 13px; }
+    @media (max-width: 800px) {
+      .principles { grid-template-columns: 1fr; }
+      header h1 { font-size: 28px; }
+      td:first-child { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Oracle Sentinel AI</h1>
+    <p class="version">Architecture, version 2 · 15 November 2026 · through Phase 25 · schema revision 0012</p>
+    <p>One portal and one API process monitor every registered Oracle database through a common read-only account. This version adds WaitDB, the fleet copilot, the agents, stored graph history, and the copilot supervisor with local embeddings, and replaces <a href="architecture.html">version 1</a>, which described the system up to GraphDB.</p>
+    <nav class="toc" aria-label="Sections">
+      <a href="#architecture">1. Architecture diagram</a>
+      <a href="#dataflow">2. Data flow diagram</a>
+      <a href="#implementation">3. Implementation diagram</a>
+      <a href="#stack">4. Technology and limits</a>
+      <a href="#changes">5. Changes since version 1</a>
+    </nav>
+    <div class="legend">
+      <span class="chip"><i class="swatch" style="background:#1d4e89"></i> Portal :5173</span>
+      <span class="chip"><i class="swatch" style="background:#0f6e6e"></i> API :8000</span>
+      <span class="chip"><i class="swatch" style="background:#1e4d3a"></i> Collection and PostgreSQL</span>
+      <span class="chip"><i class="swatch" style="background:#1e40af"></i> GraphDB and WaitDB</span>
+      <span class="chip"><i class="swatch" style="background:#b45309"></i> Copilot and the readings server</span>
+      <span class="chip"><i class="swatch" style="background:#a21caf"></i> Agents</span>
+      <span class="chip"><i class="swatch" style="background:#9a3412"></i> Oracle, read-only GSYSTEM</span>
+      <span class="chip"><i class="swatch" style="background:#4c1d95"></i> Language model</span>
+      <span class="chip"><i class="swatch" style="background:#9f1239"></i> Execution, off</span>
+    </div>
+  </header>
+
+  <section id="architecture">
+    <h2>1. Architecture diagram</h2>
+    <p class="lead">The API is one process. It holds five capabilities behind one sign-in and permission gate. Oracle is read in two ways, both from the same fixed catalog: inside the API process, or through a short-lived readings server that the API starts for one request.</p>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 1080 716" role="img" aria-labelledby="archTitle archDesc">
+        <title id="archTitle">Architecture diagram</title>
+        <desc id="archDesc">The browser reaches the API through the portal. The API holds collection, GraphDB and WaitDB, the copilot, the agents, and knowledge behind one sign-in gate. Collection and GraphDB read Oracle with the fixed catalog in the API process. The copilot and the agents read Oracle through the readings server. Everything is stored in PostgreSQL. The language model is optional.</desc>
+        <defs>
+          <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#64748b"></path>
+          </marker>
+        </defs>
+
+        <!-- row 1: people and identity -->
+        <rect x="36" y="20" width="300" height="68" rx="12" class="box" stroke="#1d4e89"></rect>
+        <text x="56" y="47" class="title">Operator browser</text>
+        <text x="56" y="69" class="sub">Five roles. Session cookie.</text>
+        <rect x="390" y="20" width="300" height="68" rx="12" class="box" stroke="#1d4e89"></rect>
+        <text x="410" y="47" class="title">Portal</text>
+        <text x="410" y="69" class="sub">React, Vite on :5173. Proxies /api.</text>
+        <rect x="744" y="20" width="300" height="68" rx="12" class="box" stroke="#64748b"></rect>
+        <text x="764" y="47" class="title">Directory and mail</text>
+        <text x="764" y="69" class="sub">Active Directory or OIDC. SMTP.</text>
+        <path d="M336 54 H390" class="wire" marker-end="url(#a1)"></path>
+        <path d="M540 88 V128" class="wire" marker-end="url(#a1)"></path>
+        <path d="M894 128 V88" class="wire" marker-start="url(#a1)" marker-end="url(#a1)"></path>
+        <text x="550" y="113" class="label">/api</text>
+        <text x="904" y="113" class="label">sign-in check, alerts</text>
+
+        <!-- API process -->
+        <rect x="36" y="128" width="1008" height="392" rx="14" fill="#f3faf9" stroke="#0f6e6e" stroke-width="1.6"></rect>
+        <text x="56" y="156" class="title">Sentinel API — one process on :8000</text>
+        <rect x="50" y="168" width="980" height="40" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="66" y="193" class="sub">Gate: sign-in, then the role's permission, then an audit row on every route that changes something.</text>
+
+        <!-- capabilities -->
+        <rect x="50" y="222" width="186" height="164" rx="12" fill="#f4faf6" stroke="#1e4d3a" stroke-width="1.6"></rect>
+        <text x="64" y="244" class="when" fill="#1e4d3a">ALWAYS ON</text>
+        <text x="64" y="266" class="title">Collection</text>
+        <text x="64" y="288" class="small">Scheduler, six probes</text>
+        <text x="64" y="306" class="small">Alert log and rules</text>
+        <text x="64" y="324" class="small">Incidents, notifications</text>
+        <text x="64" y="342" class="small">Compliance, forecast</text>
+        <text x="64" y="368" class="small">No model</text>
+
+        <rect x="248" y="222" width="186" height="164" rx="12" fill="#eef2ff" stroke="#1e40af" stroke-width="1.6"></rect>
+        <text x="262" y="244" class="when" fill="#1e40af">ON OPEN</text>
+        <text x="262" y="266" class="title">Database views</text>
+        <text x="262" y="288" class="small">GraphDB, WaitDB, and four</text>
+        <text x="262" y="306" class="small">sections. One logon each</text>
+        <text x="262" y="324" class="small">Opens with stored history</text>
+        <text x="262" y="342" class="small">Paths: administrator only</text>
+        <text x="262" y="368" class="small">No model</text>
+
+        <rect x="446" y="222" width="186" height="164" rx="12" fill="#fff8f1" stroke="#b45309" stroke-width="1.6"></rect>
+        <text x="460" y="244" class="when" fill="#b45309">ON ASK</text>
+        <text x="460" y="266" class="title">Copilot</text>
+        <text x="460" y="288" class="small">Database chat, fleet chat</text>
+        <text x="460" y="306" class="small">Supervisor picks specialist</text>
+        <text x="460" y="324" class="small">Server checks every name</text>
+        <text x="460" y="342" class="small">Answer shows who replied</text>
+        <text x="460" y="368" class="small">Model optional</text>
+
+        <rect x="644" y="222" width="186" height="164" rx="12" fill="#fdf4ff" stroke="#a21caf" stroke-width="1.6"></rect>
+        <text x="658" y="244" class="when" fill="#a21caf">ON REQUEST</text>
+        <text x="658" y="266" class="title">Agents</text>
+        <text x="658" y="288" class="small">Collector stores snapshots</text>
+        <text x="658" y="306" class="small">Investigator runs playbook</text>
+        <text x="658" y="324" class="small">Verifier checks the cause</text>
+        <text x="658" y="342" class="small">Off until turned on</text>
+        <text x="658" y="368" class="small">Local model only</text>
+
+        <rect x="842" y="222" width="186" height="164" rx="12" fill="#f3faf9" stroke="#0f6e6e" stroke-width="1.6"></rect>
+        <text x="856" y="244" class="when" fill="#0f6e6e">ON NEW FILE</text>
+        <text x="856" y="266" class="title">Knowledge</text>
+        <text x="856" y="288" class="small">Folder intake and upload</text>
+        <text x="856" y="306" class="small">Local embedding model</text>
+        <text x="856" y="324" class="small">Meaning plus word search</text>
+        <text x="856" y="342" class="small">Citations, per-role access</text>
+        <text x="856" y="368" class="small">No model</text>
+
+        <!-- Oracle access -->
+        <path d="M143 386 V418" class="wire" marker-end="url(#a1)"></path>
+        <path d="M341 386 V418" class="wire" marker-end="url(#a1)"></path>
+        <path d="M539 386 V418" class="wire" marker-end="url(#a1)"></path>
+        <path d="M737 386 V418" class="wire" marker-end="url(#a1)"></path>
+
+        <rect x="50" y="418" width="384" height="88" rx="12" class="box" stroke="#9a3412"></rect>
+        <text x="66" y="444" class="title">Fixed catalog, in the API process</text>
+        <text x="66" y="466" class="sub">adapters/oracle. Named statements only.</text>
+        <text x="66" y="486" class="sub">Used by collection, GraphDB, and WaitDB.</text>
+
+        <rect x="446" y="418" width="384" height="88" rx="12" class="box" stroke="#b45309" stroke-dasharray="7 5"></rect>
+        <text x="462" y="444" class="title">Readings server, started per request</text>
+        <text x="462" y="466" class="sub">Same catalog over stdin and stdout. No listen port.</text>
+        <text x="462" y="486" class="sub">28 named readings. Takes an alias, never SQL.</text>
+
+        <rect x="842" y="418" width="186" height="88" rx="12" class="box" stroke="#9f1239" stroke-dasharray="7 5"></rect>
+        <text x="856" y="444" class="title">Proposals</text>
+        <text x="856" y="466" class="small">Stored, approved, rejected</text>
+        <text x="856" y="484" class="small">Execution is refused</text>
+
+        <!-- outside the API -->
+        <path d="M200 506 V566" class="wire" marker-end="url(#a1)"></path>
+        <text x="210" y="546" class="label">fixed SQL as GSYSTEM</text>
+        <path d="M470 506 V542 H400 V566" class="wire" marker-end="url(#a1)"></path>
+        <path d="M596 520 V566" class="wire" marker-start="url(#a1)" marker-end="url(#a1)"></path>
+        <text x="606" y="548" class="label">store and read</text>
+        <path d="M900 520 V566" class="wire" marker-start="url(#a1)" marker-end="url(#a1)"></path>
+        <text x="910" y="548" class="label">rows out, text back</text>
+
+        <rect x="36" y="566" width="400" height="130" rx="14" class="box" stroke="#9a3412"></rect>
+        <text x="56" y="594" class="title">Registered Oracle databases</text>
+        <text x="56" y="616" class="sub">One TNS alias each. No agent on the host.</text>
+        <text x="56" y="636" class="sub">GSYSTEM: CREATE SESSION and SELECT on named views.</text>
+        <text x="56" y="656" class="sub">No AWR, ASH, or ADDM. No SQL from an operator</text>
+        <text x="56" y="676" class="sub">or from the model.</text>
+
+        <rect x="456" y="566" width="280" height="130" rx="14" class="box" stroke="#1e4d3a"></rect>
+        <text x="476" y="594" class="title">PostgreSQL + pgvector</text>
+        <text x="476" y="616" class="sub">Registry, observations, incidents</text>
+        <text x="476" y="636" class="sub">Knowledge, chat, audit, settings</text>
+        <text x="476" y="656" class="sub">Agent snapshots, runs, findings</text>
+        <text x="476" y="676" class="sub">30 tables at revision 0012</text>
+
+        <rect x="756" y="566" width="288" height="130" rx="14" class="box" stroke="#4c1d95"></rect>
+        <text x="776" y="594" class="title">Language model</text>
+        <text x="776" y="616" class="sub">Local: Ollama.</text>
+        <text x="776" y="636" class="sub">Hosted: Claude or OpenAI, if approved.</text>
+        <text x="776" y="656" class="sub">Agents send evidence to local only.</text>
+        <text x="776" y="676" class="sub">A local failure stays local.</text>
+      </svg>
+      </div>
+      <figcaption>Collection, GraphDB, and WaitDB call the catalog inside the API process. A copilot reading, a fleet question that reads live, and an agent snapshot each start <code>python -m sentinel.mcp</code>, exchange messages on stdin and stdout, and let it exit. Both routes run the same named statements as GSYSTEM. Proposals have no arrow to Oracle: the execute route is refused and privileged execution answers 501.</figcaption>
+    </figure>
+
+    <h3>Capabilities</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Capability</th><th>Runs when</th><th>Reads Oracle through</th><th>Uses a model</th><th>Who may use it</th></tr></thead>
+        <tbody>
+          <tr><td>Collection, rules, incidents</td><td>On a timer, when the scheduler is enabled</td><td>Catalog in the API process</td><td>No</td><td>Every role reads the result</td></tr>
+          <tr><td>GraphDB, WaitDB, MemoryDB, StorageDB, ParameterDB, AlertDB</td><td>When the tab is open and on its refresh interval. GraphDB and WaitDB also read 3 seconds after opening, and their counter samples are stored on a timer</td><td>Catalog in the API process, one logon per picture</td><td>No</td><td>Every role. File and segment listings, parameter values that hold a path or an address, and paths in alert lines: administrator</td></tr>
+          <tr><td>Database copilot</td><td>On a question in a database workspace</td><td>Readings server, one reading per tool</td><td>Optional. A supervisor call picks the specialist and up to three readings, then the model writes the answer</td><td>Every role. Some readings: administrator</td></tr>
+          <tr><td>Fleet copilot</td><td>On a question on the fleet page</td><td>Stored data first. Readings server for programs and datafile sizes</td><td>Optional. It writes the answer from the tool rows</td><td>Every role</td></tr>
+          <tr><td>Agents</td><td>On a button, or for a new critical incident when that is turned on</td><td>Readings server, many readings on one logon</td><td>Local model only, for the plan and the cause</td><td>Operator, DBA, administrator</td></tr>
+          <tr><td>Knowledge</td><td>When a file arrives in an intake folder or is uploaded</td><td>Does not read Oracle</td><td>An embedding model on this computer. No language model</td><td>Search by every role, within the document's access list</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="dataflow">
+    <h2>2. Data flow diagram</h2>
+    <p class="lead">Seven paths move data. Each row is one path, read left to right: what starts it, what the API does, how Oracle is read, what is written to PostgreSQL, and what the operator receives. A dashed cell means the path skips that stage.</p>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 1080 836" role="img" aria-labelledby="flowTitle flowDesc">
+        <title id="flowTitle">Data flow diagram</title>
+        <desc id="flowDesc">Seven data paths in five stages. Scheduled collection and GraphDB read Oracle in the API process. Database chat, fleet chat, and agent snapshots read Oracle through the readings server. GraphDB stores counter samples on a timer. Knowledge does not read Oracle. An investigation takes its evidence from an agent snapshot.</desc>
+        <defs>
+          <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#64748b"></path>
+          </marker>
+        </defs>
+
+        <text x="36" y="38" class="head">STARTS WITH</text>
+        <text x="242" y="38" class="head">IN THE API</text>
+        <text x="448" y="38" class="head">ORACLE READ</text>
+        <text x="654" y="38" class="head">POSTGRESQL</text>
+        <text x="860" y="38" class="head">OPERATOR RECEIVES</text>
+
+        <!-- 1. collection -->
+        <g>
+          <rect x="36" y="52" width="184" height="96" rx="10" fill="#f4faf6" stroke="#1e4d3a" stroke-width="1.6"></rect>
+          <text x="48" y="76" class="cell">1. Collection</text>
+          <text x="48" y="96" class="small">Timer per alias and probe</text>
+          <text x="48" y="113" class="small">Six probes, 60 s to 30 min</text>
+          <text x="48" y="130" class="small">Alert log every 120 s</text>
+          <rect x="242" y="52" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="254" y="76" class="cell">Collectors and rules</text>
+          <text x="254" y="96" class="small">Normalise the rows</text>
+          <text x="254" y="113" class="small">Evaluate rules and policies</text>
+          <text x="254" y="130" class="small">Forecast from history</text>
+          <rect x="448" y="52" width="184" height="96" rx="10" class="box" stroke="#9a3412"></rect>
+          <text x="460" y="76" class="cell">In the API process</text>
+          <text x="460" y="96" class="small">Fixed probe statements</text>
+          <text x="460" y="113" class="small">as GSYSTEM</text>
+          <rect x="654" y="52" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="76" class="cell">History</text>
+          <text x="666" y="96" class="small">observations, poll_runs</text>
+          <text x="666" y="113" class="small">diagnostic_events</text>
+          <text x="666" y="130" class="small">incidents, policy_results</text>
+          <rect x="860" y="52" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="76" class="cell">Dashboard, incidents</text>
+          <text x="872" y="96" class="small">Health tiles, forecast</text>
+          <text x="872" y="113" class="small">Incident centre, bell</text>
+          <text x="872" y="130" class="small">Email by SMTP</text>
+          <path d="M220 100 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 100 H448" class="wire" marker-end="url(#a2)"></path>
+          <path d="M632 100 H654" class="wire" marker-end="url(#a2)"></path>
+          <path d="M838 100 H860" class="wire" marker-end="url(#a2)"></path>
+        </g>
+
+        <!-- 2. GraphDB, WaitDB -->
+        <g>
+          <rect x="36" y="160" width="184" height="96" rx="10" fill="#eef2ff" stroke="#1e40af" stroke-width="1.6"></rect>
+          <text x="48" y="184" class="cell">2. GraphDB, WaitDB</text>
+          <text x="48" y="204" class="small">Tab opens, again 3 s later,</text>
+          <text x="48" y="221" class="small">then the refresh interval.</text>
+          <text x="48" y="238" class="small">Sampler timer, every 5 min</text>
+          <rect x="242" y="160" width="184" height="96" rx="10" class="box" stroke="#1e40af"></rect>
+          <text x="254" y="184" class="cell">Graph loaders</text>
+          <text x="254" y="204" class="small">Memory, storage, activity,</text>
+          <text x="254" y="221" class="small">waits, and four sections</text>
+          <text x="254" y="238" class="small">Role trims paths, listings</text>
+          <rect x="448" y="160" width="184" height="96" rx="10" class="box" stroke="#9a3412"></rect>
+          <text x="460" y="184" class="cell">In the API process</text>
+          <text x="460" y="204" class="small">One logon per picture</text>
+          <text x="460" y="221" class="small">Fixed statements on</text>
+          <text x="460" y="238" class="small">V$ and DBA views</text>
+          <rect x="654" y="160" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="184" class="cell">Counter samples</text>
+          <text x="666" y="204" class="small">One row per sweep, kept</text>
+          <text x="666" y="221" class="small">24 hours. The page reads</text>
+          <text x="666" y="238" class="small">the last hour on open</text>
+          <rect x="860" y="160" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="184" class="cell">Live picture</text>
+          <text x="872" y="204" class="small">SGA, disk, parameters, alerts</text>
+          <text x="872" y="221" class="small">Meters and charts filled</text>
+          <text x="872" y="238" class="small">on open, live after 3 s</text>
+          <path d="M220 208 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 208 H448" class="wire" marker-end="url(#a2)"></path>
+          <path d="M632 208 H654" class="wire" marker-end="url(#a2)"></path>
+          <path d="M838 208 H860" class="wire" marker-end="url(#a2)"></path>
+        </g>
+
+        <!-- 3. database chat -->
+        <g>
+          <rect x="36" y="268" width="184" height="96" rx="10" fill="#fff8f1" stroke="#b45309" stroke-width="1.6"></rect>
+          <text x="48" y="292" class="cell">3. Database chat</text>
+          <text x="48" y="312" class="small">A question in plain words</text>
+          <text x="48" y="329" class="small">SQL in the text is refused</text>
+          <rect x="242" y="268" width="184" height="96" rx="10" class="box" stroke="#b45309"></rect>
+          <text x="254" y="292" class="cell">Orchestrator</text>
+          <text x="254" y="312" class="small">Supervisor picks specialist</text>
+          <text x="254" y="329" class="small">and up to 3 readings.</text>
+          <text x="254" y="346" class="small">Server checks each name</text>
+          <rect x="448" y="268" width="184" height="96" rx="10" class="box" stroke="#b45309" stroke-dasharray="7 5"></rect>
+          <text x="460" y="292" class="cell">Readings server</text>
+          <text x="460" y="312" class="small">A recent snapshot (path 5),</text>
+          <text x="460" y="329" class="small">else one named reading.</text>
+          <text x="460" y="346" class="small">Alias only, no SQL</text>
+          <rect x="654" y="268" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="292" class="cell">Chat and audit</text>
+          <text x="666" y="312" class="small">chat_threads</text>
+          <text x="666" y="329" class="small">chat_messages</text>
+          <text x="666" y="346" class="small">tool_executions</text>
+          <rect x="860" y="268" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="292" class="cell">Answer with evidence</text>
+          <text x="872" y="312" class="small">Reading table, citations</text>
+          <text x="872" y="329" class="small">Narration when a model</text>
+          <text x="872" y="346" class="small">is on. Confidence shown</text>
+          <path d="M220 316 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 316 H448" class="wire" marker-end="url(#a2)"></path>
+          <path d="M632 316 H654" class="wire" marker-end="url(#a2)"></path>
+          <path d="M838 316 H860" class="wire" marker-end="url(#a2)"></path>
+        </g>
+
+        <!-- 4. fleet chat -->
+        <g>
+          <rect x="36" y="376" width="184" height="96" rx="10" fill="#fff8f1" stroke="#b45309" stroke-width="1.6"></rect>
+          <text x="48" y="400" class="cell">4. Fleet chat</text>
+          <text x="48" y="420" class="small">A question about every</text>
+          <text x="48" y="437" class="small">database at once</text>
+          <rect x="242" y="376" width="184" height="96" rx="10" class="box" stroke="#b45309"></rect>
+          <text x="254" y="400" class="cell">Fleet router</text>
+          <text x="254" y="420" class="small">Fixed fleet tools</text>
+          <text x="254" y="437" class="small">Stored data is preferred</text>
+          <text x="254" y="454" class="small">Text never reaches SQL</text>
+          <rect x="448" y="376" width="184" height="96" rx="10" class="box" stroke="#b45309" stroke-dasharray="7 5"></rect>
+          <text x="460" y="400" class="cell">Readings server</text>
+          <text x="460" y="420" class="small">Programs, datafile sizes:</text>
+          <text x="460" y="437" class="small">one reading per database</text>
+          <text x="460" y="454" class="small">4 at a time, 45 s each</text>
+          <rect x="654" y="376" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="400" class="cell">Stored data, chat</text>
+          <text x="666" y="420" class="small">Reads incidents, policy</text>
+          <text x="666" y="437" class="small">results, current readings</text>
+          <text x="666" y="454" class="small">Writes chat and audit</text>
+          <rect x="860" y="376" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="400" class="cell">Fleet answer</text>
+          <text x="872" y="420" class="small">Which databases match</text>
+          <text x="872" y="437" class="small">Model writes it from</text>
+          <text x="872" y="454" class="small">the tool rows</text>
+          <path d="M220 424 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 424 H448" class="wire" marker-end="url(#a2)"></path>
+          <path d="M632 424 H654" class="wire" marker-end="url(#a2)"></path>
+          <path d="M838 424 H860" class="wire" marker-end="url(#a2)"></path>
+        </g>
+
+        <!-- 5. agent snapshot -->
+        <g>
+          <rect x="36" y="484" width="184" height="96" rx="10" fill="#fdf4ff" stroke="#a21caf" stroke-width="1.6"></rect>
+          <text x="48" y="508" class="cell">5. Agent snapshot</text>
+          <text x="48" y="528" class="small">Collect button, fleet</text>
+          <text x="48" y="545" class="small">button, or the collect</text>
+          <text x="48" y="562" class="small">step of path 6</text>
+          <rect x="242" y="484" width="184" height="96" rx="10" class="box" stroke="#a21caf"></rect>
+          <text x="254" y="508" class="cell">Collector, no model</text>
+          <text x="254" y="528" class="small">Packs: core, performance,</text>
+          <text x="254" y="545" class="small">configuration</text>
+          <text x="254" y="562" class="small">Minimum gap 300 s</text>
+          <rect x="448" y="484" width="184" height="96" rx="10" class="box" stroke="#b45309" stroke-dasharray="7 5"></rect>
+          <text x="460" y="508" class="cell">Readings server</text>
+          <text x="460" y="528" class="small">collect_snapshot</text>
+          <text x="460" y="545" class="small">Many readings on</text>
+          <text x="460" y="562" class="small">one logon</text>
+          <rect x="654" y="484" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="508" class="cell">Snapshots</text>
+          <text x="666" y="528" class="small">evidence_snapshots</text>
+          <text x="666" y="545" class="small">Kept 14 days by default</text>
+          <text x="666" y="562" class="small">Restricted rows flagged</text>
+          <rect x="860" y="484" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="508" class="cell">What changed</text>
+          <text x="872" y="528" class="small">Compared with the</text>
+          <text x="872" y="545" class="small">previous snapshot</text>
+          <text x="872" y="562" class="small">Restricted rows: admin</text>
+          <path d="M220 532 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 532 H448" class="wire" marker-end="url(#a2)"></path>
+          <path d="M632 532 H654" class="wire" marker-end="url(#a2)"></path>
+          <path d="M838 532 H860" class="wire" marker-end="url(#a2)"></path>
+        </g>
+
+        <!-- 6. investigation -->
+        <g>
+          <rect x="36" y="592" width="184" height="96" rx="10" fill="#fdf4ff" stroke="#a21caf" stroke-width="1.6"></rect>
+          <text x="48" y="616" class="cell">6. Investigation</text>
+          <text x="48" y="636" class="small">Investigate button, or a</text>
+          <text x="48" y="653" class="small">new critical incident</text>
+          <text x="48" y="670" class="small">(automatic is off)</text>
+          <rect x="242" y="592" width="184" height="96" rx="10" class="box" stroke="#a21caf"></rect>
+          <text x="254" y="616" class="cell">Supervisor</text>
+          <text x="254" y="636" class="small">Plan, collect, compare,</text>
+          <text x="254" y="653" class="small">look up, conclude, verify</text>
+          <text x="254" y="670" class="small">Local model: plan, cause</text>
+          <rect x="448" y="592" width="184" height="96" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="6 5"></rect>
+          <text x="460" y="616" class="cell" fill="#5c6b80">Through path 5</text>
+          <text x="460" y="636" class="small">A fresh snapshot of the</text>
+          <text x="460" y="653" class="small">playbook's readings</text>
+          <rect x="654" y="592" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="616" class="cell">Runs and findings</text>
+          <text x="666" y="636" class="small">agent_runs, agent_steps</text>
+          <text x="666" y="653" class="small">agent_findings</text>
+          <text x="666" y="670" class="small">audit_events</text>
+          <rect x="860" y="592" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="616" class="cell">Finding</text>
+          <text x="872" y="636" class="small">Cause, evidence, next</text>
+          <text x="872" y="653" class="small">steps. A rejected cause</text>
+          <text x="872" y="670" class="small">shows the evidence only</text>
+          <path d="M220 640 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 640 H448" class="wire" stroke-dasharray="5 4" marker-end="url(#a2)"></path>
+          <path d="M632 640 H654" class="wire" stroke-dasharray="5 4" marker-end="url(#a2)"></path>
+          <path d="M838 640 H860" class="wire" marker-end="url(#a2)"></path>
+          <path d="M540 592 V580" class="wire" stroke-dasharray="5 4" marker-end="url(#a2)"></path>
+        </g>
+
+        <!-- 7. knowledge -->
+        <g>
+          <rect x="36" y="700" width="184" height="96" rx="10" fill="#f3faf9" stroke="#0f6e6e" stroke-width="1.6"></rect>
+          <text x="48" y="724" class="cell">7. Knowledge</text>
+          <text x="48" y="744" class="small">A file in an intake folder,</text>
+          <text x="48" y="761" class="small">or an upload in the portal</text>
+          <rect x="242" y="700" width="184" height="96" rx="10" class="box" stroke="#0f6e6e"></rect>
+          <text x="254" y="724" class="cell">Indexer</text>
+          <text x="254" y="744" class="small">Parse, chunk, embed with</text>
+          <text x="254" y="761" class="small">the local model. Unchanged</text>
+          <text x="254" y="778" class="small">files are skipped</text>
+          <rect x="448" y="700" width="184" height="96" rx="10" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.4" stroke-dasharray="6 5"></rect>
+          <text x="460" y="724" class="cell" fill="#5c6b80">No Oracle read</text>
+          <text x="460" y="744" class="small">Documents never decide</text>
+          <text x="460" y="761" class="small">what is run on Oracle</text>
+          <rect x="654" y="700" width="184" height="96" rx="10" class="box" stroke="#1e4d3a"></rect>
+          <text x="666" y="724" class="cell">Corpus</text>
+          <text x="666" y="744" class="small">documents</text>
+          <text x="666" y="761" class="small">document_chunks, with a</text>
+          <text x="666" y="778" class="small">pgvector column</text>
+          <rect x="860" y="700" width="184" height="96" rx="10" class="box" stroke="#1d4e89"></rect>
+          <text x="872" y="724" class="cell">Search and citations</text>
+          <text x="872" y="744" class="small">Knowledge page, copilot,</text>
+          <text x="872" y="761" class="small">Investigator look-up</text>
+          <text x="872" y="778" class="small">Limited by access list</text>
+          <path d="M220 748 H242" class="wire" marker-end="url(#a2)"></path>
+          <path d="M426 748 H448" class="wire" stroke-dasharray="5 4" marker-end="url(#a2)"></path>
+          <path d="M632 748 H654" class="wire" stroke-dasharray="5 4" marker-end="url(#a2)"></path>
+          <path d="M838 748 H860" class="wire" marker-end="url(#a2)"></path>
+        </g>
+
+        <text x="36" y="822" class="small">Solid border: the stage runs. Dashed amber border: the readings server, a separate short-lived process. Dashed grey: the stage is skipped or borrowed.</text>
+      </svg>
+      </div>
+      <figcaption>Paths 1 and 2 need no model and keep working when it is off. Paths 3 and 4 still answer with the rows when the model is off. In path 6 the model returns JSON that the server checks against an allowlist; a cause whose codes, figures, or names are not in the evidence is rejected by the Verifier, and the finding then shows the evidence only. No path sends operator text or model text to Oracle.</figcaption>
+    </figure>
+
+    <h3>What each path stores</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Path</th><th>Written</th><th>Kept for</th><th>Sent to a model</th></tr></thead>
+        <tbody>
+          <tr><td>1. Collection</td><td>Observations, poll runs, alert-log events, rule states, incidents, notifications, policy results</td><td>Observations and poll runs: 30 days by default</td><td>Nothing</td></tr>
+          <tr><td>2. GraphDB, WaitDB</td><td>One counter sample per database every 5 minutes, written by the sampler timer. Opening a page writes nothing</td><td>24 hours by default, 1 to 168</td><td>Nothing</td></tr>
+          <tr><td>3. Database chat</td><td>Thread, messages, one <code>tool_executions</code> row for each allowed or denied tool</td><td>No automatic deletion</td><td>The question to the supervisor, then the question and the tool rows, to the configured provider</td></tr>
+          <tr><td>4. Fleet chat</td><td>Thread, messages, tool rows. Live readings are not stored</td><td>No automatic deletion</td><td>The question and the tool rows</td></tr>
+          <tr><td>5. Agent snapshot</td><td>One <code>evidence_snapshots</code> row per reading, with a restricted flag</td><td>14 days by default, 1 to 30</td><td>Nothing</td></tr>
+          <tr><td>6. Investigation</td><td>Run, steps, finding, decision, audit rows</td><td>No automatic deletion</td><td>Evidence lines, to the local model only</td></tr>
+          <tr><td>7. Knowledge</td><td>Documents and chunks with embeddings</td><td>Until the file is replaced or removed</td><td>Passage text to the embedding model on this computer. Cited passages may go into a copilot answer</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="implementation">
+    <h2>3. Implementation diagram</h2>
+    <p class="lead">Two long-running processes are installed: the portal and the API. The readings server is the same Python package started as a child process for one request. Package names are under <code>backend/src/sentinel</code>, page names under <code>frontend/src</code>.</p>
+    <figure>
+      <div class="scroll">
+      <svg viewBox="0 0 1080 1000" role="img" aria-labelledby="implTitle implDesc">
+        <title id="implTitle">Implementation diagram</title>
+        <desc id="implDesc">The browser runs the portal pages, which call the API through the Vite proxy. The API process holds thirteen packages over the Oracle adapter. The ai and agents packages start the readings server as a child process on stdin and stdout. The API and the readings server read Oracle. The API stores thirty tables in PostgreSQL and calls the language model.</desc>
+        <defs>
+          <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 1.2 L 9 5 L 0 8.8 z" fill="#64748b"></path>
+          </marker>
+        </defs>
+
+        <!-- browser band -->
+        <rect x="28" y="24" width="1024" height="186" rx="14" fill="#f4f8fc" stroke="#1d4e89" stroke-width="1.6"></rect>
+        <text x="48" y="52" class="title">Browser — portal pages, served by Vite on :5173</text>
+        <rect x="48" y="66" width="236" height="60" rx="10" class="box" stroke="#1d4e89"></rect>
+        <text x="62" y="90" class="cell">App.tsx</text>
+        <text x="62" y="110" class="small">Hash routes, workspace tabs</text>
+        <rect x="296" y="66" width="236" height="60" rx="10" class="box" stroke="#1e40af"></rect>
+        <text x="310" y="90" class="cell">GraphPage, WaitPage</text>
+        <text x="310" y="110" class="small">and the four section pages</text>
+        <rect x="544" y="66" width="236" height="60" rx="10" class="box" stroke="#b45309"></rect>
+        <text x="558" y="90" class="cell">CopilotPage</text>
+        <text x="558" y="110" class="small">Fleet and database chat, streamed</text>
+        <rect x="792" y="66" width="240" height="60" rx="10" class="box" stroke="#a21caf"></rect>
+        <text x="806" y="90" class="cell">AgentsPage</text>
+        <text x="806" y="110" class="small">SnapshotPanel, InvestigationPanel</text>
+        <rect x="48" y="136" width="236" height="60" rx="10" class="box" stroke="#1d4e89"></rect>
+        <text x="62" y="160" class="cell">IncidentCenter, EventsPage</text>
+        <text x="62" y="180" class="small">Acknowledge, resolve, timeline</text>
+        <rect x="296" y="136" width="236" height="60" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="310" y="160" class="cell">KnowledgePage</text>
+        <text x="310" y="180" class="small">Search, upload, access lists</text>
+        <rect x="544" y="136" width="236" height="60" rx="10" class="box" stroke="#1d4e89"></rect>
+        <text x="558" y="160" class="cell">AdminPage, AuditPage</text>
+        <text x="558" y="180" class="small">Settings, operators, audit trail</text>
+        <rect x="792" y="136" width="240" height="60" rx="10" class="box" stroke="#1d4e89"></rect>
+        <text x="806" y="160" class="cell">api.ts</text>
+        <text x="806" y="180" class="small">Every call to /api, with the cookie</text>
+
+        <path d="M364 210 V242" class="wire" marker-end="url(#a3)"></path>
+        <text x="374" y="231" class="label">/api through the Vite proxy, :5173 to :8000</text>
+
+        <!-- API process -->
+        <rect x="28" y="242" width="672" height="416" rx="14" fill="#f3faf9" stroke="#0f6e6e" stroke-width="1.6"></rect>
+        <text x="48" y="270" class="title">API process — uvicorn sentinel.main:app on :8000</text>
+
+        <rect x="48" y="284" width="202" height="62" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="60" y="308" class="cell">api/v1</text>
+        <text x="60" y="328" class="small">14 route modules, schemas</text>
+        <rect x="262" y="284" width="202" height="62" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="274" y="308" class="cell">auth</text>
+        <text x="274" y="328" class="small">AD, local, OIDC, roles</text>
+        <rect x="476" y="284" width="204" height="62" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="488" y="308" class="cell">config</text>
+        <text x="488" y="328" class="small">Settings, app_config store</text>
+
+        <rect x="48" y="356" width="202" height="62" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="60" y="380" class="cell">collectors</text>
+        <text x="60" y="400" class="small">APScheduler jobs, alert flow</text>
+        <rect x="262" y="356" width="202" height="62" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="274" y="380" class="cell">rules, incidents</text>
+        <text x="274" y="400" class="small">Rules, compliance, lifecycle</text>
+        <rect x="476" y="356" width="204" height="62" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="488" y="380" class="cell">forecasting</text>
+        <text x="488" y="400" class="small">and notifications: SMTP mail</text>
+
+        <rect x="48" y="428" width="202" height="62" rx="10" class="box" stroke="#1e40af"></rect>
+        <text x="60" y="452" class="cell">graph</text>
+        <text x="60" y="472" class="small">Pictures, sections, sampler</text>
+        <rect x="262" y="428" width="202" height="62" rx="10" class="box" stroke="#b45309"></rect>
+        <text x="274" y="452" class="cell">ai</text>
+        <text x="274" y="472" class="small">supervisor, orchestrator, fleet</text>
+        <rect x="476" y="428" width="204" height="62" rx="10" class="box" stroke="#a21caf"></rect>
+        <text x="488" y="452" class="cell">agents</text>
+        <text x="488" y="472" class="small">collector, runner, verifier</text>
+
+        <rect x="48" y="500" width="202" height="62" rx="10" class="box" stroke="#0f6e6e"></rect>
+        <text x="60" y="524" class="cell">knowledge</text>
+        <text x="60" y="544" class="small">watcher, parsers, retrieval</text>
+        <rect x="262" y="500" width="202" height="62" rx="10" class="box" stroke="#9f1239" stroke-dasharray="7 5"></rect>
+        <text x="274" y="524" class="cell">operations</text>
+        <text x="274" y="544" class="small">Proposals. Privileged is off</text>
+        <rect x="476" y="500" width="204" height="62" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="488" y="524" class="cell">persistence</text>
+        <text x="488" y="544" class="small">and observability: audit, metrics</text>
+
+        <rect x="48" y="572" width="632" height="70" rx="10" class="box" stroke="#9a3412"></rect>
+        <text x="62" y="596" class="cell">adapters/oracle — the only place Oracle statements live</text>
+        <text x="62" y="616" class="small">connection (python-oracledb thin), probes, readings, activity.shared_reader,</text>
+        <text x="62" y="632" class="small">alert_log, and a synthetic adapter for tests</text>
+
+        <!-- readings server -->
+        <path d="M700 264 H724" class="wire" marker-start="url(#a3)" marker-end="url(#a3)"></path>
+        <text x="692" y="268" class="label" text-anchor="end">stdin and stdout</text>
+        <rect x="724" y="242" width="328" height="416" rx="14" fill="#fff8f1" stroke="#b45309" stroke-width="1.6" stroke-dasharray="7 5"></rect>
+        <text x="744" y="270" class="title">Readings server — child process</text>
+        <rect x="744" y="284" width="288" height="98" rx="10" class="box" stroke="#b45309"></rect>
+        <text x="758" y="308" class="mono">python -m sentinel.mcp</text>
+        <text x="758" y="328" class="small">MCP messages on stdin and stdout</text>
+        <text x="758" y="346" class="small">28 named readings, one per call</text>
+        <text x="758" y="364" class="small">collect_snapshot: many on one logon</text>
+        <rect x="744" y="392" width="288" height="80" rx="10" class="box" stroke="#9a3412"></rect>
+        <text x="758" y="416" class="cell">adapters/oracle, same catalog</text>
+        <text x="758" y="436" class="small">Takes an alias. Rejects any SQL argument.</text>
+        <text x="758" y="454" class="small">Driver text and passwords are not shown.</text>
+        <rect x="744" y="482" width="288" height="62" rx="10" class="box" stroke="#1e4d3a"></rect>
+        <text x="758" y="506" class="cell">mcp/history.py</text>
+        <text x="758" y="526" class="small">Growth and health, from PostgreSQL</text>
+        <text x="744" y="570" class="small">Started through mcp/client.py by ai/activity.py</text>
+        <text x="744" y="588" class="small">for chat, and by agents/collector.py.</text>
+        <text x="744" y="606" class="small">Limit: 90 s for one reading; for a snapshot,</text>
+        <text x="744" y="624" class="small">60 s plus 20 s per reading. It exits after</text>
+        <text x="744" y="642" class="small">the reply and has no listen port.</text>
+
+        <!-- externals -->
+        <path d="M180 658 V694" class="wire" marker-start="url(#a3)" marker-end="url(#a3)"></path>
+        <text x="190" y="681" class="label">ai/gateway</text>
+        <path d="M375 658 V824" class="wire" marker-start="url(#a3)" marker-end="url(#a3)"></path>
+        <path d="M560 658 V694" class="wire" marker-end="url(#a3)"></path>
+        <text x="570" y="681" class="label">in process</text>
+        <path d="M888 658 V694" class="wire" marker-end="url(#a3)"></path>
+        <text x="898" y="681" class="label">per request</text>
+
+        <rect x="28" y="694" width="322" height="106" rx="14" class="box" stroke="#4c1d95"></rect>
+        <text x="48" y="722" class="title">Language model</text>
+        <text x="48" y="744" class="sub">providers: local, hosted, disabled</text>
+        <text x="48" y="764" class="sub">Ollama; Claude or OpenAI if approved</text>
+        <text x="48" y="784" class="sub">Keys stay secret:// references</text>
+
+        <text x="385" y="756" class="label" transform="rotate(-90 385 756)" text-anchor="middle">SQLAlchemy</text>
+
+        <rect x="400" y="694" width="652" height="106" rx="14" class="box" stroke="#9a3412"></rect>
+        <text x="420" y="722" class="title">Oracle databases, by TNS alias</text>
+        <text x="420" y="744" class="sub">GSYSTEM, read-only. Grants are listed in docs/oracle-permissions.md.</text>
+        <text x="420" y="764" class="sub">V$ and DBA views only. No AWR, ASH, or ADDM. No table is created in Oracle.</text>
+        <text x="420" y="784" class="sub">A missing grant is reported by view name; the other readings still return.</text>
+
+        <!-- PostgreSQL -->
+        <rect x="28" y="824" width="1024" height="156" rx="14" fill="#f4faf6" stroke="#1e4d3a" stroke-width="1.6"></rect>
+        <text x="48" y="852" class="title">PostgreSQL + pgvector — 30 tables, Alembic revision 0012</text>
+        <text x="48" y="876" class="small"><tspan font-weight="700" fill="#1c2838">Registry</tspan> database_targets, target_credentials, database_entitlements</text>
+        <text x="48" y="894" class="small"><tspan font-weight="700" fill="#1c2838">Collection</tspan> observations, current_observations, poll_runs, collector_checkpoints</text>
+        <text x="48" y="912" class="small"><tspan font-weight="700" fill="#1c2838">Events and rules</tspan> diagnostic_events, rule_definitions, rule_states</text>
+        <text x="48" y="930" class="small"><tspan font-weight="700" fill="#1c2838">Incidents</tspan> incidents, incident_events, notifications</text>
+        <text x="48" y="948" class="small"><tspan font-weight="700" fill="#1c2838">Compliance</tspan> policy_definitions, policy_results</text>
+        <text x="48" y="966" class="small"><tspan font-weight="700" fill="#1c2838">Operations</tspan> operation_proposals, privileged_operations (reserved, empty)</text>
+        <text x="560" y="876" class="small"><tspan font-weight="700" fill="#1c2838">Knowledge</tspan> documents, document_chunks</text>
+        <text x="560" y="894" class="small"><tspan font-weight="700" fill="#1c2838">Copilot</tspan> chat_threads, chat_messages, tool_executions</text>
+        <text x="560" y="912" class="small"><tspan font-weight="700" fill="#1c2838">Agents</tspan> agent_runs, agent_steps, agent_findings, evidence_snapshots,</text>
+        <text x="560" y="930" class="small">agent_database_settings</text>
+        <text x="560" y="948" class="small"><tspan font-weight="700" fill="#1c2838">Platform</tspan> operator_accounts, audit_events, app_config</text>
+      </svg>
+      </div>
+      <figcaption>Three timers run inside the API process when <code>SCHEDULER_ENABLED=true</code>: the collection scheduler, the graph history sampler, and the agent timer (automatic investigations and snapshot retention). The knowledge folder scan is a fourth timer and runs when knowledge is enabled. The API refuses to start when a table its code needs is missing. In tests the Oracle adapter is replaced by the synthetic one and PostgreSQL by SQLite.</figcaption>
+    </figure>
+
+    <h3>Where each part lives</h3>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Part</th><th>Code</th><th>Entry points</th></tr></thead>
+        <tbody>
+          <tr><td>Sign-in and roles</td><td><code>auth/</code>: directory, passwords, oidc, sessions, rbac, throttle, middleware</td><td><code>/api/v1/auth/*</code>. Roles: viewer, operator, dba, platform_admin, security_auditor</td></tr>
+          <tr><td>Registry</td><td><code>api/v1/databases.py</code>, <code>persistence/</code></td><td><code>/api/v1/databases</code>, register from a TNS alias, test connection, fleet check</td></tr>
+          <tr><td>Collection</td><td><code>collectors/</code>, <code>rules/</code>, <code>incidents/</code>, <code>forecasting/</code>, <code>notifications/</code></td><td>APScheduler jobs. <code>/api/v1/incidents</code>, <code>/databases/{id}/metrics</code>, <code>/forecast</code>, <code>/compliance</code></td></tr>
+          <tr><td>GraphDB, WaitDB</td><td><code>graph/</code> (pictures, <code>sections.py</code>, <code>history.py</code>, <code>sampler.py</code>), <code>api/v1/graph.py</code></td><td><code>/databases/{id}/graph/memory</code>, <code>storage</code>, <code>activity</code>, <code>waits</code>, <code>history</code>; <code>/databases/{id}/wait/activity</code>; <code>/databases/{id}/memory/sga</code>, <code>/storage/tablespaces</code>, <code>/parameters</code>, <code>/alert-log</code></td></tr>
+          <tr><td>Copilot</td><td><code>ai/supervisor.py</code>, <code>ai/orchestrator.py</code>, <code>ai/stored.py</code>, <code>ai/fleet.py</code>, <code>ai/tools/</code>, <code>ai/gateway.py</code>, <code>ai/providers/</code></td><td><code>/api/v1/chat/threads</code>, <code>/chat/threads/{id}/messages</code></td></tr>
+          <tr><td>Readings server</td><td><code>mcp/server.py</code>, <code>mcp/client.py</code>, <code>mcp/history.py</code></td><td><code>python -m sentinel.mcp</code>, started by the API only</td></tr>
+          <tr><td>Agents</td><td><code>agents/</code>: packs, collector, compare, playbooks, runner, verifier, scheduler, config</td><td><code>/api/v1/agents/*</code>, <code>/databases/{id}/snapshots</code>, <code>/databases/{id}/agent-settings</code></td></tr>
+          <tr><td>Knowledge</td><td><code>knowledge/</code>: watcher, parsers, chunker, embeddings, retrieval, acl, quarantine</td><td><code>/api/v1/knowledge/search</code>, <code>upload</code>, <code>reindex</code>, <code>documents</code></td></tr>
+          <tr><td>Operations</td><td><code>operations/</code>, <code>operations/privileged/disabled.py</code></td><td><code>/api/v1/operations/proposals</code>. Execute is refused; privileged routes answer 501</td></tr>
+          <tr><td>Settings and audit</td><td><code>config/</code>, <code>observability/</code></td><td><code>/api/v1/admin/config</code>, <code>/admin/operators</code>, <code>/api/v1/audit</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="stack">
+    <h2>4. Technology and limits</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Layer</th><th>Choice</th><th>Default limits</th></tr></thead>
+        <tbody>
+          <tr><td>Backend</td><td>Python 3.14, FastAPI, Pydantic v2, SQLAlchemy, Alembic</td><td>Session cookie lasts 8 hours. Sign-in locks for 15 minutes after 5 failures</td></tr>
+          <tr><td>Oracle access</td><td>python-oracledb, thin mode, one read-only account</td><td>One logon per picture or snapshot. No connection pool is kept across refreshes</td></tr>
+          <tr><td>Scheduler</td><td>APScheduler inside the API process</td><td>Probes every 60 s to 30 min. Alert log every 120 s. Observations kept 30 days</td></tr>
+          <tr><td>Application database</td><td>PostgreSQL with pgvector. SQLite in tests</td><td>Revision 0012</td></tr>
+          <tr><td>Portal</td><td>React, TypeScript, Vite</td><td>GraphDB refresh: off, 15 s, 30 s, or 1 minute. A second reading 3 s after a page opens</td></tr>
+          <tr><td>Graph history</td><td>One JSON row per database per sample in <code>observations</code></td><td>Every 300 s (60 to 3600). Kept 24 hours (1 to 168). At most 120 samples per request</td></tr>
+          <tr><td>Readings server</td><td>MCP over stdin and stdout, same package</td><td>90 s for one reading. 60 s plus 20 s per reading for a snapshot</td></tr>
+          <tr><td>Fleet questions</td><td>Fan-out of one fixed reading</td><td>25 databases per question, 4 at a time, 45 s for each database</td></tr>
+          <tr><td>Agents</td><td>Server-controlled playbooks, plain-code Verifier</td><td>6 steps, 4 model calls, 180 s per run. Snapshots at least 300 s apart, kept 14 days. Checked for new incidents every 60 s</td></tr>
+          <tr><td>Language model</td><td>Ollama locally. Claude or OpenAI as an approved hosted provider</td><td>Hosted use needs approval, a model name, a <code>secret://</code> key reference, and a privacy sentence</td></tr>
+          <tr><td>Embeddings</td><td><code>nomic-embed-text</code> through Ollama on this computer, 768 numbers. Word hashing when no model is set</td><td>Indexed once: unchanged files are skipped. Batches of 32. A remote embedding service is used only when explicitly approved</td></tr>
+          <tr><td>Copilot supervisor</td><td>One model call that returns route and reading names as JSON</td><td>At most 2 routes and 3 readings. A snapshot up to 900 s old answers before a live read</td></tr>
+          <tr><td>Sign-in</td><td>Active Directory, a local account, or OIDC</td><td>Off in development unless <code>AUTH_REQUIRED=true</code></td></tr>
+          <tr><td>Notifications</td><td>SMTP and the portal bell</td><td>—</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="changes">
+    <h2>5. Changes since version 1</h2>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Area</th><th>Version 1</th><th>Version 2</th></tr></thead>
+        <tbody>
+          <tr><td>GraphDB access</td><td>Administrators only</td><td>Every signed-in role. File, redo, and segment listings stay administrator-only</td></tr>
+          <tr><td>WaitDB</td><td>Not present</td><td>Summary, event waits, blocking locks, lock activity, buffer busy waits</td></tr>
+          <tr><td>Navigation</td><td>Database sidebar on every page</td><td>A database workspace with tabs: Overview, GraphDB, WaitDB, Events, Copilot</td></tr>
+          <tr><td>Tool choice</td><td>The model never chooses a reading</td><td>On a database chat a supervisor chooses the specialist and up to three allowlisted readings, which the server checks. Two fixed rules sit behind it, and the fixed patterns decide when the model is off. The model still has no tool to call</td></tr>
+          <tr><td>Fleet chat</td><td>Does not open Oracle</td><td>Its own copilot. Two questions read every enabled database live; the rest use stored data</td></tr>
+          <tr><td>Readings server</td><td>One reading per process</td><td>Also <code>collect_snapshot</code>: many readings on one logon</td></tr>
+          <tr><td>Agents</td><td>Not present</td><td>Collector, Investigator, Verifier, with a system default and a per-database override for six settings</td></tr>
+          <tr><td>Security</td><td>Sign-in and roles</td><td>Permission check and audit row on every changing route, revocable sessions, sign-in throttle, production start-up guards</td></tr>
+          <tr><td>Settings</td><td><code>.env</code></td><td>Stored in <code>app_config</code> and edited in Admin. A stored value overrides <code>.env</code></td></tr>
+          <tr><td>Graph history</td><td>Rates and charts needed two refreshes of the page</td><td>Stored counter samples fill the meters and charts when a page opens, and a second reading follows after 3 seconds</td></tr>
+          <tr><td>Database views</td><td>GraphDB</td><td>GraphDB, WaitDB, MemoryDB, StorageDB, ParameterDB, and AlertDB, each a tab of the database workspace</td></tr>
+          <tr><td>Manual search</td><td>A 128-number word hash, and the manuals not yet indexed</td><td>A local embedding model, 768 numbers, indexed once with per-file tracking. A message code is found by the code itself</td></tr>
+          <tr><td>Company policy</td><td>Any document passage counted as evidence</td><td>Only a policy document or a stored compliance result</td></tr>
+          <tr><td>Database copilot page</td><td>A shelf of shortcut buttons</td><td>Six sample questions as hints, the four specialists, and a badge on each answer</td></tr>
+          <tr><td>Schema</td><td>Revision 0009</td><td>Revision 0012: <code>app_config</code> at 0010, the five agent tables at 0011, 768-number vectors at 0012</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <h3>Designed, not built</h3>
+    <p class="lead">These are a design only: a fleet analyst with a daily brief, an Advisor that drafts a proposal from an accepted finding, and the supervisor for the fleet copilot. Privileged execution remains a disabled placeholder.</p>
+  </section>
+
+  <section>
+    <h2>Boundaries that stay in force</h2>
+    <div class="principles">
+      <article>
+        <h3>Monitoring stands alone</h3>
+        <p>Collection, rules, incidents, GraphDB, and WaitDB run with the model off and with agents off.</p>
+      </article>
+      <article>
+        <h3>Read-only Oracle</h3>
+        <p>GSYSTEM has SELECT on listed views. The catalog is the only SQL. Operator text and model text never reach a statement.</p>
+      </article>
+      <article>
+        <h3>Evidence before narration</h3>
+        <p>An answer lists its rows. An agent's cause is shown only when the Verifier finds every code, figure, and name in the evidence.</p>
+      </article>
+      <article>
+        <h3>Execution stays off</h3>
+        <p>Proposals can be approved and are not run. Privileged execution answers 501, is audited, and does not open Oracle.</p>
+      </article>
+    </div>
+  </section>
+
+  <footer>
+    Related: <a href="architecture.md">architecture.md</a>, <a href="api-contracts.md">api-contracts.md</a>, <a href="assistant-policy.md">assistant-policy.md</a>, <a href="oracle-permissions.md">oracle-permissions.md</a>, <a href="../Phase_22_Agentic_Design.html">Phase 22 agent design</a>.
+  </footer>
+</main>
+</body>
+</html>

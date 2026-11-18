@@ -53,7 +53,10 @@ TOOL_DESCRIPTIONS = {
     "get_memory_configuration": "Temporary space, hard parses, library cache, parameters, and resource limits.",
     "get_recovery_status": "Last successful and failed backups, fast recovery area, and recent archive logs.",
     "get_data_guard_status": "Database role, archive destinations, and Data Guard lag when a standby exists.",
-    "list_database_users": "Database usernames and account status. The API allows this only for an admin operator.",
+    "list_database_users": (
+        "Database users, which are also the schemas, with account status, each marked as an application schema "
+        "or as maintained by Oracle. The API allows this only for an admin operator."
+    ),
     "get_security_posture": "Locked or expired accounts, invalid objects, and current privileged role grants.",
     "get_failed_jobs": "Scheduler jobs that failed or stopped in the last 2 days.",
     "get_current_issues": "Current availability, critical errors, space, and blocking evidence.",
@@ -70,6 +73,16 @@ TOOL_DESCRIPTIONS = {
     "get_session_programs": "Client programs and executables with user sessions, with session and active counts.",
     "get_datafile_sizes": "Per tablespace: number of datafiles, the largest datafile, and the total size.",
 }
+
+
+_SCHEMA_NAMED = re.compile(
+    r"\bschemas?\b|\boracle[- ]maintained\b|"
+    r"\b(?:non[- ]?system|system|application|app|built[- ]?in|default|internal|oracle)\s+(?:users?|accounts?)\b",
+)
+_SCHEMA_OTHER_TOPIC = re.compile(
+    r"\b(?:invalid|storage|space|sizes?|big(?:gest)?|larg(?:e|est)|grow\w*|consum\w*|objects?|tables?|"
+    r"index(?:es)?|sql|quer(?:y|ies)|statements?|privileges?|roles?|grants?|password\w*|profiles?)\b",
+)
 
 
 @dataclass
@@ -196,6 +209,10 @@ def match_activity(content: str) -> str | None:
     if any(phrase in text for phrase in (
         "database users", "db users", "all users", "user accounts", "database accounts", "schema list",
     )):
+        return "database_users"
+    # Which schemas exist, and which are the application's own. A question about a schema's size, objects,
+    # or SQL is a different reading and is left to the rules above or to the supervisor.
+    if _SCHEMA_NAMED.search(text) and not _SCHEMA_OTHER_TOPIC.search(text):
         return "database_users"
     if any(phrase in text for phrase in (
         "is there a problem", "any problem", "problem with this database", "problem with the database",
@@ -639,8 +656,11 @@ SYNTHETIC: dict[str, tuple[dict[str, str], ...]] = {
         {"source": "v$dataguard_stats", "name": "apply lag", "value": "+00 00:05:00"},
     ),
     "database_users": (
-        {"source": "dba_users", "username": "APPUSER", "account_status": "OPEN"},
-        {"source": "dba_users", "username": "REPORTING", "account_status": "LOCKED"},
+        {"source": "dba_users", "username": "APPUSER", "account_status": "OPEN", "oracle_maintained": "N"},
+        {"source": "dba_users", "username": "GSYSTEM", "account_status": "OPEN", "oracle_maintained": "N"},
+        {"source": "dba_users", "username": "REPORTING", "account_status": "LOCKED", "oracle_maintained": "N"},
+        {"source": "dba_users", "username": "SYS", "account_status": "OPEN", "oracle_maintained": "Y"},
+        {"source": "dba_users", "username": "SYSTEM", "account_status": "OPEN", "oracle_maintained": "Y"},
     ),
     "security": (
         {

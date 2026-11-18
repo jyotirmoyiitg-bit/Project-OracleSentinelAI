@@ -44,13 +44,14 @@ def persist_document(
     model_name: str,
     disclosure: str,
 ) -> str:
-    if len(drafts) != len(vectors) or any(len(vector) != EMBEDDING_DIMENSIONS for vector in vectors):
-        raise EmbeddingError("embedding count or dimensions did not match the chunks")
+    _check_vectors(len(drafts), vectors)
     existing = session.scalar(select(Document).where(Document.relative_path == item.relative))
     if (
         existing is not None
         and existing.content_hash == item.content_hash
         and existing.ingestion_status == "indexed"
+        and existing.embedding_provider == provider_name
+        and existing.embedding_model == model_name
     ):
         return "unchanged"
     now = utcnow()
@@ -108,6 +109,43 @@ def persist_document(
         session.add(chunk)
     assign_postgres_vectors(session)
     return outcome
+
+
+def _check_vectors(expected: int, vectors: list[list[float]]) -> None:
+    if expected != len(vectors) or any(len(vector) != EMBEDDING_DIMENSIONS for vector in vectors):
+        raise EmbeddingError("embedding count or dimensions did not match the chunks")
+
+
+def chunk_texts(session: Session, document: Document) -> list[tuple[DocumentChunk, str]]:
+    """The stored passages of the current version, in order, with the text that is embedded."""
+    chunks = session.scalars(
+        select(DocumentChunk).where(
+            DocumentChunk.document_id == document.id, DocumentChunk.document_version == document.version,
+        ).order_by(DocumentChunk.chunk_index),
+    ).all()
+    return [(chunk, chunk.content) for chunk in chunks]
+
+
+def reembed_document(
+    session: Session,
+    document: Document,
+    chunks: list[DocumentChunk],
+    vectors: list[list[float]],
+    *,
+    provider_name: str,
+    model_name: str,
+    disclosure: str,
+) -> None:
+    """Replace the vectors of an unchanged file. The file is not parsed again and its version stays."""
+    _check_vectors(len(chunks), vectors)
+    for chunk, vector in zip(chunks, vectors, strict=True):
+        chunk.embedding = vector
+    now = utcnow()
+    document.embedding_provider = provider_name
+    document.embedding_model = model_name
+    document.embedding_disclosure = disclosure
+    document.indexed_at = now
+    document.updated_at = now
 
 
 def update_acl(session: Session, document: Document, acl: dict[str, list[str]]) -> Document:

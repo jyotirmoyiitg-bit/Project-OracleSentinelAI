@@ -26,6 +26,7 @@ import { formatDate, relativeTime } from './format'
 import { IncidentStatusBadge } from './components/IncidentStatusBadge'
 import { SeverityBadge } from './components/SeverityBadge'
 import { StatePanel } from './components/StatePanel'
+import { InvestigationPanel } from './components/InvestigationPanel'
 import type { Incident, IncidentDetail, IncidentListResponse, Target } from './types'
 
 const PAGE_SIZE = 25
@@ -469,6 +470,8 @@ function IncidentDetailView({
           {!canAcknowledge && !canResolve && <p className="empty-inline">This incident is resolved. No further actions are available.</p>}
         </div>
       </section>
+
+      <InvestigationPanel incidentId={incident.id} />
 
       <div className="detail-grid lower-grid">
         <section className="panel">

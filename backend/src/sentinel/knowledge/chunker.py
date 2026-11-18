@@ -45,10 +45,16 @@ def build_chunks(parsed: ParsedDocument, settings: Settings) -> list[ChunkDraft]
     return drafts
 
 
+def _storable(value: str) -> str:
+    """Drop the NUL character. Some PDF pages carry it, and PostgreSQL cannot store it in text."""
+    return value.replace("\x00", "")
+
+
 def _section_chunks(section: Section, size: int, overlap: int) -> list[ChunkDraft]:
-    body = section.text.strip()
-    source = f"{section.heading}\n{body}".strip() if section.heading else body
-    heading = section.heading[:300]
+    body = _storable(section.text).strip()
+    title = _storable(section.heading)
+    source = f"{title}\n{body}".strip() if title else body
+    heading = title[:300]
     return [
         ChunkDraft(heading, part, section.page_start, section.page_end)
         for part in split_text(source, size, overlap)

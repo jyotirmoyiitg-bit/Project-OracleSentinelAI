@@ -381,6 +381,12 @@ export interface StructuredAnswer {
   citation_note: string
   evidence_lines: string[]
   notes: string[]
+  /** Which specialists answered: This database, Oracle knowledge, Company policy, SQL draft, Change request, General. */
+  routes?: string[]
+  /** supervisor, patterns, or catalog. */
+  routed_by?: string
+  /** Set when a database reading came from a stored snapshot instead of a live read. */
+  source_note?: string
 }
 
 export interface ChatMessage {

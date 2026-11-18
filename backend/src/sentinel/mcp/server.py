@@ -12,6 +12,7 @@ from sentinel.adapters.oracle.activity import (
     ActivityAccessError,
     ActivityUnavailable,
     read_rows,
+    shared_reader,
 )
 from sentinel.ai.activity import SYNTHETIC, TOOL_DESCRIPTIONS, TOOL_NAMES
 
@@ -26,6 +27,19 @@ _SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 _DESCRIPTIONS = TOOL_DESCRIPTIONS
+SNAPSHOT_TOOL = "collect_snapshot"
+_SNAPSHOT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "alias": {"type": "string", "description": "TNS alias of the selected database"},
+        "readings": {
+            "type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 30,
+            "description": "Names of fixed readings from this server's tool list",
+        },
+    },
+    "required": ["alias", "readings"],
+    "additionalProperties": False,
+}
 # Set when a client used the older Content-Length framing, so the reply uses the same framing.
 _legacy_framing = False
 
@@ -68,7 +82,70 @@ def _dispatch(message: dict[str, Any]) -> dict[str, Any] | None:
     return _error(request_id, "Method not found.")
 
 
+def run_snapshot(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Run several fixed readings for one database on one Oracle logon. It does not accept SQL."""
+    if set(arguments) - {"alias", "readings"}:
+        raise ValueError("Only a database alias and a list of reading names are accepted.")
+    alias = arguments.get("alias")
+    if not isinstance(alias, str) or _ALIAS.fullmatch(alias) is None:
+        raise ValueError("A database alias is required.")
+    names = arguments.get("readings")
+    if not isinstance(names, list) or not names or len(names) > 30:
+        raise ValueError("Between 1 and 30 reading names are required.")
+    if any(not isinstance(name, str) or name not in _KIND_BY_TOOL for name in names):
+        raise ValueError("A reading in the list is not available.")
+    names = list(dict.fromkeys(names))
+    if os.environ.get("SENTINEL_MCP_SYNTHETIC") == "1":
+        return {"status": "ok", "readings": {
+            name: {"status": "ok", "rows": [dict(row) for row in SYNTHETIC[_KIND_BY_TOOL[name]]], "note": ""}
+            for name in names
+        }}
+    from sentinel.config.secrets import init_resolver
+    from sentinel.config.settings import get_settings
+
+    settings = get_settings()
+    init_resolver(settings.secret_key)
+    return {"status": "ok", "readings": asyncio.run(_read_many(settings, alias, names))}
+
+
+async def _read_many(settings: Any, alias: str, names: list[str]) -> dict[str, dict[str, Any]]:
+    readings: dict[str, dict[str, Any]] = {}
+    async with shared_reader(settings, alias) as reader:
+        for name in names:
+            kind = _KIND_BY_TOOL[name]
+            if kind == "growth":
+                from sentinel.mcp.history import growth_rows
+
+                rows, note = growth_rows(settings, alias)
+                readings[name] = {"status": "ok", "rows": rows, "note": note}
+                continue
+            try:
+                rows, note = await reader(settings, alias, kind)
+            except ActivityAccessError as exc:
+                readings[name] = {
+                    "status": "not_granted", "rows": [],
+                    "note": f"Grant SELECT on {exc.object_name} to the monitoring account, then ask again.",
+                }
+                continue
+            except ActivityUnavailable as exc:
+                text = "The database could not be read just now."
+                if exc.code is not None:
+                    text = f"{text} Oracle returned error {exc.code}."
+                readings[name] = {"status": "unavailable", "rows": [], "note": text}
+                continue
+            if kind == "availability":
+                from sentinel.mcp.history import portal_row
+
+                portal = portal_row(settings, alias)
+                if portal is not None:
+                    rows.append(portal)
+            readings[name] = {"status": "ok", "rows": rows[:80], "note": note}
+    return readings
+
+
 def run_tool(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    if name == SNAPSHOT_TOOL:
+        return run_snapshot(arguments)
     if set(arguments) - {"alias"}:
         raise ValueError("Only a database alias is accepted.")
     alias = arguments.get("alias")
@@ -119,7 +196,11 @@ def _tools() -> list[dict[str, Any]]:
             "inputSchema": _SCHEMA,
         }
         for name in TOOL_NAMES.values()
-    ]
+    ] + [{
+        "name": SNAPSHOT_TOOL,
+        "description": "Run several of the fixed readings for one database on one logon and return each result.",
+        "inputSchema": _SNAPSHOT_SCHEMA,
+    }]
 
 
 def _result(request_id: object, result: dict[str, Any]) -> dict[str, Any]:

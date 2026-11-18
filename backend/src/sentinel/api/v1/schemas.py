@@ -445,6 +445,7 @@ class KnowledgeReindexResponse(BaseModel):
     indexed: int
     updated: int
     unchanged: int
+    reembedded: int = 0
     deleted: int
     quarantined: int
     skipped: int
