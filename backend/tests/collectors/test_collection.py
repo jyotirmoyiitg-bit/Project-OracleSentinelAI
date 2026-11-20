@@ -102,7 +102,7 @@ def test_failed_measurement_preserves_last_good_checkpoint(runner, sessions, mak
         point = checkpoints.get_checkpoint(session, target_id, "storage")
         assert point.cursor == cursor
         assert point.error_class == "PermissionError"
-        assert len(current_for(session, [target_id])) == 3
+        assert len(current_for(session, [target_id])) == 5
 
 
 def test_compliance_evaluation_failure_is_a_notification_boundary_not_a_hard_stop(runner, sessions, make_target):
@@ -162,8 +162,8 @@ def test_runner_replaces_latest_but_retains_history(runner, sessions, make_targe
     runner.run(target_id, "storage")
     runner.run(target_id, "storage")
     with sessions() as session:
-        assert session.scalar(select(func.count()).select_from(CurrentObservation)) == 3
-        assert session.scalar(select(func.count()).select_from(StoredObservation)) == 6
+        assert session.scalar(select(func.count()).select_from(CurrentObservation)) == 5
+        assert session.scalar(select(func.count()).select_from(StoredObservation)) == 10
 
 
 def test_retention_preserves_current_snapshot(runner, sessions, make_target):
@@ -174,7 +174,7 @@ def test_retention_preserves_current_snapshot(runner, sessions, make_target):
     runner.retain()
     with sessions() as session:
         assert session.scalar(select(func.count()).select_from(StoredObservation)) == 0
-        assert session.scalar(select(func.count()).select_from(CurrentObservation)) == 3
+        assert session.scalar(select(func.count()).select_from(CurrentObservation)) == 5
 
 
 def test_normalization_and_invalid_measurements():

@@ -85,6 +85,8 @@ export interface TargetDetails extends Target {
   tablespaces: Array<{
     name: string
     used_pct: number | null
+    used_pct_of_max?: number | null
+    max_bytes?: number | null
     size_bytes: number | null
     autoextend: boolean | null
     timestamp: string

@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
@@ -415,12 +416,30 @@ def get_metrics(
     target_id: str, session: SessionDep, settings: SettingsDep,
     start: datetime | None = None, end: datetime | None = None,
     metric_name: str | None = Query(None, max_length=255), limit: int = Query(1000, ge=1, le=5000),
+    label: Annotated[list[str] | None, Query(description="Series filter written key=value, such as tablespace_name=USERS")] = None,
 ) -> list[ObservationResponse]:
     target = find_target(session, target_id)
     begin, stop = time_window(start, end, settings)
     return [ObservationResponse.model_validate(row) for row in history(
-        session, target.id, begin, stop, metric_name, None, limit,
+        session, target.id, begin, stop, metric_name, None, limit, labels=series_labels(label),
     )]
+
+
+_LABEL_KEY = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_MAX_LABEL_FILTERS = 4
+
+
+def series_labels(values: list[str] | None) -> dict[str, str]:
+    """Read key=value series filters; the keys are label names and the values are compared, never run."""
+    labels: dict[str, str] = {}
+    for item in values or []:
+        key, sep, value = item.partition("=")
+        if not sep or not _LABEL_KEY.match(key) or not value or len(value) > 255:
+            raise HTTPException(422, "A label filter is written key=value, with a lower-case key")
+        labels[key] = value
+    if len(labels) > _MAX_LABEL_FILTERS:
+        raise HTTPException(422, f"At most {_MAX_LABEL_FILTERS} label filters are allowed")
+    return labels
 
 
 @router.get("/{target_id}/observations", response_model=list[ObservationResponse])

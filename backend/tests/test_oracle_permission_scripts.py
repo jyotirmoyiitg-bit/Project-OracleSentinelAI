@@ -47,7 +47,7 @@ def test_grants_match_collector_queries_and_capabilities_exactly():
     ("v$instance", ["instance_name", "status", "database_status", "host_name", "version", "startup_time"]),
     ("v$database", ["name", "open_mode", "database_role", "log_mode", "flashback_on", "platform_name", "created"]),
     ("dba_tablespaces", ["tablespace_name", "status", "contents", "logging", "extent_management"]),
-    ("dba_data_files", ["tablespace_name", "bytes", "autoextensible"]),
+    ("dba_data_files", ["tablespace_name", "bytes", "maxbytes", "autoextensible"]),
     ("dba_free_space", ["tablespace_name", "bytes"]),
     ("v$temp_space_header", ["tablespace_name", "bytes_used", "bytes_free"]),
     ("v$recovery_file_dest", ["name", "space_limit", "space_used", "space_reclaimable", "number_of_files"]),

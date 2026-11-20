@@ -178,14 +178,17 @@ export function getMetricHistory(
   metricName: string,
   start: Date,
   end: Date,
+  labels: Record<string, string> = {},
   signal?: AbortSignal,
 ): Promise<Observation[]> {
   const query = new URLSearchParams({
     metric_name: metricName,
     start: start.toISOString(),
     end: end.toISOString(),
-    limit: '1000',
+    // The newest rows win when a long range holds more than this, so keep it at the server's maximum.
+    limit: '5000',
   })
+  for (const [key, value] of Object.entries(labels)) query.append('label', `${key}=${value}`)
   return request(`/api/v1/databases/${encodeURIComponent(id)}/metrics?${query}`, signal)
 }
 

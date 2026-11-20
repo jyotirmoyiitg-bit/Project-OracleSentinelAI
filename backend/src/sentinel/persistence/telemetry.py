@@ -54,10 +54,14 @@ def checkpoints_for(session: Session, ids: list[uuid.UUID]) -> list[CollectorChe
 def history(
     session: Session, target_id: uuid.UUID, start: datetime, end: datetime,
     metric_name: str | None, quality: str | None, limit: int, offset: int = 0,
+    labels: dict[str, str] | None = None,
 ) -> list[Observation]:
     stmt = select(Observation).where(
         Observation.target_id == target_id, Observation.timestamp >= start, Observation.timestamp <= end,
     )
+    # One series of a labelled metric, such as one tablespace, so rows of different series never share a line.
+    for key, value in (labels or {}).items():
+        stmt = stmt.where(Observation.labels[key].as_string() == value)
     if metric_name:
         stmt = stmt.where(Observation.metric_name == metric_name)
     else:

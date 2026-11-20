@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import type { TargetDetails } from '../types'
 import { formatBytes, formatDate } from '../format'
 
-type SortKey = 'name' | 'used_pct' | 'size_bytes' | 'autoextend' | 'timestamp'
+type SortKey = 'name' | 'used_pct' | 'used_pct_of_max' | 'size_bytes' | 'autoextend' | 'timestamp'
 
 export function TablespaceTable({ tablespaces }: { tablespaces: TargetDetails['tablespaces'] }) {
   const [sortKey, setSortKey] = useState<SortKey>('used_pct')
@@ -42,6 +42,7 @@ export function TablespaceTable({ tablespaces }: { tablespaces: TargetDetails['t
           <tr>
             <th scope="col">{heading('Tablespace', 'name')}</th>
             <th scope="col">{heading('Used', 'used_pct')}</th>
+            <th scope="col" title="Used space against the most the datafiles may autoextend to">{heading('Of maximum', 'used_pct_of_max')}</th>
             <th scope="col">{heading('Size', 'size_bytes')}</th>
             <th scope="col">{heading('Autoextend', 'autoextend')}</th>
             <th scope="col">{heading('Collected', 'timestamp')}</th>
@@ -61,13 +62,16 @@ export function TablespaceTable({ tablespaces }: { tablespaces: TargetDetails['t
                   </div>
                 )}
               </td>
+              <td>{space.used_pct_of_max == null ? <span className="muted">Unavailable</span> : (
+                <span title={space.max_bytes == null ? undefined : `Maximum ${formatBytes(space.max_bytes)}`}>{space.used_pct_of_max.toFixed(1)}%</span>
+              )}</td>
               <td>{formatBytes(space.size_bytes)}</td>
               <td>{space.autoextend == null ? 'Unavailable' : space.autoextend ? 'Enabled' : 'Disabled'}</td>
               <td className="muted">{formatDate(space.timestamp)}</td>
             </tr>
           ))}
           {sorted.length === 0 && (
-            <tr><td className="table-empty" colSpan={5}>No tablespace measurements are available.</td></tr>
+            <tr><td className="table-empty" colSpan={6}>No tablespace measurements are available.</td></tr>
           )}
         </tbody>
       </table>

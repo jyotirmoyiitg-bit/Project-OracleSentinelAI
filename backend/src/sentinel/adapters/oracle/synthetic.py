@@ -59,6 +59,10 @@ class SyntheticOracleAdapter:
                             labels={"tablespace": "USERS", "source": "dba_data_files"}),
                 Observation(alias, "storage.tablespace.autoextend", True,
                             labels={"tablespace": "USERS", "source": "dba_data_files"}),
+                Observation(alias, "storage.tablespace.bytes_max", 34359738368, unit="bytes",
+                            labels={"tablespace": "USERS", "source": "dba_data_files"}),
+                Observation(alias, "storage.tablespace.used_pct_of_max", round(self.used_pct * 10 / 32, 2),
+                            unit="percent", labels={"tablespace": "USERS", "source": "dba_data_files"}),
             ]
         if probe == "fra_archive":
             return [

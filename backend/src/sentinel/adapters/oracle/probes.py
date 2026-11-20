@@ -45,6 +45,11 @@ class OracleProbes:
                 THEN ROUND(df.bytes_used * 100.0 / df.bytes_total, 2)
                 ELSE 0
             END AS used_pct,
+            df.bytes_max,
+            CASE WHEN df.bytes_max > 0
+                THEN ROUND(df.bytes_used * 100.0 / df.bytes_max, 2)
+                ELSE 0
+            END AS used_pct_of_max,
             ts.status AS ts_status,
             ts.contents AS ts_contents,
             ts.logging AS ts_logging,
@@ -56,9 +61,11 @@ class OracleProbes:
                 files.bytes_total,
                 files.bytes_total - NVL(fs.bytes_free, 0) AS bytes_used,
                 NVL(fs.bytes_free, 0) AS bytes_free,
+                files.bytes_max,
                 files.autoextend
             FROM (
                 SELECT tablespace_name, SUM(bytes) AS bytes_total,
+                       SUM(CASE WHEN autoextensible = 'YES' THEN GREATEST(maxbytes, bytes) ELSE bytes END) AS bytes_max,
                        MAX(CASE WHEN autoextensible = 'YES' THEN 1 ELSE 0 END) AS autoextend
                 FROM dba_data_files GROUP BY tablespace_name
             ) files
@@ -260,6 +267,8 @@ class OracleProbes:
                 bytes_used = data.get("BYTES_USED", 0) or 0
                 bytes_free = data.get("BYTES_FREE", 0) or 0
                 used_pct = data.get("USED_PCT", 0) or 0
+                bytes_max = data.get("BYTES_MAX", 0) or 0
+                used_pct_of_max = data.get("USED_PCT_OF_MAX", 0) or 0
 
                 observations.extend([
                     Observation(
@@ -274,6 +283,24 @@ class OracleProbes:
                         unit="percent",
                         collected_at=now,
                         labels={"tablespace": ts_name, "source": "dba_tablespaces"},
+                    ),
+                    # Used space against the most the datafiles may autoextend to, so a file that grows does not
+                    # read as space being freed.
+                    Observation(
+                        database_id=database_id,
+                        metric="storage.tablespace.used_pct_of_max",
+                        value=float(used_pct_of_max),
+                        unit="percent",
+                        collected_at=now,
+                        labels={"tablespace": ts_name, "source": "dba_data_files"},
+                    ),
+                    Observation(
+                        database_id=database_id,
+                        metric="storage.tablespace.bytes_max",
+                        value=int(bytes_max),
+                        unit="bytes",
+                        collected_at=now,
+                        labels={"tablespace": ts_name, "source": "dba_data_files"},
                     ),
                     Observation(
                         database_id=database_id,

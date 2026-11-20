@@ -201,6 +201,15 @@ Knowledge. An administrator uploads a PDF, DOCX, TXT, or Markdown file on the Kn
 
 Model-assisted routing. With a model enabled, a database question the fixed router cannot place is routed by the model to at most three approved readings. Set `AI_ROUTER_FALLBACK=false` in Admin, Language model to keep routing fixed only.
 
+## Phase 27 tablespace timeline
+
+- No migration, grant, or setting. Restart the API and rebuild or reload the portal.
+- The Overview timeline shows one tablespace at a time, the fullest first. Pick another tablespace, or "All tablespaces" for one line each, in the picker beside the metric.
+- The "Tablespace usage" card names the fullest tablespace.
+- "Of maximum" in the Tablespaces table is used space against the most the datafiles may autoextend to. A tablespace can be 94 percent of its allocated space and 3 percent of its maximum; the first is what health and the rules still use.
+- The new values appear after the next storage collection. Rows stored before it have no "Of maximum".
+- `GET /api/v1/databases/{id}/metrics?metric_name=storage.tablespace.used_pct&label=tablespace_name=USERS` returns one tablespace's history.
+
 ## Phase 26 copilot fixes
 
 - No migration, grant, or setting. Restart the API; the portal needs no rebuild.

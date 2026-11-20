@@ -41,6 +41,7 @@ import { PasswordDialog } from './components/PasswordDialog'
 import { StatePanel } from './components/StatePanel'
 import { TablespaceTable } from './components/TablespaceTable'
 import { TimelineChart } from './components/TimelineChart'
+import { ALL_SERIES, seriesFor, seriesNoun } from './series'
 import { CompliancePanel } from './components/CompliancePanel'
 import { ForecastPanel } from './components/ForecastPanel'
 import { EventsPage } from './EventsPage'
@@ -641,6 +642,8 @@ function DetailPage({
   const [loading, setLoading] = useState(true)
   const [timeRange, setTimeRange] = useState<TimeRange>('24h')
   const [selectedMetric, setSelectedMetric] = useState('storage.tablespace.used_pct')
+  // '' follows the fullest series, such as the fullest tablespace, until a person picks one.
+  const [selectedSeries, setSelectedSeries] = useState('')
   const [history, setHistory] = useState<Observation[]>([])
   const [historyError, setHistoryError] = useState('')
   const [historyLoading, setHistoryLoading] = useState(false)
@@ -675,6 +678,14 @@ function DetailPage({
     onRefreshStatus(loading, () => { void refresh(false) })
   }, [loading, onRefreshStatus, refresh])
 
+  const metricSeries = useMemo(
+    () => (detail ? seriesFor(detail.latest_observations, selectedMetric) : []),
+    [detail, selectedMetric],
+  )
+  const activeSeries = selectedSeries === ALL_SERIES || metricSeries.some((item) => item.key === selectedSeries)
+    ? selectedSeries
+    : metricSeries[0]?.key ?? ''
+
   useEffect(() => {
     if (!detail) return
     let active = true
@@ -683,7 +694,8 @@ function DetailPage({
     const range = TIME_RANGES[timeRange]
     const end = new Date()
     const start = new Date(end.getTime() - range.milliseconds)
-    getMetricHistory(targetId, selectedMetric, start, end)
+    const labels = activeSeries && activeSeries !== ALL_SERIES ? JSON.parse(activeSeries) as Record<string, string> : {}
+    getMetricHistory(targetId, selectedMetric, start, end, labels)
       .then((result) => { if (active) setHistory(result) })
       .catch((reason: unknown) => {
         if (active) {
@@ -693,7 +705,7 @@ function DetailPage({
       })
       .finally(() => { if (active) setHistoryLoading(false) })
     return () => { active = false }
-  }, [targetId, selectedMetric, timeRange, detail])
+  }, [targetId, selectedMetric, activeSeries, timeRange, detail])
 
   useEffect(() => {
     onRefreshStatus(loading || historyLoading, () => { void refresh(false) })
@@ -713,10 +725,21 @@ function DetailPage({
   if (!detail) return null
 
   const numericMetrics = [...new Map(detail.latest_observations.filter((item) => item.value != null).map((item) => [item.metric_name, item])).values()]
-  const storageMetric = latestForMetric(detail.latest_observations, 'storage.tablespace.used_pct')
+  // The card shows the fullest tablespace, not whichever row happened to come first.
+  const tablespaceSeries = seriesFor(detail.latest_observations, 'storage.tablespace.used_pct')
+  const fullestTablespace = tablespaceSeries[0]
+  const storageMetric = fullestTablespace?.observation ?? latestForMetric(detail.latest_observations, 'storage.tablespace.used_pct')
+  const storageDetail = storageMetric
+    ? fullestTablespace && tablespaceSeries.length > 1
+      ? `${fullestTablespace.name}, the fullest of ${tablespaceSeries.length} · Updated ${relativeTime(storageMetric.timestamp)}`
+      : fullestTablespace
+        ? `${fullestTablespace.name} · Updated ${relativeTime(storageMetric.timestamp)}`
+        : `Updated ${relativeTime(storageMetric.timestamp)}`
+    : 'No current measurement'
   const seen = detail.last_seen
   const chartUnit = latestForMetric(detail.latest_observations, selectedMetric)?.unit ?? history.find((item) => item.unit)?.unit ?? null
-  const chartLabel = readableMetricName(selectedMetric)
+  const chartSeries = metricSeries.find((item) => item.key === activeSeries)
+  const chartLabel = chartSeries ? `${readableMetricName(selectedMetric)} · ${chartSeries.name}` : readableMetricName(selectedMetric)
   const archiveErrors = detail.archive.destinations.filter((item) => item.quality.toLowerCase() === 'error' || (item.value_str ?? '').toLowerCase().includes('error'))
   const status = detail.last_health_status.toLowerCase()
   const staleTelemetry = detail.monitoring_status.toLowerCase().includes('stale')
@@ -752,7 +775,7 @@ function DetailPage({
 
       <section className="metric-grid detail-metric-grid" aria-label="Latest measurements">
         <MetricCard label="Health status" value={detail.last_health_status.replaceAll('_', ' ')} detail={`Monitoring ${detail.monitoring_status || 'status unavailable'}`} icon={<Activity size={18} />} tone={detail.last_health_status === 'healthy' ? 'good' : 'warning'} />
-        <MetricCard label="Tablespace usage" value={storageMetric ? formatMetric(storageMetric.value, storageMetric.unit) : 'Unavailable'} detail={storageMetric ? `Updated ${relativeTime(storageMetric.timestamp)}` : 'No current measurement'} icon={<Layers3 size={18} />} tone={storageMetric?.value != null && storageMetric.value >= 85 ? 'warning' : 'default'} />
+        <MetricCard label="Tablespace usage" value={storageMetric ? formatMetric(storageMetric.value, storageMetric.unit) : 'Unavailable'} detail={storageDetail} icon={<Layers3 size={18} />} tone={storageMetric?.value != null && storageMetric.value >= 85 ? 'warning' : 'default'} />
         <MetricCard label="Compliance checks" value={detail.compliance.pass + detail.compliance.fail + detail.compliance.unknown} detail={`${detail.compliance.pass} pass · ${detail.compliance.fail} fail · ${detail.compliance.unknown} unknown`} icon={<ShieldCheck size={18} />} tone={detail.compliance.fail ? 'warning' : 'default'} />
         <MetricCard label="Critical incidents" value={detail.critical_incident_count ?? '—'} detail={detail.critical_incident_count == null ? 'The incident count was not returned' : 'Open critical incidents'} icon={<CircleAlert size={18} />} tone="default" />
       </section>
@@ -768,8 +791,17 @@ function DetailPage({
               {numericMetrics.length > 0 && (
                 <label className="chart-select">
                   <span className="sr-only">Timeline metric</span>
-                  <select value={selectedMetric} onChange={(event) => setSelectedMetric(event.target.value)} aria-label="Timeline metric">
+                  <select value={selectedMetric} onChange={(event) => { setSelectedMetric(event.target.value); setSelectedSeries('') }} aria-label="Timeline metric">
                     {[...new Set(numericMetrics.map((item) => item.metric_name))].map((metric) => <option key={metric} value={metric}>{readableMetricName(metric)}</option>)}
+                  </select><ChevronDown size={13} aria-hidden="true" />
+                </label>
+              )}
+              {metricSeries.length > 1 && (
+                <label className="chart-select">
+                  <span className="sr-only">Timeline series</span>
+                  <select value={activeSeries} onChange={(event) => setSelectedSeries(event.target.value)} aria-label="Timeline series">
+                    {metricSeries.map((item) => <option key={item.key} value={item.key}>{item.name}{item.value == null ? '' : ` (${item.unit === 'percent' || item.unit === '%' ? `${item.value.toFixed(1)}%` : formatMetric(item.value, item.unit)})`}</option>)}
+                    <option value={ALL_SERIES}>All {seriesNoun(metricSeries)}</option>
                   </select><ChevronDown size={13} aria-hidden="true" />
                 </label>
               )}

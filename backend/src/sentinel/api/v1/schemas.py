@@ -188,6 +188,8 @@ class TablespaceSummary(BaseModel):
     used_pct: float | None = None
     size_bytes: float | None = None
     autoextend: bool | None = None
+    max_bytes: float | None = None
+    used_pct_of_max: float | None = None
     timestamp: UTCDateTime
 
 

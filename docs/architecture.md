@@ -74,6 +74,10 @@ A database workspace has six read-only views besides the Overview: GraphDB, Wait
 
 A rate is the change of a counter between two readings. While the scheduler runs, a timer in the API process reads five fixed readings from every enabled database every five minutes and stores the counters as one JSON row in `observations` (`activity.sample`), kept 24 hours by default. GraphDB and WaitDB read the last hour of these rows when they open and replay them through the same rate code they use for live readings, so charts and meters are filled at once. Each page also reads again 3 seconds after it opens. The rows are not written to `current_observations`, so health and rules do not see them. No model is involved and no statement was added.
 
+## Labelled metrics
+
+A metric such as `storage.tablespace.used_pct` is stored once per tablespace at each collection, with the tablespace name as a label. `GET /api/v1/databases/{id}/metrics` takes `label=key=value` filters so a chart reads one series, and the Overview timeline never joins rows of different series into one line. Since Phase 27 the storage probe also stores `storage.tablespace.used_pct_of_max`, used space against the autoextend maximum from `DBA_DATA_FILES.MAXBYTES`. Health and the rules still read `storage.tablespace.used_pct`.
+
 ## Proposals and privileged operations
 
 A tablespace extension can be stored and approved. The statement is a fixed template. `POST /api/v1/operations/proposals/{id}/execute` returns `Release 1 does not execute proposals.` Privileged operations are a disabled placeholder at revision `0009`. `GET /api/v1/operations/privileged` and `POST /api/v1/operations/privileged/{id}/execute` return HTTP 501 unless the caller lacks permission, in which case the response is HTTP 403. Each attempt is audited and `privileged_operations` is not written. `OPERATIONS_EXECUTION_ENABLED` defaults to false and cannot be turned on unless `OPERATIONS_EXECUTION_APPROVED` is also set. Both flags still do not send a statement to Oracle. The illustrated page is [docs/architecture.html](architecture.html).

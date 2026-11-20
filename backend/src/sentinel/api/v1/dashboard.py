@@ -71,11 +71,15 @@ def detail_response(
         if obs.metric_name.startswith("storage.tablespace."):
             name = obs.labels.get("tablespace_name", "unknown")
             space = spaces.setdefault(name, TablespaceSummary(name=name, timestamp=obs.timestamp))
-            if obs.metric_name.endswith("used_pct"):
+            if obs.metric_name == "storage.tablespace.used_pct":
                 space.used_pct = obs.value
-            elif obs.metric_name.endswith("bytes_total"):
+            elif obs.metric_name == "storage.tablespace.used_pct_of_max":
+                space.used_pct_of_max = obs.value
+            elif obs.metric_name == "storage.tablespace.bytes_total":
                 space.size_bytes = obs.value
-            elif obs.metric_name.endswith("autoextend"):
+            elif obs.metric_name == "storage.tablespace.bytes_max":
+                space.max_bytes = obs.value
+            elif obs.metric_name == "storage.tablespace.autoextend":
                 space.autoextend = bool(obs.value) if obs.value is not None else None
         if obs.metric_name == "storage.fra.space_limit":
             fra.size_bytes = obs.value
