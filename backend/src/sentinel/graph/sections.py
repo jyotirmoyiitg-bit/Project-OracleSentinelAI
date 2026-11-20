@@ -1,8 +1,9 @@
-"""MemoryDB, StorageDB, ParameterDB, and AlertDB: four views of one database beside GraphDB and WaitDB.
+"""MemoryDB, StorageDB, ParameterDB, AlertDB, and SessionDB: five views of one database beside GraphDB and WaitDB.
 
 Each loader runs fixed readings from the catalog on the reader it is given and never builds a statement.
 A reading that is not granted or fails names its limitation and leaves the rest of the view.
-File paths and network addresses are shown to an administrator only.
+File paths and network addresses are shown to an administrator only, and so are the user, operating system
+user, and terminal of a session.
 """
 
 import re
@@ -436,3 +437,168 @@ async def load_alert_tail(settings: Settings, alias: str, reader: Reader | None 
         return assemble_alert_tail([dict(row) for row in _SYNTHETIC_ALERT], None)
     rows, note = await _read(settings, alias, "get_alert_tail", reader or read_rows)
     return assemble_alert_tail(rows, note)
+
+
+# ------------------------------------------------------------------ SessionDB
+
+SESSION_LIMIT = 500
+SESSION_NOTE = "User names, operating system users, terminals, and client host names are shown to an administrator."
+_NO_PROGRAM = "(no program)"
+_CLIENT_HOST = re.compile(r"@\S+")
+_NO_TERMINAL = {"", "UNKNOWN"}
+
+
+class SessionRow(BaseModel):
+    sid: int | None
+    serial: int | None = None
+    username: str
+    os_user: str
+    terminal: str
+    program: str
+    status: str
+    module: str
+    action: str
+    logon_time: str
+    last_call: str
+    idle_seconds: int | None
+    sql_id: str
+    restricted: bool = False
+
+
+class SessionGroup(BaseModel):
+    program: str
+    sessions: list[SessionRow]
+    active: int
+
+
+class SessionList(BaseModel):
+    groups: list[SessionGroup]
+    total: int
+    active: int
+    inactive: int
+    programs: int
+    capped: bool = False
+    collected_at: datetime
+    limitation: str | None = None
+    detail: bool = True
+    detail_note: str | None = None
+    caption: str = (
+        "User sessions grouped by program. Background processes and the session reading this page are left out. "
+        "Logon and last call times are the database server's clock."
+    )
+
+
+def _text(row: dict[str, str], key: str) -> str:
+    return " ".join((row.get(key) or "").split())
+
+
+def _group_name(program: str) -> str:
+    return program.upper() if program else _NO_PROGRAM
+
+
+def assemble_sessions(
+    rows: list[dict[str, str]], limitation: str | None, collected_at: datetime | None = None,
+) -> SessionList:
+    groups: dict[str, list[SessionRow]] = {}
+    for row in rows:
+        program = _text(row, "program")
+        terminal = _text(row, "terminal")
+        if terminal.upper() in _NO_TERMINAL:
+            terminal = _text(row, "machine")
+        session = SessionRow(
+            sid=_number(row.get("sid")),
+            serial=_number(row.get("serial_no")),
+            username=_text(row, "username"),
+            os_user=_text(row, "osuser"),
+            terminal=terminal,
+            program=program,
+            status=_text(row, "status").upper(),
+            module=_text(row, "module"),
+            action=_text(row, "action"),
+            logon_time=_text(row, "logon_time"),
+            last_call=_text(row, "last_call_at"),
+            idle_seconds=_number(row.get("last_call_seconds")),
+            sql_id=_text(row, "sql_id"),
+        )
+        groups.setdefault(_group_name(program), []).append(session)
+    ordered = [
+        SessionGroup(
+            program=name,
+            sessions=sorted(items, key=lambda item: (item.username, item.sid or 0)),
+            active=sum(1 for item in items if item.status == "ACTIVE"),
+        )
+        for name, items in sorted(groups.items(), key=lambda pair: (pair[0] == _NO_PROGRAM, pair[0]))
+    ]
+    total = sum(len(group.sessions) for group in ordered)
+    active = sum(group.active for group in ordered)
+    if limitation:
+        ordered, total, active = [], 0, 0
+    return SessionList(
+        groups=ordered,
+        total=total,
+        active=active,
+        inactive=total - active,
+        programs=len(ordered),
+        capped=total >= SESSION_LIMIT,
+        collected_at=collected_at or utcnow(),
+        limitation=limitation,
+    )
+
+
+def sessions_for_role(picture: SessionList, admin: bool) -> SessionList:
+    """A non-administrator sees every session and what it runs, without the names of people and machines."""
+    if admin:
+        return picture
+    merged: dict[str, list[SessionRow]] = {}
+    for group in picture.groups:
+        name = _CLIENT_HOST.sub("", group.program).strip() or _NO_PROGRAM
+        merged.setdefault(name, []).extend(
+            item.model_copy(update={
+                "username": "", "os_user": "", "terminal": "",
+                "program": _CLIENT_HOST.sub("", item.program).strip(),
+                "module": _CLIENT_HOST.sub("", item.module).strip(),
+                "restricted": True,
+            })
+            for item in group.sessions
+        )
+    groups = [
+        SessionGroup(
+            program=name,
+            sessions=sorted(items, key=lambda item: item.sid or 0),
+            active=sum(1 for item in items if item.status == "ACTIVE"),
+        )
+        for name, items in sorted(merged.items(), key=lambda pair: (pair[0] == _NO_PROGRAM, pair[0]))
+    ]
+    return picture.model_copy(update={
+        "groups": groups, "programs": len(groups), "detail": False, "detail_note": SESSION_NOTE,
+    })
+
+
+_SYNTHETIC_SESSIONS: list[dict[str, str]] = [
+    {"sid": "246", "serial_no": "18731", "username": "LOANAPP", "osuser": "svc_loans", "machine": "WORKGROUP\\WS-0142", "terminal": "WS-0142",
+     "program": "teller.exe", "status": "INACTIVE", "module": "teller.exe", "action": "",
+     "logon_time": "2026-11-20 08:04:46", "last_call_at": "2026-11-20 08:26:58", "last_call_seconds": "462", "sql_id": ""},
+    {"sid": "488", "serial_no": "40217", "username": "LOANAPP", "osuser": "svc_loans", "machine": "WORKGROUP\\WS-0142", "terminal": "WS-0142",
+     "program": "teller.exe", "status": "INACTIVE", "module": "teller.exe", "action": "",
+     "logon_time": "2026-11-20 08:04:46", "last_call_at": "2026-11-20 08:27:03", "last_call_seconds": "457", "sql_id": ""},
+    {"sid": "730", "serial_no": "55102", "username": "APPUSER", "osuser": "jdoe", "machine": "WORKGROUP\\WS-0177", "terminal": "WS-0177",
+     "program": "Toad.exe", "status": "ACTIVE", "module": "TOAD 26.2.272.9090", "action": "69524976,493129008",
+     "logon_time": "2026-11-20 08:30:22", "last_call_at": "2026-11-20 08:34:43", "last_call_seconds": "2", "sql_id": "5jm8qnb729z8u"},
+    {"sid": "608", "serial_no": "9415", "username": "APPUSER", "osuser": "jdoe", "machine": "WORKGROUP\\WS-0177", "terminal": "WS-0177",
+     "program": "Toad.exe", "status": "INACTIVE", "module": "TOAD 26.2.272.9090", "action": "69524976,395748208",
+     "logon_time": "2026-11-20 08:30:03", "last_call_at": "2026-11-20 08:30:04", "last_call_seconds": "281", "sql_id": ""},
+    {"sid": "155", "serial_no": "3307", "username": "REPORTING", "osuser": "oracle", "machine": "apphost01", "terminal": "",
+     "program": "JDBC Thin Client", "status": "ACTIVE", "module": "JDBC Thin Client", "action": "",
+     "logon_time": "2026-11-19 22:00:01", "last_call_at": "2026-11-20 08:34:40", "last_call_seconds": "5", "sql_id": "8szmwam7fysa3"},
+    {"sid": "312", "serial_no": "27741", "username": "SYSTEM", "osuser": "oracle", "machine": "dbhost01", "terminal": "pts/0",
+     "program": "sqlplus@dbhost01 (TNS V1-V3)", "status": "INACTIVE", "module": "SQL*Plus", "action": "",
+     "logon_time": "2026-11-20 07:12:10", "last_call_at": "2026-11-20 07:40:00", "last_call_seconds": "3285", "sql_id": ""},
+]
+
+
+async def load_sessions(settings: Settings, alias: str, reader: Reader | None = None) -> SessionList:
+    """Read the user sessions of the database, grouped by program."""
+    if reader is None and settings.synthetic_mode:
+        return assemble_sessions([dict(row) for row in _SYNTHETIC_SESSIONS], None)
+    rows, note = await _read(settings, alias, "get_session_list", reader or read_rows)
+    return assemble_sessions(rows, note)

@@ -30,7 +30,7 @@ BEGIN
               'V_$ARCHIVE_DEST_STATUS', 'V_$PARAMETER', 'V_$RESOURCE_LIMIT',
               'V_$DIAG_ALERT_EXT', 'DBA_TABLESPACES', 'DBA_DATA_FILES',
               'DBA_FREE_SPACE', 'DBA_TEMP_FILES', 'DUAL',
-              'V_$SGAINFO', 'V_$PGASTAT', 'V_$SQL', 'V_$SESSION',
+              'V_$SGAINFO', 'V_$PGASTAT', 'V_$SQL', 'V_$SQL_PLAN', 'V_$SESSION',
               'V_$SESSION_LONGOPS', 'V_$RMAN_BACKUP_JOB_DETAILS',
               'DBA_SCHEDULER_RUNNING_JOBS', 'DBA_JOBS_RUNNING',
               'V_$PDBS', 'V_$SERVICES', 'V_$OSSTAT', 'V_$SYS_TIME_MODEL',

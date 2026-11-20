@@ -747,6 +747,89 @@ export function getDatabaseParameters(id: string, signal?: AbortSignal): Promise
   return request(`/api/v1/databases/${encodeURIComponent(id)}/parameters`, signal)
 }
 
+export interface SessionRow {
+  sid: number | null
+  serial: number | null
+  username: string
+  os_user: string
+  terminal: string
+  program: string
+  status: string
+  module: string
+  action: string
+  logon_time: string
+  last_call: string
+  idle_seconds: number | null
+  sql_id: string
+  restricted: boolean
+}
+
+export interface SessionGroup {
+  program: string
+  sessions: SessionRow[]
+  active: number
+}
+
+export interface SessionList {
+  groups: SessionGroup[]
+  total: number
+  active: number
+  inactive: number
+  programs: number
+  capped: boolean
+  collected_at: string
+  limitation: string | null
+  detail: boolean
+  detail_note: string | null
+  caption: string
+}
+
+export function getDatabaseSessions(id: string, signal?: AbortSignal): Promise<SessionList> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/sessions`, signal)
+}
+
+export interface PlanStep {
+  id: number
+  parent_id: number | null
+  depth: number
+  operation: string
+  options: string
+  object_owner: string
+  object_name: string
+  optimizer: string
+  cost: number | null
+  cardinality: number | null
+  bytes: number | null
+}
+
+export interface SessionStatement {
+  sid: number
+  serial: number
+  found: boolean
+  status: string
+  kind: 'current' | 'previous' | 'none'
+  sql_id: string
+  child_number: number | null
+  text: string
+  truncated: boolean
+  text_note: string | null
+  plan_hash_value: string
+  optimizer_mode: string
+  executions: number | null
+  elapsed_seconds: number | null
+  buffer_gets: number | null
+  disk_reads: number | null
+  rows_processed: number | null
+  plan: PlanStep[]
+  plan_note: string | null
+  collected_at: string
+  limitation: string | null
+}
+
+export function getSessionStatement(id: string, sid: number, serial: number, signal?: AbortSignal): Promise<SessionStatement> {
+  return request(`/api/v1/databases/${encodeURIComponent(id)}/sessions/${sid}/statement?serial=${serial}`, signal)
+}
+
 export interface AlertLine {
   at: string
   text: string

@@ -862,6 +862,80 @@ SECTION_ALERT_SQL = f"""
     WHERE ROWNUM <= 300
 """
 
+# SessionDB: user sessions, the way a session browser groups them by program. Background processes and the
+# session running this statement are left out. Times are read on the database server's clock.
+SECTION_SESSION_SQL = """
+    SELECT sid, serial_no, username, osuser, machine, terminal, program, status, module, action,
+           logon_time, last_call_at, last_call_seconds, sql_id
+    FROM (
+        SELECT s.sid,
+               s.serial# AS serial_no,
+               s.username,
+               SUBSTR(s.osuser, 1, 64) AS osuser,
+               SUBSTR(s.machine, 1, 64) AS machine,
+               SUBSTR(s.terminal, 1, 64) AS terminal,
+               SUBSTR(s.program, 1, 64) AS program,
+               s.status,
+               SUBSTR(s.module, 1, 64) AS module,
+               SUBSTR(s.action, 1, 64) AS action,
+               TO_CHAR(s.logon_time, 'YYYY-MM-DD HH24:MI:SS') AS logon_time,
+               TO_CHAR(SYSDATE - s.last_call_et / 86400, 'YYYY-MM-DD HH24:MI:SS') AS last_call_at,
+               s.last_call_et AS last_call_seconds,
+               s.sql_id
+        FROM v$session s
+        WHERE s.type = 'USER'
+          AND s.sid <> TO_NUMBER(SYS_CONTEXT('USERENV', 'SID'))
+        ORDER BY UPPER(s.program), s.username, s.sid
+    )
+    WHERE ROWNUM <= 500
+"""
+# SessionDB, one session: the statement it is running, or the last one it ran when it is idle. The SID and serial
+# number are bound, so a SID that was reused by another session finds nothing.
+SESSION_STATEMENT_SQL = """
+    SELECT sid, serial_no, status, statement_kind, sql_id, child_number, sql_fulltext,
+           plan_hash_value, optimizer_mode, executions, elapsed_seconds, buffer_gets, disk_reads, rows_processed
+    FROM (
+        SELECT s.sid,
+               s.serial# AS serial_no,
+               s.status,
+               CASE WHEN s.sql_id IS NOT NULL THEN 'current'
+                    WHEN s.prev_sql_id IS NOT NULL THEN 'previous'
+                    ELSE 'none' END AS statement_kind,
+               NVL(s.sql_id, s.prev_sql_id) AS sql_id,
+               CASE WHEN s.sql_id IS NOT NULL THEN s.sql_child_number ELSE s.prev_child_number END AS child_number,
+               q.sql_fulltext,
+               q.plan_hash_value,
+               q.optimizer_mode,
+               q.executions,
+               ROUND(q.elapsed_time / 1000000, 2) AS elapsed_seconds,
+               q.buffer_gets,
+               q.disk_reads,
+               q.rows_processed
+        FROM v$session s
+        LEFT JOIN v$sql q
+          ON q.sql_id = NVL(s.sql_id, s.prev_sql_id)
+         AND q.child_number = CASE WHEN s.sql_id IS NOT NULL THEN s.sql_child_number ELSE s.prev_child_number END
+        WHERE s.sid = :sid
+          AND s.serial# = :serial
+          AND s.type = 'USER'
+    )
+    WHERE ROWNUM <= 1
+"""
+# The plan Oracle cached for that statement. Nothing is explained again, so nothing is written to a plan table.
+STATEMENT_PLAN_SQL = """
+    SELECT id, parent_id, depth, operation, options, object_owner, object_name, optimizer,
+           cost, cardinality, bytes
+    FROM (
+        SELECT p.id, p.parent_id, p.depth, p.operation, p.options, p.object_owner, p.object_name,
+               p.optimizer, p.cost, p.cardinality, p.bytes
+        FROM v$sql_plan p
+        WHERE p.sql_id = :sql_id
+          AND p.child_number = :child
+        ORDER BY p.id
+    )
+    WHERE ROWNUM <= 300
+"""
+
 
 def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
     """Fixed statements for the operator question groups."""
@@ -1062,6 +1136,13 @@ def reading_queries() -> dict[str, tuple[FixedQuery, ...]]:
         ),
         "get_alert_tail": (
             FixedQuery("v$diag_alert_ext", SECTION_ALERT_SQL, "SYS.V_$DIAG_ALERT_EXT"),
+        ),
+        "get_session_list": (FixedQuery("v$session", SECTION_SESSION_SQL, "SYS.V_$SESSION"),),
+        "get_session_statement": (
+            FixedQuery("v$sql", SESSION_STATEMENT_SQL, "SYS.V_$SQL", binds=("sid", "serial")),
+        ),
+        "get_statement_plan": (
+            FixedQuery("v$sql_plan", STATEMENT_PLAN_SQL, "SYS.V_$SQL_PLAN", binds=("sql_id", "child")),
         ),
         "issues": issues,
     }

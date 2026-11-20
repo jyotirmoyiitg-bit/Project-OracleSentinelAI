@@ -64,9 +64,14 @@ SELECT name, bytes FROM v$sgainfo WHERE rownum <= 1;
 
 SELECT name, value FROM v$pgastat WHERE rownum <= 1;
 
-SELECT sql_id FROM v$sql WHERE rownum <= 1;
+SELECT sql_id, child_number, sql_fulltext, plan_hash_value, optimizer_mode, executions, elapsed_time, buffer_gets, disk_reads, rows_processed FROM v$sql WHERE rownum <= 1;
 
-SELECT username, status, sid FROM v$session WHERE type = 'USER' AND rownum <= 1;
+SELECT sql_id, child_number, id, parent_id, depth, operation, options, object_owner, object_name, optimizer, cost, cardinality, bytes
+FROM v$sql_plan WHERE rownum <= 1;
+
+SELECT username, status, sid, serial#, osuser, machine, terminal, program, module, action, logon_time, last_call_et,
+       sql_id, sql_child_number, prev_sql_id, prev_child_number
+FROM v$session WHERE type = 'USER' AND rownum <= 1;
 
 SELECT opname, sofar, totalwork FROM v$session_longops WHERE rownum <= 1;
 

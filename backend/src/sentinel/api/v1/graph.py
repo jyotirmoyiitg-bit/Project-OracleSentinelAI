@@ -5,16 +5,16 @@ request and run every reading on it. A non-administrator receives the disk-stora
 without file paths, redo members, or segment names. The history endpoint returns stored
 counter samples from PostgreSQL and does not query Oracle.
 
-MemoryDB, StorageDB, ParameterDB, and AlertDB add four more pictures of one database. They are open
-to every signed-in role too. A parameter value that holds a path or an address, and a file path in
-the alert log, are shown to an administrator only.
+MemoryDB, StorageDB, ParameterDB, AlertDB, and SessionDB add five more pictures of one database. They are
+open to every signed-in role too. A parameter value that holds a path or an address, a file path in the
+alert log, and the user, operating system user, and terminal of a session are shown to an administrator only.
 """
 
 import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -28,15 +28,19 @@ from sentinel.graph.memory import MemoryPicture, load_memory
 from sentinel.graph.sections import (
     AlertTail,
     ParameterList,
+    SessionList,
     SgaBreakdown,
     TablespaceUtilization,
     alert_tail_for_role,
     load_alert_tail,
     load_parameters,
+    load_sessions,
     load_sga_breakdown,
     load_tablespaces,
     parameters_for_role,
+    sessions_for_role,
 )
+from sentinel.graph.session_sql import STATEMENT_NOTE, SessionStatement, load_statement
 from sentinel.graph.storage import StoragePicture, load_storage, summarize
 from sentinel.graph.wait_activity import WaitActivity, load_wait_activity
 from sentinel.graph.waits import WaitPicture, load_waits
@@ -248,3 +252,34 @@ def database_alert_log(
     alias = _alias(session, target_id)
     picture = asyncio.run(_picture(settings, alias, load_alert_tail))
     return alert_tail_for_role(picture, sees_detail(caller))
+
+
+@database_graph.get("/{target_id}/sessions", response_model=SessionList)
+def database_sessions(
+    target_id: str,
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> SessionList:
+    """SessionDB: user sessions grouped by program. User, OS user, and terminal are shown to an administrator."""
+    _allow(caller)
+    alias = _alias(session, target_id)
+    picture = asyncio.run(_picture(settings, alias, load_sessions))
+    return sessions_for_role(picture, sees_detail(caller))
+
+
+@database_graph.get("/{target_id}/sessions/{sid}/statement", response_model=SessionStatement)
+def database_session_statement(
+    target_id: str,
+    sid: Annotated[int, Path(ge=0, lt=2**32)],
+    serial: Annotated[int, Query(ge=0, lt=2**32)],
+    caller: Annotated[Caller, Depends(_caller)],
+    session: Annotated[Session, Depends(get_session)],
+    settings: Annotated[Settings, Depends(runtime_settings)],
+) -> SessionStatement:
+    """SessionDB: the statement one session runs and its cached plan. Shown to an administrator only."""
+    _allow(caller)
+    if not sees_detail(caller):
+        raise HTTPException(403, STATEMENT_NOTE)
+    alias = _alias(session, target_id)
+    return asyncio.run(load_statement(settings, alias, sid, serial))

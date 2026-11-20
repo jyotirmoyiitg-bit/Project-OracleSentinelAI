@@ -143,6 +143,8 @@ class FixedQuery:
     sql: str
     object_name: str
     required: bool = True
+    # Names of bind variables. Only a whole number, or an identifier Oracle itself returned, is ever bound.
+    binds: tuple[str, ...] = ()
 
 
 CATALOG: dict[str, tuple[FixedQuery, ...]] = {
@@ -187,6 +189,8 @@ def collect_rows(connection: oracledb.Connection, kind: str) -> tuple[list[dict[
     notes: list[str] = []
     rows: list[dict[str, str]] = []
     for query in CATALOG[kind]:
+        if query.binds:
+            raise ValueError(f"{kind} takes bind values; use collect_bound_rows")
         cursor = connection.cursor()
         try:
             cursor.execute(query.sql)
@@ -275,3 +279,62 @@ def _cell(value: object) -> str:
         return f"{value:.2f}"
     text = str(value).replace("\n", " ").strip()
     return text[:200]
+
+
+# ------------------------------------------------------------------ bound readings
+
+# What may be bound: a whole number such as a SID, or a SQL_ID exactly as Oracle writes it.
+_SQL_ID = re.compile(r"^[0-9a-z]{13}$")
+BOUND_TEXT_LIMIT = 20000
+_BOUND_CELL_LIMIT = 400
+
+
+def bind_value_allowed(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return 0 <= value < 2**32
+    return isinstance(value, str) and _SQL_ID.fullmatch(value) is not None
+
+
+def _bound_cell(value: object) -> str:
+    """Like the plain readings, but a statement keeps its line breaks and is not cut at 200 characters."""
+    if value is None:
+        return ""
+    reader = getattr(value, "read", None)
+    if callable(reader):
+        return str(reader(1, BOUND_TEXT_LIMIT) or "")
+    if isinstance(value, float):
+        return f"{value:.2f}" if not value.is_integer() else str(int(value))
+    return str(value).strip()[:_BOUND_CELL_LIMIT]
+
+
+def collect_bound_rows(connection: oracledb.Connection, kind: str, binds: dict[str, object]) -> tuple[list[dict[str, str]], str]:
+    """Run the fixed statements of one bound question. Each value is checked before it is bound, never joined into SQL."""
+    notes: list[str] = []
+    rows: list[dict[str, str]] = []
+    for query in CATALOG[kind]:
+        if set(query.binds) != set(binds):
+            raise ValueError(f"{kind} binds exactly {sorted(query.binds)}")
+        if not all(bind_value_allowed(value) for value in binds.values()):
+            raise ValueError("Only a whole number or an Oracle SQL_ID can be bound")
+        cursor = connection.cursor()
+        try:
+            cursor.execute(query.sql, {name: binds[name] for name in query.binds})
+            columns = [str(column[0]).lower() for column in cursor.description or ()]
+            for raw in cursor.fetchall():
+                item = {column: _bound_cell(value) for column, value in zip(columns, raw, strict=True)}
+                item["source"] = query.source
+                rows.append(item)
+        except oracledb.Error as exc:
+            code = oracle_code(exc)
+            if code in ACCESS_CODES:
+                if query.required:
+                    raise ActivityAccessError(query.object_name) from None
+                notes.append(f"{query.object_name} is not granted to the monitoring account.")
+                continue
+            raise ActivityUnavailable(code) from None
+        finally:
+            cursor.close()
+    logger.info("bound activity kind=%s rows=%s", kind, len(rows))
+    return rows, " ".join(notes)

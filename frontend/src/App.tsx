@@ -60,6 +60,7 @@ import { GraphPage } from './GraphPage'
 import { AlertPage } from './AlertPage'
 import { MemoryPage } from './MemoryPage'
 import { ParameterPage } from './ParameterPage'
+import { SessionPage } from './SessionPage'
 import { StoragePage } from './StoragePage'
 import { WaitPage } from './WaitPage'
 import type { FleetHealthSummary, FleetResponse, Observation, Target, TargetDetails } from './types'
@@ -97,13 +98,15 @@ type Route =
   | { page: 'storage-database'; id: string }
   | { page: 'parameters-database'; id: string }
   | { page: 'alerts-database'; id: string }
+  | { page: 'sessions-database'; id: string }
 
-type SectionPage = 'memory-database' | 'storage-database' | 'parameters-database' | 'alerts-database'
+type SectionPage = 'memory-database' | 'storage-database' | 'parameters-database' | 'alerts-database' | 'sessions-database'
 const SECTION_TAB: Record<SectionPage, DatabaseTab> = {
   'memory-database': 'memory',
   'storage-database': 'storage',
   'parameters-database': 'parameters',
   'alerts-database': 'alerts',
+  'sessions-database': 'sessions',
 }
 
 function isSection(page: string): page is SectionPage {
@@ -136,7 +139,7 @@ function parseHash(hash: string): Route {
   if (match) return { page: 'wait-database', id: decodeURIComponent(match[1]) }
   if (hash.match(/^#\/wait\/?$/)) return { page: 'wait' }
   // The four sections added beside GraphDB and WaitDB are always opened on one database.
-  match = hash.match(/^#\/(memory|storage|parameters|alerts)\/databases\/([^/]+)$/)
+  match = hash.match(/^#\/(memory|storage|parameters|alerts|sessions)\/databases\/([^/]+)$/)
   if (match) return { page: `${match[1]}-database` as SectionPage, id: decodeURIComponent(match[2]) }
   return { page: 'fleet' }
 }
@@ -173,7 +176,7 @@ function usePageNavigation() {
     navigateToGraphDatabase: (id: string) => navigate(`#/graph/databases/${encodeURIComponent(id)}`),
     navigateToWait: () => navigate('#/wait'),
     navigateToWaitDatabase: (id: string) => navigate(`#/wait/databases/${encodeURIComponent(id)}`),
-    navigateToSection: (section: 'memory' | 'storage' | 'parameters' | 'alerts', id: string) => (
+    navigateToSection: (section: 'memory' | 'storage' | 'parameters' | 'alerts' | 'sessions', id: string) => (
       navigate(`#/${section}/databases/${encodeURIComponent(id)}`)
     ),
   }
@@ -943,7 +946,7 @@ export default function App() {
   const openTab = (tab: DatabaseTab, id: string) => {
     if (tab === 'graph') navigateToGraphDatabase(id)
     else if (tab === 'wait') navigateToWaitDatabase(id)
-    else if (tab === 'memory' || tab === 'storage' || tab === 'parameters' || tab === 'alerts') navigateToSection(tab, id)
+    else if (tab === 'memory' || tab === 'storage' || tab === 'parameters' || tab === 'alerts' || tab === 'sessions') navigateToSection(tab, id)
     else if (tab === 'events') navigateToDatabaseEvents(id)
     else if (tab === 'copilot') navigateToDatabaseCopilot(id)
     else navigateToDatabase(id)
@@ -1100,6 +1103,8 @@ export default function App() {
         <ParameterPage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
       ) : route.page === 'alerts-database' ? (
         <AlertPage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
+      ) : route.page === 'sessions-database' ? (
+        <SessionPage key={route.id} databaseId={route.id} onAskCopilot={navigateToDatabaseCopilot} onOpenDatabase={navigateToDatabase} onRefreshStatus={registerRefresh} />
       ) : route.page === 'knowledge' ? (
         <KnowledgePage refreshSeconds={refreshSeconds} onRefreshStatus={registerRefresh} role={session.role} />
       ) : route.page === 'copilot' || route.page === 'copilot-database' || route.page === 'copilot-incident' ? (

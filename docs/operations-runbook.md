@@ -201,6 +201,19 @@ Knowledge. An administrator uploads a PDF, DOCX, TXT, or Markdown file on the Kn
 
 Model-assisted routing. With a model enabled, a database question the fixed router cannot place is routed by the model to at most three approved readings. Set `AI_ROUTER_FALLBACK=false` in Admin, Language model to keep routing fixed only.
 
+## Phase 28 SessionDB
+
+- No migration or setting. One new grant for the plan: run `scripts/oracle/02_grant_readonly_monitoring.sql` as SYSDBA in each monitored database, or `GRANT SELECT ON SYS.V_$SQL_PLAN TO GSYSTEM;`. Restart the API and reload the portal.
+- Open a database and choose the SessionDB tab, or go to `#/sessions/databases/{id}`.
+- Sessions are grouped by program. Background processes and the portal's own reading session are not listed.
+- Choose a session to see its current statement, or the last one it ran when idle, and its cached explain plan. Nothing is explained again and nothing is run.
+- User, OS user, terminal, the statement, and the plan are shown to an administrator only. Other roles see "—" in those columns and a note instead of the statement.
+- "Grant SELECT on SYS.V_$SQL_PLAN" in the plan tab: the grant above is missing. The statement still shows.
+- "This session has ended, or its SID now belongs to another session": refresh the list.
+- "The statement is no longer in the shared pool": Oracle has aged it out; only its SQL_ID is known.
+- More than 500 user sessions: the page says the list stops at 500.
+- Live check: `test_real_phase28\Verify_Phase28_Real.ps1`. Add `-RequirePlan` to fail unless the cached plan was read.
+
 ## Phase 27 tablespace timeline
 
 - No migration, grant, or setting. Restart the API and rebuild or reload the portal.
