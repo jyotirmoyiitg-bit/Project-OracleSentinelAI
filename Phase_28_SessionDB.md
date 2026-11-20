@@ -96,14 +96,29 @@ Nothing is changed in Oracle. No user name or SQL text is printed.
 .\test_real_phase28\Verify_Phase28_Real.ps1 -TnsAlias MY19C -Interactive
 ```
 
-## 7. Not included
+## 7. Compact table rows
+
+Rows of the SessionDB list and the plan are compact, like the reference tool: 4 px above and below each cell instead of 13 px, and 7 px in the header. At the user's request the same spacing now applies to every table in the portal:
+
+| Where | Tables | Row height (measured in the preview) |
+|---|---|---|
+| Database sections | SessionDB, the plan, ParameterDB, StorageDB, MemoryDB, WaitDB | 23–29 px |
+| Database Overview | Agent settings, tablespaces, compliance checks, observations | 24 px; compliance 40 px (two-line cells, was 54) |
+| Fleet and incidents | Fleet list, incident list | 36 px (was 41): the database icon is 26 px instead of 32 inside a table |
+| Other pages | Events, Agents runs, Knowledge, Admin configuration, operators, audit, copilot answer tables | Same 4 px cell padding |
+
+Controls inside a row (the agent setting selects, number boxes, and Save buttons) have 3 px vertical padding so they do not stretch the row. In the compliance table the evidence column is at least 200 px wide, so the evidence text stays on one line. Tables that hold long text still wrap.
+
+At the user's request the database Overview now shows the Tablespaces table first, with the Metric timeline and Recovery area below it and Compliance policies after them.
+
+## 8. Not included
 
 - Ending or killing a session, tracing, or any other change.
 - Running `EXPLAIN PLAN` for a statement that has no cached plan.
 - Waits, locks, open cursors, and session statistics tabs of the reference tool. Blocking sessions are already on WaitDB.
 - The copilot and the agents do not read sessions or statements.
 
-## 8. Verification
+## 9. Verification
 
 | Check | Result |
 |---|---|

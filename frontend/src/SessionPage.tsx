@@ -154,8 +154,10 @@ function SessionTree({ picture, databaseId }: { picture: SessionList; databaseId
                       }}
                     >
                       <td className="session-user">
-                        <User size={13} aria-hidden="true" />
-                        <Restricted value={row.username} restricted={row.restricted} />
+                        <span className="session-user-cell">
+                          <User size={13} aria-hidden="true" />
+                          <Restricted value={row.username} restricted={row.restricted} />
+                        </span>
                       </td>
                       <td><Restricted value={row.os_user} restricted={row.restricted} /></td>
                       <td><Restricted value={row.terminal} restricted={row.restricted} /></td>

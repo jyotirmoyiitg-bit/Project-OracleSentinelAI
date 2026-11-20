@@ -12,6 +12,7 @@ Migration head remains `0012`. No table, column, or setting was added. One Oracl
 1. A SessionDB feature at the database level, from a screenshot of a session browser: sessions grouped by program with user, OS user, terminal, SID, status, module, action, logon time, last call, and SQL_ID.
 2. The current SQL statement and the explain plan of the selected session, from two more screenshots, in the same phase.
 3. This summary updated, and a PowerShell test script for Phase 28.
+4. Smaller row height in the SessionDB and plan tables, then the same for ParameterDB, StorageDB, MemoryDB, and WaitDB, then for the database Overview (including the agent settings table) and every other table in the portal.
 
 ## What changed
 
@@ -25,6 +26,8 @@ Migration head remains `0012`. No table, column, or setting was added. One Oracl
 | Portal | SessionDB tab after WaitDB; program groups, active sessions in green, filters; selectable rows; Statement tab with line numbers, Format statement, Copy, and statistics; Explain plan tab with the cached plan as an indented table |
 | Oracle scripts | Grant, verify, and revoke scripts updated for `V$SQL_PLAN` and the new `V$SESSION` and `V$SQL` columns |
 | Live check | `test_real_phase28\Verify_Phase28_Real.ps1` and `real_runtime.py` |
+| Table rows | Compact rows (4 px cell padding) on every table: database sections, the Overview (agent settings, tablespaces, compliance, observations), Fleet, Incidents, Events, Agents, Knowledge, Admin, operators, audit, and copilot answers. About 24–29 px a row instead of 43 px; compliance 40 px instead of 54; fleet 36 px instead of 41 |
+| Overview order | Tablespaces moved above the Metric timeline and Recovery area |
 
 ## Files
 

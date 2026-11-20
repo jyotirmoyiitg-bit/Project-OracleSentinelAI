@@ -68,7 +68,7 @@ button:focus-visible, select:focus-visible, a:focus-visible {
 .compliance-panel, .forecast-panel { margin-top: 20px; }
 .compliance-table { min-width: 1080px; }
 .compliance-table td { vertical-align: top; }
-.compliance-table td small { display: block; color: var(--muted); font-size: 10px; margin-top: 4px; }
+.compliance-table td small { display: block; color: var(--muted); font-size: 10px; margin-top: 1px; line-height: 1.25; }
 .compliance-table code { display: block; max-width: 360px; white-space: normal; overflow-wrap: anywhere; color: #59677c; font-size: 10px; line-height: 1.5; }
 .policy-result, .forecast-status { display: inline-flex; align-items: center; padding: 4px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .policy-pass, .forecast-stable { color: #217858; background: #e8f6ef; }
@@ -342,7 +342,6 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .tablespace-panel { margin-bottom: 16px; }
 .tablespace-panel .panel-heading { padding-bottom: 13px; }
 .sort-button svg { color: #b1bac8; }
-.tablespace-table th, .tablespace-table td { padding-top: 12px; padding-bottom: 12px; }
 .primary-cell { color: #39475e !important; font-weight: 650; }
 .usage-cell { display: flex; align-items: center; gap: 9px; }
 .usage-track { width: 78px; height: 5px; overflow: hidden; background: #edf0f5; border-radius: 6px; }
@@ -379,7 +378,6 @@ h1 { margin-top: 9px; color: #202b40; font-family: Manrope, sans-serif; font-siz
 .probe-time { overflow: hidden; color: #929dad; font-size: 9px; text-overflow: ellipsis; }
 .probe-error { grid-column: 2 / -1; color: #bd626b; font-size: 9px; }
 .observation-panel { margin-bottom: 2px; }
-.observation-table th, .observation-table td { padding-top: 10px; padding-bottom: 10px; }
 .quality-tag { padding: 4px 7px; color: #5a8f7a; background: #edf7f2; border-radius: 5px; font-size: 9px; text-transform: capitalize; }
 .quality-stale, .quality-estimated { color: #ad7b36; background: #fff5e6; }
 .quality-error, .quality-invalid { color: #bd5b64; background: #fff0f1; }
@@ -1223,13 +1221,27 @@ td .operator-hint { margin: 0; }
 /* SessionDB: sessions grouped by program, active sessions in green. */
 .session-table td { vertical-align: middle; }
 .session-group th { padding: 0; background: #f6f8fc; border-top: 1px solid #e6ebf3; text-align: left; }
-.session-group-toggle { display: inline-flex; align-items: center; gap: 7px; width: 100%; padding: 8px 12px; color: #263248; background: transparent; border: 0; font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
+.session-group-toggle { display: inline-flex; align-items: center; gap: 7px; width: 100%; padding: 4px 12px; color: #263248; background: transparent; border: 0; font: inherit; font-size: 12px; cursor: pointer; text-align: left; }
 .session-group-toggle:hover { background: #eef2fb; }
 .session-group-toggle:focus-visible { outline: 3px solid rgba(86, 111, 231, .3); outline-offset: -3px; }
 .session-group-toggle svg { color: #6f7fd6; flex: none; }
 .session-group-count { color: #7e899b; font-weight: 600; }
-.session-user { display: flex; align-items: center; gap: 6px; padding-left: 34px !important; }
-.session-user svg { color: #7b8ade; flex: none; }
+.session-user { padding-left: 34px !important; }
+.session-user-cell { display: inline-flex; align-items: center; gap: 6px; }
+.session-user-cell svg { color: #7b8ade; flex: none; }
+/* Compact rows, like a session browser, on every table in the portal: the database sections (SessionDB, the plan,
+   ParameterDB, StorageDB, MemoryDB, WaitDB), the Overview (tablespaces, compliance, agent settings, observations),
+   Fleet, Incidents, Events, Agents, Knowledge, Admin, operators, audit, and copilot answers. More rows fit on screen. */
+.data-table td, .audit-table td { padding-top: 4px; padding-bottom: 4px; line-height: 1.35; }
+.data-table thead th, .audit-table thead th { padding-top: 7px; padding-bottom: 7px; }
+.copilot-table th, .copilot-table td { padding-top: 4px; padding-bottom: 4px; }
+.agent-settings-table select, .agent-setting-edit input[type="number"] { padding-top: 3px; padding-bottom: 3px; }
+.agent-setting-edit .button { padding-top: 3px; padding-bottom: 3px; }
+.data-table .database-icon { width: 26px; height: 26px; border-radius: 7px; }
+.data-table .database-link small, .data-table .timestamp-sub { margin-top: 1px; }
+.data-table .row-action { width: 24px; height: 24px; }
+.compliance-table code { min-width: 200px; line-height: 1.35; }
+.data-table .policy-result { padding-top: 2px; padding-bottom: 2px; }
 .session-active td { color: #1f7a52; }
 .session-active td:first-child { box-shadow: inset 3px 0 0 #2f9e6b; }
 .session-count-active { color: #1f7a52; }

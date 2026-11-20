@@ -786,6 +786,14 @@ function DetailPage({
       <SnapshotPanel targetId={detail.id} />
       <InvestigationPanel targetId={detail.id} />
 
+      <section className="panel tablespace-panel">
+        <div className="panel-heading">
+          <div><h2><Layers3 size={18} /> Tablespaces</h2><p>Usage and storage configuration by tablespace</p></div>
+          <span className="count-pill">{detail.tablespaces.length}</span>
+        </div>
+        <TablespaceTable tablespaces={detail.tablespaces} />
+      </section>
+
       <div className="detail-grid">
         <section className="panel history-panel">
           <div className="panel-heading detail-panel-heading">
@@ -827,14 +835,6 @@ function DetailPage({
           <div className="fra-footer"><span>Recovery destination breakdown</span><span>{detail.fra.breakdown.length} observations</span></div>
         </section>
       </div>
-
-      <section className="panel tablespace-panel">
-        <div className="panel-heading">
-          <div><h2><Layers3 size={18} /> Tablespaces</h2><p>Usage and storage configuration by tablespace</p></div>
-          <span className="count-pill">{detail.tablespaces.length}</span>
-        </div>
-        <TablespaceTable tablespaces={detail.tablespaces} />
-      </section>
 
       <CompliancePanel targetId={targetId} refreshKey={phase4RefreshKey} />
       <ForecastPanel targetId={targetId} refreshKey={phase4RefreshKey} />

@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Oracle Sentinel AI — Agentic Architecture</title>
+  <style>
+    :root {
+      --ink: #1c2838;
+      --muted: #5c6b80;
+      --line: #d5deea;
+      --paper: #f3f6fb;
+      --card: #ffffff;
+      --portal: #1d4e89;
+      --api: #0f6e6e;
+      --code: #0f6e6e;
+      --timer: #1e4d3a;
+      --agent: #a21caf;
+      --agent-bg: #fbeafd;
+      --code-bg: #e3f3f2;
+      --portal-bg: #e7eef8;
+      --store: #8a5200;
+      --store-bg: #fff4e0;
+      --oracle: #94233a;
+      --oracle-bg: #fbe8ec;
+      --outside: #475569;
+      --gap: #b45309;
+      --shadow: 0 10px 30px rgba(28, 40, 56, 0.06);
+      --good-bg: #e2f4e7; --good-fg: #1c6b3e;
+      --warn-bg: #fff0d6; --warn-fg: #8a5200;
+      --bad-bg: #fbe3e7; --bad-fg: #94233a;
+      --info-bg: #e4ecfb; --info-fg: #1d4e89;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(1200px 400px at 10% -10%, #efe4f3 0%, transparent 50%),
+        var(--paper);
+      font: 16px/1.55 "Segoe UI", Calibri, system-ui, sans-serif;
+    }
+    main { max-width: 1160px; margin: 0 auto; padding: 40px max(16px, 24px) 80px; }
+    header h1 { margin: 0 0 4px; font-size: 34px; letter-spacing: -0.03em; text-wrap: balance; }
+    header .version { margin: 0 0 10px; font-size: 14px; font-weight: 650; color: var(--agent); }
+    header p { margin: 0; max-width: 820px; color: var(--muted); }
+    nav.toc { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 0; font-size: 14px; }
+    nav.toc a, footer a, p a, td a { color: var(--portal); font-weight: 650; text-decoration: none; }
+    nav.toc a:hover, footer a:hover, p a:hover { text-decoration: underline; }
+    section { margin-top: 44px; }
+    h2 { margin: 0 0 6px; font-size: 23px; letter-spacing: -0.02em; text-wrap: balance; }
+    h2 .num { color: var(--agent); margin-right: 6px; }
+    h3 { margin: 24px 0 8px; font-size: 16.5px; }
+    .lead { margin: 0 0 16px; color: var(--muted); max-width: 880px; }
+    p { max-width: 880px; }
+    figure {
+      margin: 0; background: var(--card); border: 1px solid var(--line);
+      border-radius: 16px; box-shadow: var(--shadow); overflow: hidden;
+    }
+    .scroll { overflow-x: auto; }
+    .scroll svg { min-width: 900px; }
+    figcaption { padding: 14px 18px 16px; color: var(--muted); font-size: 14px; border-top: 1px solid var(--line); }
+    figcaption strong { color: var(--ink); }
+    svg { display: block; width: 100%; height: auto; font-family: "Segoe UI", Calibri, sans-serif; }
+    svg .t { font-size: 13.5px; font-weight: 700; fill: var(--ink); }
+    svg .s { font-size: 11px; fill: var(--muted); }
+    svg .l { font-size: 10.5px; fill: var(--muted); font-style: italic; }
+    svg .band { font-size: 12px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+    .card {
+      background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+      padding: 16px 18px; box-shadow: var(--shadow); min-width: 0;
+    }
+    .card h3 { margin: 0 0 4px; font-size: 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .card p { margin: 6px 0 0; font-size: 14.5px; color: var(--muted); }
+    .card .goal { color: var(--ink); font-weight: 600; }
+    .card.agent { border-top: 4px solid var(--agent); }
+    .card.code { border-top: 4px solid var(--code); }
+    .card.timer { border-top: 4px solid var(--timer); }
+    .card.new { border-top: 4px dashed var(--gap); }
+    .pill {
+      display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 650;
+      white-space: nowrap;
+    }
+    .p-model { background: var(--agent-bg); color: var(--agent); }
+    .p-code { background: var(--code-bg); color: var(--code); }
+    .p-good { background: var(--good-bg); color: var(--good-fg); }
+    .p-warn { background: var(--warn-bg); color: var(--warn-fg); }
+    .p-bad { background: var(--bad-bg); color: var(--bad-fg); }
+    .p-info { background: var(--info-bg); color: var(--info-fg); }
+    .table-wrap { overflow-x: auto; background: var(--card); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+    thead th { background: #f7f9fc; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); position: sticky; top: 0; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tr.group td { background: #f7f9fc; font-weight: 700; color: var(--agent); font-size: 13px; letter-spacing: 0.04em; text-transform: uppercase; }
+    td code, p code, li code { font: 12.5px Consolas, "Cascadia Mono", monospace; background: #eef2f8; padding: 1px 5px; border-radius: 5px; }
+    .callout {
+      border-left: 4px solid var(--gap); background: var(--warn-bg); color: #4a3200;
+      padding: 12px 16px; border-radius: 0 12px 12px 0; margin: 16px 0; max-width: 900px;
+    }
+    .callout.info { border-color: var(--portal); background: var(--info-bg); color: #13325a; }
+    .callout strong { color: inherit; }
+    ol.steps, ul.tight { padding-left: 22px; max-width: 900px; }
+    ol.steps li, ul.tight li { margin: 6px 0; }
+    .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+    footer { margin-top: 56px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+    @media (max-width: 640px) {
+      header h1 { font-size: 27px; }
+      main { padding-top: 24px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Oracle Sentinel AI — Agentic Architecture</h1>
+    <p class="version">The agents, the copilot, and the snapshot store · as built through Phase 28 · 20 Nov 2026</p>
+    <p>This page covers only the agentic part of the portal: which agents exist, the goal of each, how they reach Oracle and the local model, what a snapshot stores, and how the agents serve the operator, the administrator, and the database copilot. It ends with the changes that would make the agents more useful in the web portal, and with agents worth adding.</p>
+    <nav class="toc" aria-label="Contents">
+      <a href="#short">1. In short</a>
+      <a href="#cast">2. Agents and their goals</a>
+      <a href="#architecture">3. Architecture</a>
+      <a href="#investigation">4. Investigation flow</a>
+      <a href="#snapshot-flow">5. Snapshot flow</a>
+      <a href="#captured">6. What snapshots capture</a>
+      <a href="#together">7. How it helps each role</a>
+      <a href="#portal">8. Using it in the portal</a>
+      <a href="#integration">9. Better portal integration</a>
+      <a href="#new-agents">10. Agents to add</a>
+      <a href="#guardrails">11. Guardrails</a>
+      <a href="#harness">12. Harness loop and tool calling</a>
+    </nav>
+  </header>
+
+  <!-- 1 -->
+  <section id="short">
+    <h2><span class="num">1</span>In short</h2>
+    <div class="cards">
+      <div class="card agent">
+        <h3>Two agents, one checker</h3>
+        <p>The <strong>Collector</strong> stores snapshots. The <strong>Investigator</strong> works out the likely cause of an incident. The <strong>Verifier</strong> is plain code that rejects any conclusion the evidence does not support. Every run is stored in <code>agent_runs</code> as either <code>collector</code> or <code>investigator</code>.</p>
+      </div>
+      <div class="card code">
+        <h3>Agents read; they never change anything</h3>
+        <p>Agents reach Oracle only through the fixed read-only readings, as GSYSTEM. The model gets no tools and writes no SQL, and nothing it writes goes into a statement.</p>
+      </div>
+      <div class="card agent">
+        <h3>Evidence stays local</h3>
+        <p>Only the local Ollama model sees evidence. With a hosted provider, or with the model off, a finding lists the evidence and the playbook's next steps, without a written cause.</p>
+      </div>
+      <div class="card new">
+        <h3>Off by default, mostly on demand</h3>
+        <p>Agents ship turned off (Admin → Agents). Snapshots are taken only when someone clicks, or when an investigation needs one. <strong>Nothing collects snapshots on a timer</strong>, so "what changed" and copilot answers from snapshots often have nothing recent to use. See <a href="#integration">section 9</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="cast">
+    <h2><span class="num">2</span>The agents and their goals</h2>
+    <p class="lead">"Agent" here means a component that works toward a goal over several steps and keeps what it read. The copilot parts are listed too, because they use the same readings and the same snapshots. The monitoring timers are not agents, but they produce the incidents and metrics the agents reason over.</p>
+
+    <h3>Agents (Phase 22)</h3>
+    <div class="cards">
+      <div class="card code">
+        <h3>Collector <span class="pill p-code">no model</span></h3>
+        <p class="goal">Goal: store a consistent picture of one database at one moment.</p>
+        <p>Reads the readings of the chosen packs over one readings-server process and one Oracle logon, then stores one <code>evidence_snapshots</code> row per reading. A collection is refused when agents are off, when the database is disabled, when a collection is already running, or when the last one is newer than the minimum gap (300 s).</p>
+      </div>
+      <div class="card agent">
+        <h3>Investigator <span class="pill p-model">local model</span></h3>
+        <p class="goal">Goal: explain the likely cause of one incident, or one database's health, with numbered evidence and up to three next steps.</p>
+        <p>Follows a fixed playbook: plan → collect → compare → look up → conclude → (collect more) → verify → finding. Limits: 6 tool steps, 4 model calls, and 180 s per run, with one run per database at a time.</p>
+      </div>
+      <div class="card code">
+        <h3>Verifier <span class="pill p-code">plain code</span></h3>
+        <p class="goal">Goal: make sure no operator sees a cause the evidence does not support.</p>
+        <p>A conclusion passes only when every ORA code and every figure of two or more digits is in the evidence, when it names no other database, and when it contains no statement or command. A conclusion that fails is hidden, and the finding gives the reason.</p>
+      </div>
+      <div class="card timer">
+        <h3>Agent scheduler <span class="pill p-code">timer</span></h3>
+        <p class="goal">Goal: investigate new critical incidents without waiting for a person, and remove old snapshots.</p>
+        <p>Every 60 s it starts up to 2 investigations for critical incidents from the last 24 h that have none yet, when the database allows automatic runs. These runs act as an operator, so every role can see their findings. Every hour it deletes snapshots older than the retention period (14 days).</p>
+      </div>
+    </div>
+
+    <h3>Copilot (Phases 21, 24, 26)</h3>
+    <div class="cards">
+      <div class="card agent">
+        <h3>Supervisor <span class="pill p-model">local model</span></h3>
+        <p class="goal">Goal: send each database-chat question to the right specialist.</p>
+        <p>One model call returns JSON with at most 2 routes and 3 reading names. The server keeps only the routes it lists and the readings the caller may read. Fixed rules sit in front of the model (a pasted statement is refused, catalog questions skip it) and behind it (an explicit change phrase is always a change request).</p>
+      </div>
+      <div class="card agent">
+        <h3>Specialists <span class="pill p-model">local model</span></h3>
+        <p class="goal">Goal: answer from one kind of evidence only.</p>
+        <p>The six specialists:</p>
+        <ul class="tight">
+          <li><strong>This database:</strong> live readings, or a snapshot up to 15 minutes old.</li>
+          <li><strong>Oracle knowledge:</strong> the Oracle manuals, embedded locally.</li>
+          <li><strong>SQL draft:</strong> writes a statement that is never run.</li>
+          <li><strong>Company policy:</strong> policy documents only.</li>
+          <li><strong>Change request:</strong> an explanation or a runbook; nothing is run.</li>
+          <li><strong>General:</strong> a short reply with no database facts.</li>
+        </ul>
+      </div>
+      <div class="card agent">
+        <h3>Fleet copilot <span class="pill p-model">local model</span></h3>
+        <p class="goal">Goal: answer one question about every database.</p>
+        <p>A fixed router picks a fleet tool: incidents, programs, datafiles, tablespaces, policy, or health. The model may name a tool only when the router finds none. Live reads cover at most 25 databases, 4 at a time. A database that cannot be read is reported as unknown, never as clean.</p>
+      </div>
+    </div>
+
+    <h3>Not agents, but they feed the agents</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Timer</th><th>Every</th><th>Produces</th><th>Used by</th></tr></thead>
+        <tbody>
+          <tr><td>Metric collector</td><td>300 s (per database)</td><td><code>observations</code>, current values, health</td><td>Investigator compare step (now and about a day ago), fleet copilot</td></tr>
+          <tr><td>Alert log poll and rules</td><td>120 s</td><td><code>incidents</code></td><td>Agent scheduler sweep, Investigator plan step (incident text → playbook)</td></tr>
+          <tr><td>Graph history sampler</td><td>300 s, kept 24 h</td><td>Counter samples for GraphDB and WaitDB</td><td>GraphDB and WaitDB pages, not the agents</td></tr>
+          <tr><td>Knowledge indexer</td><td>Once from the launcher, then on change</td><td>Passages in pgvector (<code>nomic-embed-text</code>, 768 numbers)</td><td>Investigator look-up step, Oracle knowledge and policy specialists</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="architecture">
+    <h2><span class="num">3</span>Architecture</h2>
+    <p class="lead">The portal starts work through the API. The agents and the copilot share three paths out: the readings server to Oracle, the local model, and PostgreSQL. Every path that reaches Oracle goes through the readings server's fixed statements.</p>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1120 850" role="img" aria-label="Architecture of the agentic part: the portal calls the API; the agent layer and the copilot layer reach Oracle only through the readings server, send evidence only to the local Ollama model, and store runs, steps, snapshots and findings in PostgreSQL.">
+          <defs>
+            <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6b80"/></marker>
+            <marker id="a1m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a21caf"/></marker>
+          </defs>
+
+          <!-- Portal band -->
+          <rect x="20" y="20" width="1080" height="112" rx="14" fill="#e7eef8" stroke="#1d4e89" stroke-width="1.4"/>
+          <text x="36" y="42" class="band" fill="#1d4e89">Web portal (React)</text>
+          <g>
+            <rect x="40" y="54" width="200" height="62" rx="10" fill="#fff" stroke="#1d4e89"/>
+            <text x="140" y="79" text-anchor="middle" class="t">Database Overview</text>
+            <text x="140" y="98" text-anchor="middle" class="s">Snapshot · Investigation panels</text>
+            <rect x="252" y="54" width="200" height="62" rx="10" fill="#fff" stroke="#1d4e89"/>
+            <text x="352" y="79" text-anchor="middle" class="t">Incident page</text>
+            <text x="352" y="98" text-anchor="middle" class="s">Investigate · steps · finding</text>
+            <rect x="464" y="54" width="200" height="62" rx="10" fill="#fff" stroke="#1d4e89"/>
+            <text x="564" y="79" text-anchor="middle" class="t">Agents page (fleet)</text>
+            <text x="564" y="98" text-anchor="middle" class="s">Findings · runs · fleet snapshot</text>
+            <rect x="676" y="54" width="200" height="62" rx="10" fill="#fff" stroke="#1d4e89"/>
+            <text x="776" y="79" text-anchor="middle" class="t">Copilot</text>
+            <text x="776" y="98" text-anchor="middle" class="s">Database chat · fleet chat</text>
+            <rect x="888" y="54" width="200" height="62" rx="10" fill="#fff" stroke="#1d4e89"/>
+            <text x="988" y="79" text-anchor="middle" class="t">Admin → Agents</text>
+            <text x="988" y="98" text-anchor="middle" class="s">System switch · defaults</text>
+          </g>
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a1)">
+            <line x1="140" y1="116" x2="140" y2="158"/>
+            <line x1="352" y1="116" x2="352" y2="158"/>
+            <line x1="564" y1="116" x2="564" y2="158"/>
+            <line x1="776" y1="116" x2="776" y2="158"/>
+            <line x1="988" y1="116" x2="988" y2="158"/>
+          </g>
+
+          <!-- API band -->
+          <rect x="20" y="160" width="1080" height="72" rx="14" fill="#e3f3f2" stroke="#0f6e6e" stroke-width="1.4"/>
+          <text x="36" y="182" class="band" fill="#0f6e6e">FastAPI /api/v1 — sign-in · role check · audit</text>
+          <text x="36" y="204" class="s">POST /databases/{id}/snapshots · POST /agents/snapshots/fleet · POST /agents/investigations · GET /agents/runs · GET /agents/findings · POST /agents/findings/{id}/decision</text>
+          <text x="36" y="221" class="s">GET|PUT /databases/{id}/agent-settings · GET /agents/status · POST /chat/threads … · permissions: agent.run (operator, DBA, admin) · platform.read (admin: restricted evidence)</text>
+
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a1)">
+            <line x1="500" y1="232" x2="500" y2="268"/>
+            <line x1="935" y1="232" x2="935" y2="268"/>
+          </g>
+          <text x="506" y="254" class="l">start run · collect · decide</text>
+          <text x="941" y="254" class="l">question</text>
+
+          <!-- Timers -->
+          <rect x="20" y="270" width="210" height="250" rx="14" fill="#fff" stroke="#1e4d3a" stroke-width="1.4" stroke-dasharray="5 4"/>
+          <text x="36" y="292" class="band" fill="#1e4d3a">Monitoring timers</text>
+          <text x="36" y="308" class="s">not agents</text>
+          <text x="36" y="336" class="t">Metric collector</text>
+          <text x="36" y="352" class="s">every 300 s → observations</text>
+          <text x="36" y="382" class="t">Alert log + rules</text>
+          <text x="36" y="398" class="s">every 120 s → incidents</text>
+          <text x="36" y="428" class="t">Graph sampler</text>
+          <text x="36" y="444" class="s">every 300 s → counter samples</text>
+          <text x="36" y="474" class="t">Knowledge indexer</text>
+          <text x="36" y="490" class="s">PDFs → passages (pgvector)</text>
+
+          <!-- Agent layer -->
+          <rect x="250" y="270" width="500" height="250" rx="14" fill="#fbeafd" stroke="#a21caf" stroke-width="1.6"/>
+          <text x="266" y="292" class="band" fill="#a21caf">Agent layer (sentinel/agents)</text>
+          <rect x="270" y="310" width="140" height="70" rx="10" fill="#fff" stroke="#0f6e6e"/>
+          <text x="340" y="336" text-anchor="middle" class="t">Agent scheduler</text>
+          <text x="340" y="353" text-anchor="middle" class="s">sweep 60 s</text>
+          <text x="340" y="368" text-anchor="middle" class="s">retention 1 h</text>
+          <rect x="460" y="310" width="140" height="70" rx="10" fill="#fff" stroke="#a21caf" stroke-width="2"/>
+          <text x="530" y="336" text-anchor="middle" class="t">Investigator</text>
+          <text x="530" y="353" text-anchor="middle" class="s">AgentRunner</text>
+          <text x="530" y="368" text-anchor="middle" class="s">one playbook per run</text>
+          <rect x="650" y="310" width="85" height="70" rx="10" fill="#fff" stroke="#0f6e6e"/>
+          <text x="692" y="340" text-anchor="middle" class="t">Verifier</text>
+          <text x="692" y="357" text-anchor="middle" class="s">plain code</text>
+          <rect x="270" y="420" width="140" height="70" rx="10" fill="#fff" stroke="#0f6e6e"/>
+          <text x="340" y="446" text-anchor="middle" class="t">Collector</text>
+          <text x="340" y="463" text-anchor="middle" class="s">packs → snapshot</text>
+          <text x="340" y="478" text-anchor="middle" class="s">no model</text>
+          <rect x="460" y="420" width="140" height="70" rx="10" fill="#fff" stroke="#0f6e6e"/>
+          <text x="530" y="446" text-anchor="middle" class="t">Playbooks</text>
+          <text x="530" y="463" text-anchor="middle" class="s">8 fixed + general</text>
+          <text x="530" y="478" text-anchor="middle" class="s">regex on incident text</text>
+          <rect x="650" y="420" width="85" height="70" rx="10" fill="#fff" stroke="#0f6e6e"/>
+          <text x="692" y="450" text-anchor="middle" class="t">Compare</text>
+          <text x="692" y="467" text-anchor="middle" class="s">what changed</text>
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a1)">
+            <line x1="410" y1="345" x2="458" y2="345"/>
+            <line x1="600" y1="345" x2="648" y2="345"/>
+            <line x1="530" y1="380" x2="530" y2="418"/>
+            <line x1="470" y1="380" x2="408" y2="420"/>
+            <line x1="590" y1="380" x2="652" y2="420"/>
+          </g>
+          <text x="434" y="337" text-anchor="middle" class="l">starts</text>
+          <text x="624" y="337" text-anchor="middle" class="l">draft</text>
+          <text x="536" y="404" class="l">plan</text>
+          <text x="420" y="397" text-anchor="end" class="l">collect</text>
+          <text x="628" y="397" class="l">compare</text>
+
+          <!-- Copilot layer -->
+          <rect x="770" y="270" width="330" height="250" rx="14" fill="#e7eef8" stroke="#1d4e89" stroke-width="1.6"/>
+          <text x="786" y="292" class="band" fill="#1d4e89">Copilot layer (sentinel/ai)</text>
+          <rect x="786" y="304" width="298" height="52" rx="10" fill="#fff" stroke="#a21caf" stroke-width="2"/>
+          <text x="935" y="326" text-anchor="middle" class="t">Supervisor</text>
+          <text x="935" y="343" text-anchor="middle" class="s">picks up to 2 specialists · database chat</text>
+          <g stroke="#1d4e89" fill="#fff">
+            <rect x="786" y="372" width="94" height="38" rx="8"/>
+            <rect x="888" y="372" width="94" height="38" rx="8"/>
+            <rect x="990" y="372" width="94" height="38" rx="8"/>
+            <rect x="786" y="418" width="94" height="38" rx="8"/>
+            <rect x="888" y="418" width="94" height="38" rx="8"/>
+            <rect x="990" y="418" width="94" height="38" rx="8"/>
+          </g>
+          <text x="833" y="395" text-anchor="middle" class="s" style="fill:#1c2838;font-weight:650">This database</text>
+          <text x="935" y="395" text-anchor="middle" class="s" style="fill:#1c2838;font-weight:650">Oracle knowledge</text>
+          <text x="1037" y="395" text-anchor="middle" class="s" style="fill:#1c2838;font-weight:650">SQL draft</text>
+          <text x="833" y="441" text-anchor="middle" class="s" style="fill:#1c2838;font-weight:650">Company policy</text>
+          <text x="935" y="441" text-anchor="middle" class="s" style="fill:#1c2838;font-weight:650">Change request</text>
+          <text x="1037" y="441" text-anchor="middle" class="s" style="fill:#1c2838;font-weight:650">General</text>
+          <text x="786" y="480" class="t">Fleet copilot</text>
+          <text x="786" y="497" class="s">fixed router · model may name one fleet tool</text>
+          <text x="786" y="511" class="s">≤ 25 databases, 4 at a time</text>
+
+          <!-- Row 4 -->
+          <rect x="50" y="590" width="150" height="80" rx="12" fill="#fbe8ec" stroke="#94233a" stroke-width="1.4"/>
+          <text x="125" y="617" text-anchor="middle" class="t">Oracle databases</text>
+          <text x="125" y="635" text-anchor="middle" class="s">GSYSTEM, SELECT only</text>
+          <text x="125" y="651" text-anchor="middle" class="s">V$ and DBA_ views</text>
+          <rect x="250" y="590" width="200" height="80" rx="12" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+          <text x="350" y="617" text-anchor="middle" class="t">Readings server (MCP)</text>
+          <text x="350" y="635" text-anchor="middle" class="s">fixed statements, no SQL in</text>
+          <text x="350" y="651" text-anchor="middle" class="s">collect_snapshot tool</text>
+          <rect x="540" y="590" width="160" height="80" rx="12" fill="#fff" stroke="#a21caf" stroke-width="1.6"/>
+          <text x="620" y="617" text-anchor="middle" class="t">Local model</text>
+          <text x="620" y="635" text-anchor="middle" class="s">Ollama · qwen2.5-coder:14b</text>
+          <text x="620" y="651" text-anchor="middle" class="s">JSON replies, no tools</text>
+          <rect x="860" y="590" width="180" height="80" rx="12" fill="#fff" stroke="#1d4e89" stroke-width="1.4"/>
+          <text x="950" y="617" text-anchor="middle" class="t">Knowledge search</text>
+          <text x="950" y="635" text-anchor="middle" class="s">nomic-embed-text (Ollama)</text>
+          <text x="950" y="651" text-anchor="middle" class="s">runbooks · manuals · policy</text>
+
+          <!-- PostgreSQL -->
+          <rect x="20" y="740" width="1080" height="90" rx="14" fill="#fff4e0" stroke="#8a5200" stroke-width="1.4"/>
+          <text x="36" y="762" class="band" fill="#8a5200">PostgreSQL (portal store)</text>
+          <text x="36" y="786" class="s" style="fill:#1c2838">Agents: evidence_snapshots · agent_runs · agent_steps · agent_findings · agent_database_settings</text>
+          <text x="36" y="805" class="s" style="fill:#1c2838">Monitoring: observations · current values · incidents · compliance results · counter samples · Knowledge: documents · passages (pgvector, 768) · Copilot: threads · tool_executions · audit_events</text>
+
+          <!-- Arrows out of the middle row -->
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a1)">
+            <line x1="110" y1="520" x2="110" y2="588"/>
+            <line x1="32" y1="520" x2="32" y2="738"/>
+            <line x1="340" y1="490" x2="340" y2="588"/>
+            <line x1="250" y1="630" x2="202" y2="630"/>
+            <line x1="520" y1="520" x2="520" y2="738"/>
+            <line x1="960" y1="520" x2="960" y2="588"/>
+            <line x1="1070" y1="520" x2="1070" y2="738"/>
+          </g>
+          <g stroke="#a21caf" stroke-width="1.6" marker-end="url(#a1m)">
+            <line x1="610" y1="520" x2="610" y2="588"/>
+            <polyline points="800,520 800,630 702,630" fill="none"/>
+          </g>
+          <text x="116" y="552" class="l">poll</text>
+          <text x="38" y="716" class="l">metrics · incidents</text>
+          <text x="346" y="545" class="l">reading names</text>
+          <text x="346" y="560" class="l">(one logon)</text>
+          <text x="226" y="648" text-anchor="middle" class="l">fixed</text>
+          <text x="226" y="661" text-anchor="middle" class="l">SELECT</text>
+          <text x="526" y="716" class="l">runs · steps · snapshots · findings</text>
+          <text x="616" y="545" class="l" style="fill:#a21caf">numbered evidence</text>
+          <text x="616" y="560" class="l" style="fill:#a21caf">→ JSON cause</text>
+          <text x="806" y="560" class="l" style="fill:#a21caf">route · write answer</text>
+          <text x="966" y="552" class="l">passages</text>
+          <text x="1064" y="716" text-anchor="end" class="l">snapshot ≤ 15 min old</text>
+        </svg>
+      </div>
+      <figcaption><strong>Magenta</strong> boxes and arrows use the local model. <strong>Teal</strong> boxes are plain code, and the dashed box holds timers that are not agents. The database specialist also reads live through the same readings server when no recent snapshot exists (that arrow is not drawn). Restricted evidence (user names, SQL text, configuration) is stored with a flag and returned only to callers with <code>platform.read</code>.</figcaption>
+    </figure>
+
+    <h3>Where the code lives</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Part</th><th>File</th><th>What it holds</th></tr></thead>
+        <tbody>
+          <tr><td>Investigator</td><td><code>backend/src/sentinel/agents/runner.py</code></td><td><code>AgentRunner</code>: start checks, steps, budget, model prompts, the finding</td></tr>
+          <tr><td>Collector</td><td><code>agents/collector.py</code></td><td><code>collect_snapshot</code>, <code>collect_fleet</code>, <code>delete_expired</code></td></tr>
+          <tr><td>Packs and readings</td><td><code>agents/packs.py</code></td><td>Core, Performance, Configuration; sensitive and restricted readings</td></tr>
+          <tr><td>Playbooks</td><td><code>agents/playbooks.py</code></td><td>8 playbooks plus General: pattern, readings, metrics, knowledge query, next steps</td></tr>
+          <tr><td>Compare</td><td><code>agents/compare.py</code></td><td>New and missing rows; values that moved at least 10 %, or 2 points for a percentage</td></tr>
+          <tr><td>Verifier</td><td><code>agents/verifier.py</code></td><td>ORA codes, figures, other databases, statements</td></tr>
+          <tr><td>Settings</td><td><code>agents/config.py</code></td><td>System defaults and per-database overrides</td></tr>
+          <tr><td>Agent scheduler</td><td><code>agents/scheduler.py</code></td><td>Incident sweep and hourly retention</td></tr>
+          <tr><td>Readings server</td><td><code>sentinel/mcp/server.py</code></td><td>One tool per fixed reading, plus <code>collect_snapshot</code></td></tr>
+          <tr><td>Supervisor</td><td><code>sentinel/ai/supervisor.py</code>, <code>ai/orchestrator.py</code></td><td>Routes, prompt, parser, fixed rules</td></tr>
+          <tr><td>Snapshot answers</td><td><code>sentinel/ai/stored.py</code></td><td>The newest snapshot of a reading within 900 s</td></tr>
+          <tr><td>Portal</td><td><code>frontend/src/components/SnapshotPanel.tsx</code>, <code>InvestigationPanel.tsx</code>, the Agents page in <code>App.tsx</code></td><td>Buttons, steps, findings, settings</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="investigation">
+    <h2><span class="num">4</span>Investigation data flow</h2>
+    <p class="lead">One run from trigger to finding. The model is called in at most three places, and plain code checks everything it writes before anyone sees it.</p>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1120 520" role="img" aria-label="Investigation flow: a trigger passes the start checks, then the run plans, collects, compares, looks up, concludes with the local model, optionally collects more once, is verified by plain code, and is saved as a finding that an operator accepts or dismisses.">
+          <defs>
+            <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6b80"/></marker>
+            <marker id="a2m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a21caf"/></marker>
+          </defs>
+          <!-- triggers -->
+          <text x="20" y="30" class="band" fill="#1d4e89">Triggers</text>
+          <rect x="20" y="42" width="210" height="44" rx="9" fill="#e3f3f2" stroke="#0f6e6e"/>
+          <text x="125" y="62" text-anchor="middle" class="t">New critical incident</text>
+          <text x="125" y="78" text-anchor="middle" class="s">sweep, acts as operator</text>
+          <rect x="245" y="42" width="210" height="44" rx="9" fill="#e7eef8" stroke="#1d4e89"/>
+          <text x="350" y="62" text-anchor="middle" class="t">Investigate (incident)</text>
+          <text x="350" y="78" text-anchor="middle" class="s">acts as the person's role</text>
+          <rect x="470" y="42" width="210" height="44" rx="9" fill="#e7eef8" stroke="#1d4e89"/>
+          <text x="575" y="62" text-anchor="middle" class="t">Investigate (database)</text>
+          <text x="575" y="78" text-anchor="middle" class="s">Overview panel</text>
+          <rect x="740" y="36" width="360" height="56" rx="9" fill="#fbe3e7" stroke="#94233a"/>
+          <text x="920" y="58" text-anchor="middle" class="t">Start checks (refused → 409)</text>
+          <text x="920" y="76" text-anchor="middle" class="s">agents on for the database · database enabled · one run at a time</text>
+          <path d="M125,86 V106 H575 V86" fill="none" stroke="#5c6b80" stroke-width="1.2"/>
+          <polyline points="575,106 710,106 710,64 738,64" fill="none" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a2)"/>
+          <path d="M350,86 V106" fill="none" stroke="#5c6b80" stroke-width="1.2"/>
+          <polyline points="920,92 920,118 62,118 62,148" fill="none" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a2)"/>
+          <text x="74" y="138" class="l">queued run · each step is committed as it ends</text>
+
+          <!-- pipeline -->
+          <g>
+            <rect x="12" y="150" width="100" height="70" rx="10" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+            <text x="62" y="176" text-anchor="middle" class="t">1 Plan</text>
+            <text x="62" y="193" text-anchor="middle" class="s">pick playbook</text>
+            <rect x="150" y="150" width="100" height="70" rx="10" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+            <text x="200" y="176" text-anchor="middle" class="t">2 Collect</text>
+            <text x="200" y="193" text-anchor="middle" class="s">playbook readings</text>
+            <rect x="288" y="150" width="100" height="70" rx="10" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+            <text x="338" y="176" text-anchor="middle" class="t">3 Compare</text>
+            <text x="338" y="193" text-anchor="middle" class="s">what changed</text>
+            <rect x="426" y="150" width="100" height="70" rx="10" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+            <text x="476" y="176" text-anchor="middle" class="t">4 Look up</text>
+            <text x="476" y="193" text-anchor="middle" class="s">runbooks, policy</text>
+            <rect x="564" y="150" width="100" height="70" rx="10" fill="#fbeafd" stroke="#a21caf" stroke-width="2"/>
+            <text x="614" y="176" text-anchor="middle" class="t">5 Conclude</text>
+            <text x="614" y="193" text-anchor="middle" class="s">cause as JSON</text>
+            <rect x="702" y="150" width="100" height="70" rx="10" fill="#fbeafd" stroke="#a21caf" stroke-width="2" stroke-dasharray="5 3"/>
+            <text x="752" y="176" text-anchor="middle" class="t">6 More</text>
+            <text x="752" y="193" text-anchor="middle" class="s">≤ 2 readings, once</text>
+            <rect x="840" y="150" width="100" height="70" rx="10" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+            <text x="890" y="176" text-anchor="middle" class="t">7 Verify</text>
+            <text x="890" y="193" text-anchor="middle" class="s">plain code</text>
+            <rect x="978" y="150" width="122" height="70" rx="10" fill="#fff4e0" stroke="#8a5200" stroke-width="1.6"/>
+            <text x="1039" y="176" text-anchor="middle" class="t">8 Finding</text>
+            <text x="1039" y="193" text-anchor="middle" class="s">agent_findings</text>
+          </g>
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a2)">
+            <line x1="112" y1="185" x2="148" y2="185"/>
+            <line x1="250" y1="185" x2="286" y2="185"/>
+            <line x1="388" y1="185" x2="424" y2="185"/>
+            <line x1="526" y1="185" x2="562" y2="185"/>
+            <line x1="664" y1="185" x2="700" y2="185"/>
+            <line x1="802" y1="185" x2="838" y2="185"/>
+            <line x1="940" y1="185" x2="976" y2="185"/>
+          </g>
+          <path d="M614,150 V136 H752 V148" fill="none" stroke="#a21caf" stroke-width="1.2" stroke-dasharray="4 3" marker-end="url(#a2m)"/>
+          <text x="683" y="132" text-anchor="middle" class="l" style="fill:#a21caf">model asks for more</text>
+
+          <!-- inputs -->
+          <text x="12" y="268" class="band" fill="#8a5200">What each step reads</text>
+          <g stroke="#5c6b80" stroke-width="1.2" marker-end="url(#a2)">
+            <line x1="62" y1="282" x2="62" y2="222"/>
+            <line x1="200" y1="282" x2="200" y2="222"/>
+            <line x1="338" y1="282" x2="338" y2="222"/>
+            <line x1="476" y1="282" x2="476" y2="222"/>
+            <line x1="890" y1="282" x2="890" y2="222"/>
+          </g>
+          <g stroke="#a21caf" stroke-width="1.4" marker-end="url(#a2m)">
+            <line x1="614" y1="282" x2="614" y2="222"/>
+            <line x1="752" y1="282" x2="752" y2="222"/>
+          </g>
+          <rect x="12" y="284" width="110" height="96" rx="9" fill="#fff" stroke="#d5deea"/>
+          <text x="20" y="303" class="s" style="fill:#1c2838;font-weight:650">Incident text</text>
+          <text x="20" y="319" class="s">or the goal</text>
+          <text x="20" y="335" class="s">→ regex rule</text>
+          <text x="20" y="351" class="s" style="fill:#a21caf">model picks a</text>
+          <text x="20" y="365" class="s" style="fill:#a21caf">name if none</text>
+          <rect x="140" y="284" width="120" height="96" rx="9" fill="#fff" stroke="#d5deea"/>
+          <text x="148" y="303" class="s" style="fill:#1c2838;font-weight:650">Snapshot newer</text>
+          <text x="148" y="319" class="s" style="fill:#1c2838;font-weight:650">than 300 s, or</text>
+          <text x="148" y="335" class="s">Oracle via the</text>
+          <text x="148" y="351" class="s">readings server;</text>
+          <text x="148" y="365" class="s">role filters out</text>
+          <rect x="278" y="284" width="120" height="96" rx="9" fill="#fff" stroke="#d5deea"/>
+          <text x="286" y="303" class="s" style="fill:#1c2838;font-weight:650">Previous</text>
+          <text x="286" y="319" class="s" style="fill:#1c2838;font-weight:650">snapshot</text>
+          <text x="286" y="335" class="s">metrics now and</text>
+          <text x="286" y="351" class="s">~1 day ago; other</text>
+          <text x="286" y="365" class="s">open incidents</text>
+          <rect x="416" y="284" width="120" height="96" rx="9" fill="#fff" stroke="#d5deea"/>
+          <text x="424" y="303" class="s" style="fill:#1c2838;font-weight:650">Knowledge</text>
+          <text x="424" y="319" class="s" style="fill:#1c2838;font-weight:650">search</text>
+          <text x="424" y="335" class="s">ORA codes +</text>
+          <text x="424" y="351" class="s">playbook query;</text>
+          <text x="424" y="365" class="s">failing policies</text>
+          <rect x="560" y="284" width="250" height="96" rx="9" fill="#fbeafd" stroke="#a21caf"/>
+          <text x="572" y="303" class="s" style="fill:#1c2838;font-weight:650">Local model only (Ollama)</text>
+          <text x="572" y="320" class="s">in: numbered evidence lines</text>
+          <text x="572" y="336" class="s">out: cause · confidence · evidence numbers</text>
+          <text x="572" y="352" class="s">· up to 3 next steps · up to 2 readings it needs</text>
+          <text x="572" y="368" class="s">limits: 4 model calls · 6 tool steps · 180 s</text>
+          <rect x="830" y="284" width="120" height="96" rx="9" fill="#fff" stroke="#d5deea"/>
+          <text x="838" y="303" class="s" style="fill:#1c2838;font-weight:650">The evidence</text>
+          <text x="838" y="319" class="s">ORA codes ✓</text>
+          <text x="838" y="335" class="s">figures ≥ 10 ✓</text>
+          <text x="838" y="351" class="s">other database ✗</text>
+          <text x="838" y="365" class="s">statement ✗</text>
+
+          <!-- outcomes -->
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a2)">
+            <polyline points="1039,220 1039,420 980,420" fill="none"/>
+          </g>
+          <rect x="560" y="400" width="418" height="100" rx="12" fill="#e7eef8" stroke="#1d4e89"/>
+          <text x="576" y="423" class="t">Shown in the portal</text>
+          <text x="576" y="442" class="s">Agents page · Overview Investigation panel · incident page</text>
+          <text x="576" y="460" class="s" style="fill:#1c6b3e">Passed: cause, confidence, cited evidence, next steps</text>
+          <text x="576" y="477" class="s" style="fill:#94233a">Rejected or no model: evidence + playbook next steps + the reason</text>
+          <text x="576" y="494" class="s">Restricted evidence → finding visible to administrators only</text>
+          <line x1="560" y1="450" x2="452" y2="450" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a2)"/>
+          <rect x="230" y="420" width="220" height="62" rx="12" fill="#fff" stroke="#1d4e89"/>
+          <text x="340" y="445" text-anchor="middle" class="t">Operator decides</text>
+          <text x="340" y="463" text-anchor="middle" class="s">Accept or Dismiss · audited</text>
+          <rect x="12" y="420" width="190" height="62" rx="12" fill="#fff" stroke="#b45309" stroke-dasharray="5 4"/>
+          <text x="107" y="445" text-anchor="middle" class="t" style="fill:#8a5200">Nothing follows yet</text>
+          <text x="107" y="463" text-anchor="middle" class="s">Advisor not built (§10)</text>
+          <line x1="230" y1="451" x2="204" y2="451" stroke="#b45309" stroke-width="1.4" stroke-dasharray="4 3" marker-end="url(#a2)"/>
+        </svg>
+      </div>
+      <figcaption>Steps 1–4 and 7 are plain code. The model writes only in step 5, and in step 6 when it asks for more evidence. In step 1 it may only choose a playbook name from the list, and an unknown name falls back to General. The 8 playbooks are archive destination or recovery area full, tablespace full, blocking sessions, session or process limit, memory pressure, database unavailable, backup failure, and scheduler job failure, plus General.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 5 -->
+  <section id="snapshot-flow">
+    <h2><span class="num">5</span>Snapshot data flow</h2>
+    <p class="lead">How one snapshot is taken, stored, used, and deleted. The dashed box is the missing timer that would keep snapshots fresh.</p>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1120 470" role="img" aria-label="Snapshot flow: Collect snapshot, fleet snapshot, and the Investigator's collect step call the Collector; the Collector checks the rules, reads Oracle once through the readings server, and stores one row per reading; the rows are used by What changed, the Investigator, and the database copilot, and deleted after the retention period. No timer collects snapshots today.">
+          <defs>
+            <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6b80"/></marker>
+          </defs>
+          <text x="20" y="28" class="band" fill="#1d4e89">Who asks</text>
+          <rect x="20" y="40" width="200" height="40" rx="9" fill="#e7eef8" stroke="#1d4e89"/>
+          <text x="120" y="57" text-anchor="middle" class="t">Collect snapshot</text>
+          <text x="120" y="72" text-anchor="middle" class="s">Overview · agent.run</text>
+          <rect x="20" y="88" width="200" height="40" rx="9" fill="#e7eef8" stroke="#1d4e89"/>
+          <text x="120" y="105" text-anchor="middle" class="t">Collect fleet snapshot</text>
+          <text x="120" y="120" text-anchor="middle" class="s">Agents page · every database</text>
+          <rect x="20" y="136" width="200" height="40" rx="9" fill="#fbeafd" stroke="#a21caf"/>
+          <text x="120" y="153" text-anchor="middle" class="t">Investigator, step 2</text>
+          <text x="120" y="168" text-anchor="middle" class="s">playbook readings only</text>
+          <rect x="20" y="184" width="200" height="40" rx="9" fill="#fff4e0" stroke="#b45309" stroke-dasharray="6 4"/>
+          <text x="120" y="201" text-anchor="middle" class="t" style="fill:#8a5200">Scheduled collection</text>
+          <text x="120" y="216" text-anchor="middle" class="s">missing today · proposed</text>
+          <g stroke="#5c6b80" stroke-width="1.3" fill="none">
+            <path d="M220,60 H250 V204 H220"/>
+            <path d="M220,108 H250"/>
+            <path d="M220,156 H250"/>
+          </g>
+          <line x1="250" y1="158" x2="288" y2="158" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a3)"/>
+
+          <rect x="290" y="110" width="210" height="96" rx="12" fill="#fff" stroke="#0f6e6e" stroke-width="1.8"/>
+          <text x="395" y="134" text-anchor="middle" class="t">Collector checks</text>
+          <text x="395" y="153" text-anchor="middle" class="s">agents on (system and database)</text>
+          <text x="395" y="169" text-anchor="middle" class="s">database enabled · not already running</text>
+          <text x="395" y="185" text-anchor="middle" class="s">last snapshot ≥ 300 s ago</text>
+          <text x="395" y="200" text-anchor="middle" class="s">packs: core, performance (+ config)</text>
+          <line x1="500" y1="158" x2="548" y2="158" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a3)"/>
+          <text x="524" y="150" text-anchor="middle" class="l">names</text>
+
+          <rect x="550" y="118" width="170" height="80" rx="12" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+          <text x="635" y="143" text-anchor="middle" class="t">Readings server</text>
+          <text x="635" y="161" text-anchor="middle" class="s">one process · one logon</text>
+          <text x="635" y="177" text-anchor="middle" class="s">fixed SELECT per reading</text>
+          <line x1="635" y1="118" x2="635" y2="72" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a3)"/>
+          <rect x="550" y="22" width="170" height="48" rx="10" fill="#fbe8ec" stroke="#94233a"/>
+          <text x="635" y="51" text-anchor="middle" class="t">Oracle (GSYSTEM)</text>
+          <line x1="720" y1="158" x2="768" y2="158" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a3)"/>
+          <text x="744" y="150" text-anchor="middle" class="l">rows</text>
+
+          <rect x="770" y="96" width="330" height="124" rx="12" fill="#fff4e0" stroke="#8a5200" stroke-width="1.6"/>
+          <text x="786" y="120" class="t">evidence_snapshots</text>
+          <text x="786" y="140" class="s" style="fill:#1c2838">one row per reading, grouped by a batch id</text>
+          <text x="786" y="157" class="s">rows as JSON · digest · status if it could not be read</text>
+          <text x="786" y="174" class="s">restricted flag: user names, SQL text, configuration</text>
+          <text x="786" y="191" class="s">sensitive readings skipped if the database says so</text>
+          <text x="786" y="208" class="s">no model is called during a collection</text>
+
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a3)" fill="none">
+            <polyline points="770,200 752,200 752,248 230,248 230,296"/>
+            <polyline points="790,220 790,264 400,264 400,296"/>
+            <polyline points="805,220 805,296"/>
+            <polyline points="970,220 970,296"/>
+          </g>
+          <text x="20" y="290" class="band" fill="#8a5200">Who uses the rows</text>
+          <rect x="20" y="298" width="240" height="100" rx="12" fill="#fff" stroke="#0f6e6e"/>
+          <text x="36" y="320" class="t">What changed</text>
+          <text x="36" y="338" class="s">newest pair of snapshots</text>
+          <text x="36" y="354" class="s">new and missing rows</text>
+          <text x="36" y="370" class="s">±10 %, or ±2 points for %</text>
+          <text x="36" y="386" class="s">Overview Snapshot panel</text>
+          <rect x="280" y="298" width="240" height="100" rx="12" fill="#fff" stroke="#a21caf"/>
+          <text x="296" y="320" class="t">Investigator</text>
+          <text x="296" y="338" class="s">reuses a snapshot newer than 300 s</text>
+          <text x="296" y="354" class="s">compares with the previous one</text>
+          <text x="296" y="370" class="s">as numbered evidence for the</text>
+          <text x="296" y="386" class="s">local model</text>
+          <rect x="540" y="298" width="280" height="100" rx="12" fill="#fff" stroke="#1d4e89"/>
+          <text x="556" y="320" class="t">Database copilot</text>
+          <text x="556" y="338" class="s">newest snapshot ≤ 900 s old answers:</text>
+          <text x="556" y="354" class="s">"From the snapshot stored 5 minutes ago"</text>
+          <text x="556" y="370" class="s">live read when asked for "now", none</text>
+          <text x="556" y="386" class="s">recent, or restricted for the role</text>
+          <rect x="840" y="298" width="260" height="100" rx="12" fill="#fff" stroke="#94233a" stroke-dasharray="5 4"/>
+          <text x="856" y="320" class="t">Retention (hourly)</text>
+          <text x="856" y="338" class="s">deletes snapshots older than 14 days</text>
+          <text x="856" y="354" class="s">(1–30, per database)</text>
+          <text x="856" y="370" class="s">runs and findings are kept with</text>
+          <text x="856" y="386" class="s">the figures they cite</text>
+          <text x="20" y="438" class="s" style="fill:#8a5200;font-weight:650">Gap: with snapshots taken only on demand, the copilot's 900 s window and "What changed" usually find nothing recent to use.</text>
+        </svg>
+      </div>
+      <figcaption>A snapshot costs one Oracle logon for all of its readings. The Collector refuses work rather than queueing it, so a click within 300 s of the last snapshot gets HTTP 429 and nothing is read again.</figcaption>
+    </figure>
+  </section>
+
+  <!-- 6 -->
+  <section id="captured">
+    <h2><span class="num">6</span>What a snapshot captures, and how it helps monitoring</h2>
+    <p class="lead">Every reading is one of the existing fixed, read-only readings. The default packs are <strong>Core</strong> and <strong>Performance</strong>. <strong>Configuration and security</strong> is off by default and only an administrator can request it. "Admin only" means the stored rows are returned only to a caller with <code>platform.read</code>.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Reading</th><th>What it captures</th><th>Who reads it</th><th>How it helps monitoring</th></tr></thead>
+        <tbody>
+          <tr class="group"><td colspan="4">Core pack (on by default)</td></tr>
+          <tr><td><strong>Availability</strong></td><td>Instance status, open mode, startup time, PDBs, services, recent startup and shutdown lines</td><td><span class="pill p-good">every role</span></td><td>Proves the database was open at that moment. A changed startup time between two snapshots shows an unplanned restart. Main evidence for the "database unavailable" playbook.</td></tr>
+          <tr><td><strong>Sessions</strong></td><td>User sessions logged on, with program and machine</td><td><span class="pill p-bad">admin only</span></td><td>Keeps who was connected when an incident happened, after those sessions have gone. Compare reports sessions that arrived or left.</td></tr>
+          <tr><td><strong>Connected programs</strong></td><td>Session and active counts for each client program</td><td><span class="pill p-good">every role</span></td><td>Shows one program flooding connections, for the session-limit playbook. Program counts across snapshots show a connection leak growing.</td></tr>
+          <tr><td><strong>Blocking sessions</strong></td><td>Blocking chains and locks, long calls, session counts against limits, recent deadlocks</td><td><span class="pill p-bad">admin only</span></td><td>Keeps the head blocker after the lock clears, which a live page cannot show. Main evidence for the blocking playbook.</td></tr>
+          <tr><td><strong>Memory</strong></td><td>SGA and PGA use inside the instance</td><td><span class="pill p-good">every role</span></td><td>For ORA-04031 and ORA-04030. A move of 10 % or more between snapshots is flagged.</td></tr>
+          <tr><td><strong>Tablespaces</strong></td><td>Percent used, the 80/90/95 bands, autoextend headroom, temporary space</td><td><span class="pill p-good">every role</span></td><td>A change of 2 points or more is flagged. Shows which tablespace filled and whether it could still extend. Main evidence for the tablespace-full playbook.</td></tr>
+          <tr><td><strong>Datafile sizes</strong></td><td>For each tablespace: number of datafiles, the largest file, total size</td><td><span class="pill p-good">every role</span></td><td>Growth between snapshots, files near their maximum size, and the fleet question about datafiles over 10 GB.</td></tr>
+          <tr><td><strong>Redo logs</strong></td><td>Online redo groups, sizes, status, members</td><td><span class="pill p-good">every role</span></td><td>Undersized or missing members. The current group rotates in normal running, so compare ignores status.</td></tr>
+          <tr><td><strong>Running jobs</strong></td><td>Scheduler jobs and DBMS_JOBs running at that moment</td><td><span class="pill p-good">every role</span></td><td>Shows which batch was running when load or locking began.</td></tr>
+          <tr><td><strong>Backups</strong></td><td>Backups running now and recent RMAN jobs</td><td><span class="pill p-good">every role</span></td><td>Evidence for the backup-failure playbook, and proof of the last backup at that time.</td></tr>
+          <tr><td><strong>Recovery</strong></td><td>Last successful and failed backups, recovery area use, recent archived logs</td><td><span class="pill p-good">every role</span></td><td>Archiver stuck or recovery area full: space used, space that can be reclaimed, archived log volume.</td></tr>
+          <tr><td><strong>Alert log errors</strong></td><td>ORA- errors from the alert log for the last 24 h</td><td><span class="pill p-good">every role</span></td><td>New errors since the previous snapshot. The Verifier accepts an ORA code only when it appears here or in the incident text.</td></tr>
+          <tr class="group"><td colspan="4">Performance pack (on by default)</td></tr>
+          <tr><td><strong>Performance</strong></td><td>CPU ratio since startup, active sessions, top wait events, file I/O latency</td><td><span class="pill p-good">every role</span></td><td>A baseline to compare with during an incident: a new top wait, latency rising, active sessions climbing.</td></tr>
+          <tr><td><strong>SQL workload</strong></td><td>Cursor-cache SQL by elapsed time, executions, and reads, and statements with several plans</td><td><span class="pill p-bad">admin only</span></td><td>Shows the heavy statement during a slowdown. Several plans for one SQL_ID points to plan instability.</td></tr>
+          <tr><td><strong>Top SQL</strong></td><td>Top statements in the cursor cache by CPU</td><td><span class="pill p-bad">admin only</span></td><td>The CPU-heavy statement for memory-pressure and performance incidents.</td></tr>
+          <tr class="group"><td colspan="4">Configuration and security pack (off by default, admin only)</td></tr>
+          <tr><td><strong>Memory configuration</strong></td><td>Temporary space, hard parses, library cache, parameters, resource limits</td><td><span class="pill p-bad">admin only</span></td><td>Shows configuration changes between snapshots, and limits close to their maximum.</td></tr>
+          <tr><td><strong>Security</strong></td><td>Locked or expired accounts, invalid objects, current privileged role grants</td><td><span class="pill p-bad">admin only</span></td><td>Security drift: a new privileged grant, an account unlocked, invalid objects after a release.</td></tr>
+          <tr><td><strong>Database users</strong></td><td>Users and schemas with account status, application or Oracle-maintained</td><td><span class="pill p-bad">admin only</span></td><td>New or dropped schemas between snapshots.</td></tr>
+          <tr><td><strong>Control files</strong></td><td>Control file names and status</td><td><span class="pill p-bad">admin only</span></td><td>A missing or invalid control file copy.</td></tr>
+          <tr><td><strong>Datafiles</strong></td><td>Datafiles and tempfiles</td><td><span class="pill p-bad">admin only</span></td><td>Files added or moved, and file status.</td></tr>
+          <tr><td><strong>Largest segments</strong></td><td>The 20 largest segments by size</td><td><span class="pill p-bad">admin only</span></td><td>Which object is driving growth in a tablespace.</td></tr>
+          <tr><td><strong>Data Guard</strong></td><td>Database role, archive destinations, standby lag</td><td><span class="pill p-bad">admin only</span></td><td>Lag growing between snapshots, or an archive destination in error.</td></tr>
+          <tr class="group"><td colspan="4">Read only by an investigation (in no pack)</td></tr>
+          <tr><td><strong>Failed jobs</strong></td><td>Scheduler jobs that failed or stopped in the last 2 days</td><td><span class="pill p-good">every role</span></td><td>Evidence for the job-failure and backup-failure playbooks, including whether the job has failed before.</td></tr>
+          <tr><td><strong>Background processes</strong></td><td>Instance background processes and their status</td><td><span class="pill p-good">every role</span></td><td>Evidence for the database-unavailable playbook.</td></tr>
+          <tr><td><strong>Tablespace growth</strong></td><td>When a tablespace may fill, from stored samples (not AWR)</td><td><span class="pill p-good">every role</span></td><td>Days left until full, for the tablespace-full playbook.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Why a snapshot is worth keeping, beyond the live pages</h3>
+    <ul class="tight">
+      <li><strong>Evidence after the fact.</strong> Locks, sessions, running jobs, and top SQL disappear within minutes. A snapshot keeps them for the investigation and for a person reviewing it the next morning.</li>
+      <li><strong>"What changed" without AWR.</strong> Two snapshots compared in plain code give new errors, new sessions, and moved values. This works on Standard Edition, without the Diagnostics Pack.</li>
+      <li><strong>Grounding for the model.</strong> Every figure and ORA code in a cause has to come from these rows, so they are what the Verifier checks against.</li>
+      <li><strong>Less load on Oracle.</strong> A recent snapshot answers the copilot and the Investigator without another logon.</li>
+      <li><strong>Findings that stay explainable.</strong> Snapshots are deleted after 14 days, but each finding keeps the figures it cites.</li>
+    </ul>
+  </section>
+
+  <!-- 7 -->
+  <section id="together">
+    <h2><span class="num">7</span>How the agents help each role</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Role</th><th>Can do</th><th>Sees</th><th>Typical use</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Viewer</strong></td><td>Read runs, findings, and snapshot summaries</td><td>Findings without restricted evidence</td><td>Reads what the agents concluded about an incident</td></tr>
+          <tr><td><strong>Operator</strong></td><td><code>agent.run</code>: collect a snapshot, investigate, accept or dismiss a finding</td><td>Same as a viewer. A run started by an operator never reads restricted readings</td><td>Gets a first diagnosis from an incident page, then accepts it or hands it over</td></tr>
+          <tr><td><strong>DBA</strong></td><td>Same as an operator, plus per-database agent settings (<code>config.write</code>)</td><td>No restricted evidence (DBAs do not have <code>platform.read</code>)</td><td>Takes a snapshot before and after a change, reads What changed, tunes retention and packs</td></tr>
+          <tr><td><strong>Administrator</strong></td><td>Everything above, plus the system switch, system defaults, and the configuration pack</td><td>Everything, including sessions, SQL, users, and configuration</td><td>Turns agents on, decides which databases may run automatic investigations, reviews restricted findings</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Three scenarios</h3>
+    <div class="cards">
+      <div class="card agent">
+        <h3>Archiver stuck at 02:10</h3>
+        <p>The alert-log poll raises a critical incident for ORA-00257. Within 60 s the sweep starts an investigation, and the rule matches the archive-destination playbook. The run collects recovery, backups, redo logs, and errors, and compares the recovery area with its value a day ago. The local model cites evidence lines 2 and 4, and the Verifier passes it. In the morning the on-call operator opens one finding with a cause and three checks, and accepts it.</p>
+      </div>
+      <div class="card code">
+        <h3>A DBA before and after a release</h3>
+        <p>The DBA clicks Collect snapshot on the Overview, the release runs, and they click it again. What changed lists new ORA errors, a tablespace that grew 6 points, and the program that now holds 40 more sessions. No model is involved, and nothing is written to Oracle.</p>
+      </div>
+      <div class="card agent">
+        <h3>A copilot question</h3>
+        <p>An operator asks the database copilot "How full is the USERS tablespace?". The supervisor routes it to This database. The snapshot from 4 minutes ago answers, and the reply says it came from the snapshot. Asking "…right now?" reads Oracle live instead.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="portal">
+    <h2><span class="num">8</span>Using the agents in the portal today</h2>
+    <ol class="steps">
+      <li><strong>Turn agents on.</strong> As an administrator, open Admin → Agents and switch <code>AGENTS_ENABLED</code> on. Until then every start button is hidden, and the API answers 409 <code>AGENTS_OFF</code>.</li>
+      <li><strong>Choose per database.</strong> On each database's Overview, open <em>Agent settings for this database</em>. Keep automatic investigation off at first, check the packs (core and performance), and turn off sensitive readings for databases with regulated data.</li>
+      <li><strong>Take a first snapshot.</strong> Click Collect snapshot on the Overview, or Collect fleet snapshot on the Agents page. A second snapshot later fills What changed.</li>
+      <li><strong>Investigate.</strong> Use Investigate on an incident page (best, because the incident text picks the playbook) or on the Overview (General health check unless a rule matches).</li>
+      <li><strong>Review.</strong> Open the Agents page for open findings across the fleet. Accept or Dismiss each one; the decision is audited.</li>
+      <li><strong>Then automate.</strong> Turn on <code>AGENT_AUTO_INVESTIGATE</code> for the databases where an unattended first diagnosis is welcome.</li>
+    </ol>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Setting</th><th>Default</th><th>Scope</th><th>Recommendation</th></tr></thead>
+        <tbody>
+          <tr><td><code>AGENTS_ENABLED</code></td><td>off</td><td>System master; a database can opt out</td><td>On, once the local model is installed</td></tr>
+          <tr><td><code>AGENT_SNAPSHOT_PACKS</code></td><td>core,performance</td><td>System + database</td><td>Keep. Add configuration only for databases an administrator reviews</td></tr>
+          <tr><td><code>AGENT_COLLECT_SENSITIVE</code></td><td>on</td><td>System + database</td><td>Off for databases whose SQL text holds personal data</td></tr>
+          <tr><td><code>AGENT_SNAPSHOT_RETENTION_DAYS</code></td><td>14 (1–30)</td><td>System + database</td><td>Keep 14</td></tr>
+          <tr><td><code>AGENT_SNAPSHOT_MIN_GAP_SECONDS</code></td><td>300</td><td>System + database</td><td>Keep. It protects Oracle from repeated clicks</td></tr>
+          <tr><td><code>AGENT_AUTO_INVESTIGATE</code></td><td>off</td><td>System + database</td><td>On for production after a week of manual runs</td></tr>
+          <tr><td><code>AGENT_MAX_STEPS</code> / <code>MODEL_CALLS</code> / <code>RUN_TIMEOUT_SECONDS</code></td><td>6 / 4 / 180</td><td>System</td><td>Keep. Raise the timeout only if the model is slow</td></tr>
+          <tr><td><code>AGENT_SWEEP_SECONDS</code></td><td>60</td><td>System</td><td>Keep</td></tr>
+          <tr><td><code>ai_snapshot_max_age_seconds</code></td><td>900</td><td>System</td><td>Keep, together with scheduled collection (§9)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="integration">
+    <h2><span class="num">9</span>Better integration with the web portal</h2>
+    <p class="lead">Recommendations in priority order. Each one keeps the current rules: read-only access, no SQL from people or the model, and evidence only to the local model.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Change</th><th>Why</th><th>Size</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td><strong>Scheduled collection.</strong> A per-database setting <code>AGENT_SNAPSHOT_INTERVAL_MINUTES</code> (off, or 15–1440), run by the existing agent scheduler and still bound by the minimum gap.</td><td>Today a snapshot exists only when someone clicks. Regular snapshots make What changed, the copilot's snapshot answers, and the Investigator's comparison work without anyone remembering to click.</td><td><span class="pill p-good">small</span></td></tr>
+          <tr><td>2</td><td><strong>AgentDB tab</strong> in the database workspace, after AlertDB: Collect snapshot, Investigate with an optional goal, this database's runs with their steps, open findings with Accept and Dismiss, snapshot history with What changed between any two, and the per-database settings.</td><td>The agent controls are now buried at the bottom of the Overview, and the top-bar Agents page mixes every database together. The other database views already have their own tabs.</td><td><span class="pill p-warn">medium</span></td></tr>
+          <tr><td>3</td><td><strong>A clear note when agents are off</strong>, on the tab and the Overview, with a direct link to Admin → Agents for an administrator. Past runs stay visible.</td><td>The current message is easy to miss, and buttons that silently disappear look like a fault.</td><td><span class="pill p-good">small</span></td></tr>
+          <tr><td>4</td><td><strong>Links between findings and incidents.</strong> The incident list shows a badge when a finding exists, and an accepted finding can be attached to the incident's notes.</td><td>Operators work from incidents. A finding they don't see doesn't help them.</td><td><span class="pill p-good">small</span></td></tr>
+          <tr><td>5</td><td><strong>The copilot reads findings.</strong> "Why did PDBORCL alert last night?" answers from the stored finding. An "Investigate this" button appears under a database answer.</td><td>Today the copilot reads snapshots but not findings, and it cannot start an investigation.</td><td><span class="pill p-warn">medium</span></td></tr>
+          <tr><td>6</td><td><strong>Fleet Agents page as the summary.</strong> One row per database: last snapshot, open findings, last run. Each name links to that database's AgentDB tab.</td><td>Keeps one fleet view, with the detail one click away.</td><td><span class="pill p-good">small</span></td></tr>
+          <tr><td>7</td><td><strong>Trends from snapshots.</strong> Small charts in AgentDB for readings that are numbers (programs' session counts, recovery area use, datafile totals).</td><td>Phase 22 left trends drawn from snapshots out of scope. Fourteen days of snapshots is a useful baseline.</td><td><span class="pill p-warn">medium</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section id="new-agents">
+    <h2><span class="num">10</span>Agents worth adding</h2>
+    <p class="lead">Each proposal reuses the snapshot store, the fixed readings, the local model, and the Verifier, so none of them needs a new way into Oracle. Two of them (Fleet analyst, Advisor) were planned in Phase 22 and never built.</p>
+
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1120 410" role="img" aria-label="Proposed agent family: collection agents feed the snapshot store; analysis agents read the store; every model-written conclusion passes the Verifier before it becomes a finding; reporting agents and the Advisor work from findings, and the Advisor only drafts proposals for the existing approval queue.">
+          <defs>
+            <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6b80"/></marker>
+          </defs>
+          <text x="20" y="28" class="band" fill="#0f6e6e">Collect</text>
+          <text x="300" y="28" class="band" fill="#8a5200">Store</text>
+          <text x="500" y="28" class="band" fill="#a21caf">Analyse</text>
+          <text x="790" y="28" class="band" fill="#0f6e6e">Check</text>
+          <text x="930" y="28" class="band" fill="#1d4e89">Report and act</text>
+
+          <rect x="20" y="44" width="230" height="56" rx="10" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+          <text x="135" y="68" text-anchor="middle" class="t">Collector</text>
+          <text x="135" y="86" text-anchor="middle" class="s">built · on demand</text>
+          <rect x="20" y="114" width="230" height="56" rx="10" fill="#fff" stroke="#b45309" stroke-width="1.6" stroke-dasharray="6 4"/>
+          <text x="135" y="138" text-anchor="middle" class="t">Scheduled collection</text>
+          <text x="135" y="156" text-anchor="middle" class="s">proposed · no model</text>
+
+          <rect x="290" y="44" width="170" height="320" rx="14" fill="#fff4e0" stroke="#8a5200" stroke-width="1.6"/>
+          <text x="375" y="70" text-anchor="middle" class="t">Snapshot store</text>
+          <text x="375" y="90" text-anchor="middle" class="s">evidence_snapshots</text>
+          <text x="375" y="108" text-anchor="middle" class="s">14 days</text>
+          <text x="375" y="150" text-anchor="middle" class="t">Monitoring data</text>
+          <text x="375" y="170" text-anchor="middle" class="s">observations</text>
+          <text x="375" y="186" text-anchor="middle" class="s">incidents</text>
+          <text x="375" y="202" text-anchor="middle" class="s">compliance</text>
+          <text x="375" y="244" text-anchor="middle" class="t">Findings</text>
+          <text x="375" y="264" text-anchor="middle" class="s">agent_findings</text>
+          <text x="375" y="280" text-anchor="middle" class="s">accepted / dismissed</text>
+          <line x1="250" y1="72" x2="288" y2="72" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a4)"/>
+          <line x1="250" y1="142" x2="288" y2="142" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a4)"/>
+
+          <g>
+            <rect x="500" y="44" width="250" height="44" rx="9" fill="#fff" stroke="#a21caf" stroke-width="2"/>
+            <text x="516" y="71" class="t">Investigator</text><text x="736" y="71" text-anchor="end" class="s">built</text>
+            <rect x="500" y="96" width="250" height="44" rx="9" fill="#fff" stroke="#0f6e6e" stroke-width="1.6" stroke-dasharray="6 4"/>
+            <text x="516" y="123" class="t">Drift watcher</text><text x="736" y="123" text-anchor="end" class="s">no model</text>
+            <rect x="500" y="148" width="250" height="44" rx="9" fill="#fff" stroke="#0f6e6e" stroke-width="1.6" stroke-dasharray="6 4"/>
+            <text x="516" y="175" class="t">Capacity forecaster</text><text x="736" y="175" text-anchor="end" class="s">no model</text>
+            <rect x="500" y="200" width="250" height="44" rx="9" fill="#fff" stroke="#a21caf" stroke-width="1.6" stroke-dasharray="6 4"/>
+            <text x="516" y="227" class="t">SQL regression analyst</text><text x="736" y="227" text-anchor="end" class="s">model writes</text>
+            <rect x="500" y="252" width="250" height="44" rx="9" fill="#fff" stroke="#0f6e6e" stroke-width="1.6" stroke-dasharray="6 4"/>
+            <text x="516" y="279" class="t">Backup and recovery auditor</text>
+            <rect x="500" y="304" width="250" height="44" rx="9" fill="#fff" stroke="#0f6e6e" stroke-width="1.6" stroke-dasharray="6 4"/>
+            <text x="516" y="331" class="t">Security drift auditor</text><text x="736" y="331" text-anchor="end" class="s">admin only</text>
+          </g>
+          <line x1="460" y1="200" x2="498" y2="200" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a4)"/>
+          <text x="479" y="192" text-anchor="middle" class="l">reads</text>
+
+          <rect x="780" y="140" width="110" height="90" rx="12" fill="#fff" stroke="#0f6e6e" stroke-width="2"/>
+          <text x="835" y="176" text-anchor="middle" class="t">Verifier</text>
+          <text x="835" y="194" text-anchor="middle" class="s">every model</text>
+          <text x="835" y="208" text-anchor="middle" class="s">conclusion</text>
+          <line x1="750" y1="185" x2="778" y2="185" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a4)"/>
+          <polyline points="835,230 835,380 375,380 375,366" fill="none" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a4)"/>
+          <text x="600" y="374" text-anchor="middle" class="l">finding saved</text>
+
+          <rect x="930" y="44" width="170" height="80" rx="10" fill="#fff" stroke="#a21caf" stroke-width="1.6" stroke-dasharray="6 4"/>
+          <text x="1015" y="70" text-anchor="middle" class="t">Fleet analyst</text>
+          <text x="1015" y="88" text-anchor="middle" class="s">daily brief across</text>
+          <text x="1015" y="104" text-anchor="middle" class="s">all databases</text>
+          <rect x="930" y="140" width="170" height="90" rx="10" fill="#fff" stroke="#a21caf" stroke-width="1.6" stroke-dasharray="6 4"/>
+          <text x="1015" y="166" text-anchor="middle" class="t">Advisor</text>
+          <text x="1015" y="184" text-anchor="middle" class="s">drafts a proposal from</text>
+          <text x="1015" y="200" text-anchor="middle" class="s">an accepted finding</text>
+          <text x="1015" y="216" text-anchor="middle" class="s">never runs it</text>
+          <rect x="930" y="250" width="170" height="70" rx="10" fill="#fbe3e7" stroke="#94233a"/>
+          <text x="1015" y="276" text-anchor="middle" class="t">Approval queue</text>
+          <text x="1015" y="294" text-anchor="middle" class="s">existing · execution</text>
+          <text x="1015" y="309" text-anchor="middle" class="s">stays disabled</text>
+          <line x1="1015" y1="230" x2="1015" y2="248" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a4)"/>
+          <polyline points="420,364 420,396 912,396 912,84 928,84" fill="none" stroke="#5c6b80" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#a4)"/>
+          <path d="M912,185 H928" fill="none" stroke="#5c6b80" stroke-width="1.2" stroke-dasharray="3 3" marker-end="url(#a4)"/>
+          <text x="906" y="390" text-anchor="end" class="l">findings read by reporting agents</text>
+        </svg>
+      </div>
+      <figcaption><strong>Solid</strong> boxes are built; <strong>dashed</strong> boxes are proposed. Analysis agents read only the stores; only the Collector reaches Oracle. Any agent whose model writes text passes the Verifier before its result becomes a finding.</figcaption>
+    </figure>
+
+    <h3>Proposed agents</h3>
+    <div class="cards">
+      <div class="card new">
+        <h3>Drift watcher <span class="pill p-code">no model</span> <span class="pill p-good">priority 1</span></h3>
+        <p class="goal">Goal: raise a finding when a scheduled snapshot differs in a way that matters.</p>
+        <p>Runs after each scheduled snapshot, using the existing compare code. It reports new ORA codes, a newly failed job, a tablespace up 5 points in a day, a program whose sessions doubled, and a restart. It turns <em>What changed</em> from a panel someone has to open into an alert.</p>
+      </div>
+      <div class="card new">
+        <h3>Capacity forecaster <span class="pill p-code">no model</span> <span class="pill p-good">priority 2</span></h3>
+        <p class="goal">Goal: warn days before a tablespace or the recovery area fills.</p>
+        <p>Uses the growth reading, <code>used_pct_of_max</code> from Phase 27, and the existing <code>sentinel/forecasting</code> code. It writes a finding such as "USERS reaches its maximum in about 9 days at the rate of the last 7", with the samples it used.</p>
+      </div>
+      <div class="card new">
+        <h3>SQL regression analyst <span class="pill p-model">local model</span> <span class="pill p-warn">priority 3</span></h3>
+        <p class="goal">Goal: spot a statement whose plan changed and got slower.</p>
+        <p>Compares SQL workload snapshots by SQL_ID and plan hash value, which Phase 28 already reads, and by elapsed time per execution. It answers the copilot catalog question "SQL regressions", which today says the data is not collected. Its findings are admin only, because they contain SQL text.</p>
+      </div>
+      <div class="card new">
+        <h3>Backup and recovery auditor <span class="pill p-code">no model</span> <span class="pill p-warn">priority 3</span></h3>
+        <p class="goal">Goal: check every morning that each database meets its backup policy.</p>
+        <p>Compares the backups and recovery readings with the policy documents' rules (for example, a full backup within 7 days and archived logs within 24 h). The result is stored as a compliance result plus a finding, so it shows in the existing policy views.</p>
+      </div>
+      <div class="card new">
+        <h3>Security drift auditor <span class="pill p-code">no model</span> <span class="pill p-info">admin only</span></h3>
+        <p class="goal">Goal: report security changes between two configuration snapshots.</p>
+        <p>New privileged role grants, accounts unlocked, new schemas, and new invalid objects. It runs only on databases where an administrator has turned on the configuration pack.</p>
+      </div>
+      <div class="card new">
+        <h3>Fleet analyst <span class="pill p-model">local model</span> <span class="pill p-warn">planned in Phase 22</span></h3>
+        <p class="goal">Goal: a daily brief, one page for the whole fleet.</p>
+        <p>It reads findings, incidents, and health from the stores, with no Oracle reads. The model writes the summary and the Verifier checks every figure in it. Shown on the Agents page and optionally sent by email through the existing notifier.</p>
+      </div>
+      <div class="card new">
+        <h3>Advisor <span class="pill p-model">local model</span> <span class="pill p-warn">planned in Phase 22</span></h3>
+        <p class="goal">Goal: turn an accepted finding into a reviewed change proposal.</p>
+        <p>It drafts the runbook steps and a proposal for the existing privileged-operations approval queue. It never runs anything: privileged execution stays disabled, and a person still does the work.</p>
+      </div>
+    </div>
+    <div class="callout info">
+      <strong>Suggested order:</strong> scheduled collection → Drift watcher → AgentDB tab → Capacity forecaster. The first two need no model and no new grant, and they make every existing agent more useful. The SQL regression analyst and the Advisor need the most care, because they handle SQL text and change proposals.
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section id="guardrails">
+    <h2><span class="num">11</span>Guardrails that stay in place</h2>
+    <div class="two">
+      <div class="card code">
+        <h3>Oracle</h3>
+        <ul class="tight">
+          <li>Only fixed SELECT readings, as GSYSTEM. Nothing writes to Oracle.</li>
+          <li>Only whole numbers and SQL_IDs in Oracle's own format may be bound (Phase 28). Text from a person or the model is never bound.</li>
+          <li>No AWR, ASH, or ADDM, so no Diagnostics Pack licence is needed.</li>
+          <li>One logon per snapshot, a minimum gap, one collection at a time, and one investigation per database.</li>
+        </ul>
+      </div>
+      <div class="card agent">
+        <h3>Model</h3>
+        <ul class="tight">
+          <li>Evidence goes only to the local model. A hosted provider gives findings with evidence only.</li>
+          <li>The model has no tools. It may choose names from fixed lists (playbooks, readings, routes) and nothing more.</li>
+          <li>The Verifier stands in front of every written cause.</li>
+          <li>A company requirement is stated only from a policy document.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>People and data</h3>
+        <ul class="tight">
+          <li>User names, SQL text, object names, paths, and configuration are for administrators only.</li>
+          <li>A run acts with the role of whoever started it. Automatic runs act as an operator.</li>
+          <li>Snapshot collection, runs, decisions, and settings changes are written to the audit log.</li>
+          <li>Snapshots are deleted after 14 days. Findings keep the figures they cite.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 12 -->
+  <section id="harness">
+    <h2><span class="num">12</span>Should the Investigator run a bounded loop with tool calling?</h2>
+    <p class="lead">Today the Investigator follows a fixed path, and the model only fills in JSON. This section looks at whether a short loop, in which the model calls read-only tools for 3–5 turns, would suit a monitoring portal like this one. It covers what that would add, the costs, and what to do.</p>
+
+    <h3>What the current deployment has</h3>
+    <p>There is a <strong>harness</strong> but no <strong>loop</strong>. <code>AgentRunner</code> (<code>agents/runner.py</code>) wraps each run and controls what it may do, but the order of the steps is fixed in code:</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Harness part</th><th>In place today</th></tr></thead>
+        <tbody>
+          <tr><td>Run wrapper</td><td><code>asyncio.wait_for</code> with a 180 s limit. A run that times out, is refused, or hits an error is stored as <em>stopped</em> or <em>failed</em>, with a safe note. It never raises.</td></tr>
+          <tr><td>Budget</td><td>6 tool steps and 4 model calls, checked before each step</td></tr>
+          <tr><td>Start checks</td><td>Agents on, database enabled, one run per database</td></tr>
+          <tr><td>Step log</td><td>Each step is committed to <code>agent_steps</code> as it ends, so the portal shows the run while it works</td></tr>
+          <tr><td>Guards</td><td>Readings are filtered by role and limited to an allowlist. Model replies follow a JSON schema. The Verifier checks the conclusion, and an audit row is written when the run ends.</td></tr>
+          <tr><td>Trigger loop</td><td><code>AgentScheduler</code> sweeps new critical incidents every 60 s</td></tr>
+          <tr><td>Model's part</td><td>It chooses a playbook name (only when no rule matches), writes the cause as JSON, and may list up to 2 more readings <strong>once</strong>. It never calls a tool.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <figure style="margin-top:18px">
+      <div class="scroll">
+        <svg viewBox="0 0 1120 330" role="img" aria-label="Comparison: today the Investigator runs a fixed pipeline with one optional extra collection; the proposed design keeps that pipeline as the first pass, then lets the model call read-only tools for up to four turns until it calls finish, and the Verifier still checks the result.">
+          <defs>
+            <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5c6b80"/></marker>
+            <marker id="a5m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a21caf"/></marker>
+          </defs>
+          <text x="20" y="28" class="band" fill="#0f6e6e">Today — fixed pipeline</text>
+          <g>
+            <rect x="20" y="44" width="150" height="50" rx="9" fill="#fff" stroke="#0f6e6e"/>
+            <text x="95" y="74" text-anchor="middle" class="t">Plan · collect</text>
+            <rect x="200" y="44" width="150" height="50" rx="9" fill="#fff" stroke="#0f6e6e"/>
+            <text x="275" y="74" text-anchor="middle" class="t">Compare · look up</text>
+            <rect x="380" y="44" width="150" height="50" rx="9" fill="#fbeafd" stroke="#a21caf" stroke-width="2"/>
+            <text x="455" y="74" text-anchor="middle" class="t">Conclude</text>
+            <rect x="560" y="44" width="170" height="50" rx="9" fill="#fbeafd" stroke="#a21caf" stroke-dasharray="5 3"/>
+            <text x="645" y="66" text-anchor="middle" class="t">Collect more, once</text>
+            <text x="645" y="83" text-anchor="middle" class="s">≤ 2 readings, conclude again</text>
+            <rect x="760" y="44" width="150" height="50" rx="9" fill="#fff" stroke="#0f6e6e"/>
+            <text x="835" y="74" text-anchor="middle" class="t">Verify</text>
+            <rect x="940" y="44" width="160" height="50" rx="9" fill="#fff4e0" stroke="#8a5200"/>
+            <text x="1020" y="74" text-anchor="middle" class="t">Finding</text>
+          </g>
+          <g stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a5)">
+            <line x1="170" y1="69" x2="198" y2="69"/><line x1="350" y1="69" x2="378" y2="69"/>
+            <line x1="530" y1="69" x2="558" y2="69"/><line x1="730" y1="69" x2="758" y2="69"/>
+            <line x1="910" y1="69" x2="938" y2="69"/>
+          </g>
+
+          <text x="20" y="148" class="band" fill="#a21caf">Proposed — first pass + bounded loop</text>
+          <rect x="20" y="164" width="200" height="60" rx="9" fill="#fff" stroke="#0f6e6e"/>
+          <text x="120" y="189" text-anchor="middle" class="t">First pass (as today)</text>
+          <text x="120" y="207" text-anchor="middle" class="s">playbook readings → evidence 1…n</text>
+          <line x1="220" y1="194" x2="268" y2="194" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a5)"/>
+          <rect x="270" y="164" width="190" height="60" rx="9" fill="#fbeafd" stroke="#a21caf" stroke-width="2"/>
+          <text x="365" y="189" text-anchor="middle" class="t">Model turn</text>
+          <text x="365" y="207" text-anchor="middle" class="s">≤ 4 turns · ≤ 3 calls per turn</text>
+          <line x1="460" y1="184" x2="548" y2="184" stroke="#a21caf" stroke-width="1.6" marker-end="url(#a5m)"/>
+          <text x="504" y="176" text-anchor="middle" class="l" style="fill:#a21caf">tool calls</text>
+          <rect x="550" y="150" width="230" height="88" rx="9" fill="#fff" stroke="#0f6e6e" stroke-width="1.6"/>
+          <text x="665" y="172" text-anchor="middle" class="t">Harness runs the tools</text>
+          <text x="665" y="190" text-anchor="middle" class="s">allowlist · role · checked arguments</text>
+          <text x="665" y="206" text-anchor="middle" class="s">duplicates reused · 30 s each</text>
+          <text x="665" y="222" text-anchor="middle" class="s">results numbered as evidence</text>
+          <polyline points="665,238 665,270 365,270 365,226" fill="none" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a5)"/>
+          <text x="515" y="286" text-anchor="middle" class="l">new evidence back to the model (next turn)</text>
+          <polyline points="300,224 300,300 820,300 820,226" fill="none" stroke="#a21caf" stroke-width="1.6" stroke-dasharray="5 3" marker-end="url(#a5m)"/>
+          <rect x="800" y="164" width="120" height="60" rx="9" fill="#fff" stroke="#0f6e6e"/>
+          <text x="860" y="189" text-anchor="middle" class="t">Verify</text>
+          <text x="860" y="207" text-anchor="middle" class="s">unchanged</text>
+          <line x1="920" y1="194" x2="938" y2="194" stroke="#5c6b80" stroke-width="1.4" marker-end="url(#a5)"/>
+          <rect x="940" y="164" width="160" height="60" rx="9" fill="#fff4e0" stroke="#8a5200"/>
+          <text x="1020" y="189" text-anchor="middle" class="t">Finding</text>
+          <text x="1020" y="207" text-anchor="middle" class="s">turns + calls in the log</text>
+          <text x="660" y="316" text-anchor="middle" class="l" style="fill:#a21caf">finish(cause, evidence ids) — or a limit is reached, or no new evidence twice</text>
+        </svg>
+      </div>
+      <figcaption>The difference is the loop between <strong>Model turn</strong> and <strong>Harness runs the tools</strong>. The first pass, the Verifier, and the finding stay the same, so a loop that fails is no worse than today. The model still writes no SQL: it names a tool from a fixed list, and code checks every argument.</figcaption>
+    </figure>
+
+    <h3>Where a loop fits in this app</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Part</th><th>Loop?</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Investigator</strong></td><td><span class="pill p-good">yes</span></td><td>Incidents cross areas. A slow database leads to waits, then blocking, then the head session's statement, then its plan. A fixed playbook reads one set of readings and stops.</td></tr>
+          <tr><td>Database copilot, "why" questions</td><td><span class="pill p-warn">later</span></td><td>The same chain of reasoning applies, but a person waiting in a chat feels 20–40 s</td></tr>
+          <tr><td>Collector, scheduled snapshots, Drift watcher, forecaster</td><td><span class="pill p-bad">no</span></td><td>Plain code is cheaper, predictable, and complete</td></tr>
+          <tr><td>Fleet copilot</td><td><span class="pill p-bad">no</span></td><td>A bounded fan-out in code covers every database. A model choosing databases would skip some.</td></tr>
+          <tr><td>Verifier</td><td><span class="pill p-bad">no</span></td><td>It must stay plain code</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Tools the loop would offer</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Group</th><th>Tools</th><th>Rules</th></tr></thead>
+        <tbody>
+          <tr><td>Live fixed readings</td><td>The 28 existing readings-server tools: availability, performance, blocking, tablespaces, recovery, failed jobs, memory, redo logs, and so on</td><td>Already allowlisted. Only the database alias is passed. A snapshot newer than 300 s is reused.</td></tr>
+          <tr><td>Bound readings (Phase 28)</td><td><code>get_session_statement(sid, serial)</code>, <code>get_statement_plan(sql_id, child)</code></td><td>Only whole numbers and Oracle-format SQL_IDs, through the existing <code>bind_value_allowed</code> check. <strong>Only for runs an administrator starts.</strong></td></tr>
+          <tr><td>Stored data (new, no Oracle)</td><td><code>get_metric_history(metric, hours ≤ 48)</code>, <code>what_changed(reading)</code>, <code>list_open_incidents()</code>, <code>get_wait_history()</code>, <code>get_tablespace_forecast()</code></td><td>Cheap and fast. They give the loop its "compared with before".</td></tr>
+          <tr><td>Memory (new)</td><td><code>get_past_findings(days ≤ 30)</code></td><td>Accepted and dismissed findings for this database, so the model doesn't repeat a cause someone already rejected</td></tr>
+          <tr><td>Knowledge</td><td><code>search_knowledge(query, category)</code></td><td>The query text goes only to vector search, never into SQL</td></tr>
+          <tr><td>Control</td><td><code>finish(cause, confidence, evidence_ids, next_steps)</code></td><td>The only way to end with a conclusion. The Verifier then runs as it does today.</td></tr>
+          <tr><td><strong>Never offered</strong></td><td colspan="2">Free SQL, <code>EXPLAIN PLAN</code>, killing or tracing a session, sending notifications, privileged operations, or any other database</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Harness design</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Rule</th><th>Value</th></tr></thead>
+        <tbody>
+          <tr><td>First pass</td><td>The playbook's readings, collected by plain code before the first model turn. The loop only adds evidence.</td></tr>
+          <tr><td>Limits</td><td>4 model turns; 3 tool calls per turn and 8 per run; 30 s per tool; 180 s per run</td></tr>
+          <tr><td>Duplicates</td><td>The same tool with the same arguments returns the stored result and does not count against the limit</td></tr>
+          <tr><td>Tool list by role</td><td>Restricted tools are not offered to operator runs or automatic runs</td></tr>
+          <tr><td>Stop when</td><td><code>finish</code> is called, a limit is reached, or two turns in a row bring no new evidence. In the last two cases the harness asks for a conclusion from what it has.</td></tr>
+          <tr><td>Evidence</td><td>Every tool result is numbered. <code>finish</code> must cite those numbers, and the Verifier checks figures and ORA codes against them.</td></tr>
+          <tr><td>Untrusted text</td><td>Alert log and SQL text pass through <code>sanitize_untrusted</code> and are marked as data. The tools cannot write, so injected text can do little.</td></tr>
+          <tr><td>Fallback</td><td>When the model's tool-call reply is not usable, the run continues on today's fixed path</td></tr>
+          <tr><td>Audit</td><td>Every turn and every tool call is stored as an <code>agent_steps</code> row</td></tr>
+          <tr><td>Switch</td><td><code>AGENT_LOOP_ENABLED</code>, off by default, with a per-database override like the other agent settings</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>What it would bring</h3>
+    <ul class="tight">
+      <li><strong>It follows the chain.</strong> From blocking, to the head SID, to its statement, to the cached plan in one run. Today that takes three pages: WaitDB, SessionDB, and the plan tab.</li>
+      <li><strong>Fewer General findings.</strong> When no playbook matches, the model looks further instead of reading six fixed readings and guessing.</li>
+      <li><strong>It checks history.</strong> "Was this already high yesterday?" and "Has this database had this finding before?" are answered before it blames a recent change.</li>
+      <li><strong>Less unneeded reading.</strong> It reads what the evidence points to, rather than every reading on a playbook's list.</li>
+    </ul>
+
+    <h3>Pros and cons</h3>
+    <div class="two">
+      <div class="card code">
+        <h3>Pros</h3>
+        <ul class="tight">
+          <li>The tools already exist as read-only MCP tools on an allowlist</li>
+          <li>The harness parts already exist: budget, deadline, step log, role filter, and Verifier</li>
+          <li>Causes that cross areas, which a fixed playbook misses</li>
+          <li>Stored-data tools add history without extra load on Oracle</li>
+          <li>Safe by construction: no SQL from the model, no writes, and today's path as the floor</li>
+          <li>Each turn and call is visible in the portal and the audit log</li>
+        </ul>
+      </div>
+      <div class="card new">
+        <h3>Cons</h3>
+        <ul class="tight">
+          <li><strong>Slower.</strong> About 3–8 s per model call on qwen2.5-coder:14b, so 20–40 s per investigation. Fine in the background, slow in a chat.</li>
+          <li><strong>Tool-call reliability of a local 14B model.</strong> Ollama supports tool calls for qwen2.5, but it needs testing here. Keep the JSON fallback.</li>
+          <li><strong>Less predictable.</strong> Two runs of the same incident may read different things, which makes runs harder to compare.</li>
+          <li><strong>More Oracle reads per run.</strong> Bounded by the call limits and snapshot reuse.</li>
+          <li><strong>More text from Oracle reaches the model</strong> (alert log lines, SQL text). The tools cannot write, but this text has to be treated as untrusted.</li>
+          <li><strong>More to build and test.</strong> New stored-data tools, a tool-call parser, and an evaluation set.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3>Recommendation</h3>
+    <div class="callout info">
+      <strong>Yes, for the Investigator only, with up to 4 model turns.</strong> Build it as one small phase behind <code>AGENT_LOOP_ENABLED</code>:
+      <ol class="steps" style="margin:8px 0 0">
+        <li><strong>Scheduled snapshot collection first</strong> (§9). Without fresh snapshots, <code>what_changed</code> and <code>get_metric_history</code> have little to give the loop.</li>
+        <li>Add the stored-data tools, <code>get_past_findings</code>, and <code>finish</code>. Turn the single "collect more" round into the bounded loop, keeping today's path as the first pass and the fallback.</li>
+        <li><strong>Decide on evidence.</strong> Replay about 20 past or synthetic incidents through both paths, and compare the Verifier pass rate, evidence cited, General findings, and time taken. Keep the loop only if it wins.</li>
+        <li>Only then consider the same loop for the database copilot's "why" questions.</li>
+      </ol>
+    </div>
+  </section>
+
+  <footer>
+    Sources: <a href="../Phase_22_Agents.md">Phase 22 — Agents</a> · <a href="../Phase_22_Agentic_Design.html">Phase 22 design</a> · <a href="../Phase_24_Copilot_Supervisor.md">Phase 24 — Copilot supervisor</a> · <a href="../Phase_21_Fleet_Copilot.md">Phase 21 — Fleet copilot</a> · <a href="../Phase_28_SessionDB.md">Phase 28 — SessionDB</a> · <a href="architecture.md">architecture.md</a>. Figures are the defaults in <code>backend/src/sentinel/config/settings.py</code> and <code>agents/packs.py</code> as of Phase 28.
+  </footer>
+</main>
+</body>
+</html>
